@@ -7,7 +7,7 @@ import type { NewCartContextValue, NewCartItem, NewCartState } from './types';
 const STORAGE_KEY = 'newcart_v1';
 
 const initialState: NewCartState = { items: [] };
-
+ 
 type Action =
   | { type: 'ADD'; payload: NewCartItem }
   | { type: 'REMOVE'; payload: { index: number } }
