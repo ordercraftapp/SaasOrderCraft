@@ -1,3 +1,8 @@
+// src/app/(tenant)/[tenantId]/app/page.tsx
+export const runtime = 'nodejs';        // ✅ necesario para usar Firebase Admin en Vercel
+export const revalidate = 300;          // ✅ mantienes ISR como ya lo tenías
+// export const dynamic = 'force-dynamic'; // ⬅️ opcional mientras pruebas (desactiva caché)
+
 import type { Metadata } from 'next';
 import HomeClient from '@/components/home/HomeClient';
 
@@ -8,9 +13,6 @@ import ContactList from '@/components/home/ContactList';
 
 // 🔐 Firestore Admin
 import { db } from '@/lib/firebase/admin';
-
-// ISR
-export const revalidate = 300;
 
 type TimestampLike = { toDate?: () => Date } | number | Date | null | undefined;
 

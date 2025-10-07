@@ -1,6 +1,6 @@
-// middleware.ts — Multi-tenant + CSP PayPal + sesión/roles
+// middleware.ts — Multi-tenant + CSP base + PayPal + sesión/roles
 import { NextResponse, type NextRequest } from "next/server";
-import { addPaypalToCsp } from "@/lib/security/csp";
+import { buildCSP, addPaypalToCsp } from "@/lib/security/csp";
 
 // === Dominio base (site) ===
 const BASE_DOMAIN = (process.env.NEXT_PUBLIC_BASE_DOMAIN || "datacraftcoders.cloud").toLowerCase();
@@ -14,8 +14,14 @@ type Role = "admin" | "kitchen" | "cashier" | "delivery" | "waiter";
 // ---------- Helpers ----------
 function withPaypalCsp(res: NextResponse) {
   try {
-    const currentCsp = res.headers.get("Content-Security-Policy") || "";
-    res.headers.set("Content-Security-Policy", addPaypalToCsp(currentCsp));
+    const existing = res.headers.get("Content-Security-Policy") || "";
+    // Si el response aún no tiene CSP (p.ej. por una ruta temprana), sembramos con base y luego añadimos PayPal
+    const base = existing && existing.trim().length > 0
+      ? existing
+      : buildCSP({ isDev: process.env.NODE_ENV !== "production" });
+
+    const merged = addPaypalToCsp(base);
+    res.headers.set("Content-Security-Policy", merged);
   } catch { /* no-op */ }
   return res;
 }

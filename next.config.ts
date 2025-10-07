@@ -1,11 +1,13 @@
 // next.config.ts
 import type { NextConfig } from "next";
+import { buildCSP } from "./src/lib/security/csp";
 
 const isProd = process.env.NODE_ENV === "production";
+const baseCsp = buildCSP({ isDev: !isProd });
 
 /**
  * CSP para PRODUCCIÓN (permite inline scripts que requieren PayPal/GTM/Google/Turnstile)
- * Nota: el middleware ajusta CSP en runtime con addPaypalToCsp sin romper esta base.
+ * Nota: el middleware puede ajustar CSP en runtime con addPaypalToCsp sin romper esta base.
  */
 const prodCsp = [
   "default-src 'self'",
@@ -13,7 +15,7 @@ const prodCsp = [
   // Scripts (inline permitido por requisitos de GTM/Google/PayPal/Turnstile)
   "script-src 'self' 'unsafe-inline' https://www.gstatic.com https://www.googletagmanager.com https://apis.google.com https://accounts.google.com https://www.paypal.com https://challenges.cloudflare.com",
   "script-src-elem 'self' 'unsafe-inline' https://www.gstatic.com https://www.googletagmanager.com https://apis.google.com https://accounts.google.com https://www.paypal.com https://challenges.cloudflare.com",
-  // Estilos (añadimos fonts.googleapis.com si usas Google Fonts por CSS)
+  // Estilos (incluye Google Fonts por CSS)
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
   // Imágenes
   "img-src 'self' https: data: https://*.gstatic.com https://*.googleapis.com https://www.paypalobjects.com https://www.paypal.com https://www.sandbox.paypal.com https://i.ytimg.com https://i.vimeocdn.com",
@@ -57,7 +59,7 @@ const securityHeaders = [
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
   { key: "Cross-Origin-Opener-Policy", value: "same-origin" },
   { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
-  { key: "Content-Security-Policy", value: isProd ? prodCsp : devCsp },
+  { key: "Content-Security-Policy", value: baseCsp },
 ];
 
 const nextConfig: NextConfig = {
