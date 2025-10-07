@@ -15,11 +15,9 @@ type Role = "admin" | "kitchen" | "cashier" | "delivery" | "waiter";
 function withPaypalCsp(res: NextResponse) {
   try {
     const existing = res.headers.get("Content-Security-Policy") || "";
-    // Si el response aún no tiene CSP (p.ej. por una ruta temprana), sembramos con base y luego añadimos PayPal
     const base = existing && existing.trim().length > 0
       ? existing
       : buildCSP({ isDev: process.env.NODE_ENV !== "production" });
-
     const merged = addPaypalToCsp(base);
     res.headers.set("Content-Security-Policy", merged);
   } catch { /* no-op */ }
@@ -66,12 +64,34 @@ function resolveHost(req: NextRequest) {
   return { isSite: false as const, tenantId: tenant };
 }
 
+// ---------- PhaseC: helpers para adjuntar tenant a la request downstream ----------
+function nextWithTenant(req: NextRequest, tenantId: string) {
+  const hdrs = new Headers(req.headers as any);
+  hdrs.set("x-tenant", tenantId); // ← importante para API routes/Server Actions
+  const res = NextResponse.next({ request: { headers: hdrs } });
+  res.cookies.set("tenantId", tenantId, { path: "/", httpOnly: false });
+  return res;
+}
+function rewriteWithTenant(req: NextRequest, url: URL, tenantId: string) {
+  const hdrs = new Headers(req.headers as any);
+  hdrs.set("x-tenant", tenantId);
+  const res = NextResponse.rewrite(url, { request: { headers: hdrs } });
+  res.cookies.set("tenantId", tenantId, { path: "/", httpOnly: false });
+  return res;
+}
+function redirectWithTenant(req: NextRequest, url: URL, tenantId: string) {
+  const res = NextResponse.redirect(url);
+  // Nota: los request headers no viajan en redirect, pero mantenemos la cookie
+  res.cookies.set("tenantId", tenantId, { path: "/", httpOnly: false });
+  return res;
+}
+
 // Redirección a /login preservando ?next= y sin romper CSP del login
-function redirectToLogin(req: NextRequest) {
+function redirectToLogin(req: NextRequest, tenantId?: string | null) {
   const url = req.nextUrl.clone();
   url.pathname = "/login";
   url.searchParams.set("next", req.nextUrl.pathname + (req.nextUrl.search || ""));
-  const res = NextResponse.redirect(url);
+  const res = tenantId ? redirectWithTenant(req, url, tenantId) : NextResponse.redirect(url);
   return withPaypalCsp(res);
 }
 
@@ -106,11 +126,6 @@ export function middleware(req: NextRequest) {
   }
 
   // 2) Normaliza rutas del tenant al árbol /:tenantId/app/*
-  //    "/"               -> "/:tenantId/app"
-  //    "/login"          -> "/:tenantId/app/login"
-  //    "/:tenantId"      -> "/:tenantId/app"
-  //    "/:tenantId/login"-> "/:tenantId/app/login"
-  //    otro sin prefijo  -> "/:tenantId{pathname}"
   const alreadyPrefixed = pathname.startsWith(`/${tenantId}`);
   let targetPath = pathname;
 
@@ -132,33 +147,34 @@ export function middleware(req: NextRequest) {
 
   if (targetPath !== pathname) {
     url.pathname = targetPath;
-    const res = NextResponse.rewrite(url);
-    // útil si quieres leer el tenant en cliente
-    res.cookies.set("tenantId", tenantId, { path: "/", httpOnly: false });
+    // PhaseC: al reescribir, pasamos header x-tenant y cookie
+    const res = rewriteWithTenant(req, url, tenantId);
     return withPaypalCsp(res);
   }
 
   // 3) Seguridad por roles (sobre "ruta virtual")
-  //    Quita "/:tenantId" y opcionalmente "/app" para evaluar
   const virtualPath = tenantId ? pathname.replace(`/${tenantId}`, "") || "/" : pathname;
   const vForRoles = virtualPath.startsWith("/app") ? (virtualPath.slice(4) || "/") : virtualPath;
 
   // Dejar /login limpio (ya reescrito por tenant). No añadir CSP extra.
   if (vForRoles === "/login") {
-    return NextResponse.next();
+    // PhaseC: incluso en /login, mantenemos cookie + header para downstream (si llaman APIs)
+    const res = nextWithTenant(req, tenantId);
+    return res; // no añadimos CSP extra aquí
   }
 
   const wantsAdmin = isPath(vForRoles, "/admin");
   const wantsDelivery = isPath(vForRoles, "/delivery");
 
-  // 3.a) Rutas públicas del tenant → añadir CSP PayPal únicamente
+  // 3.a) Rutas públicas del tenant → añadir CSP PayPal y adjuntar tenant
   if (!wantsAdmin && !wantsDelivery) {
-    return withPaypalCsp(NextResponse.next());
+    const res = withPaypalCsp(nextWithTenant(req, tenantId)); // PhaseC
+    return res;
   }
 
   // 3.b) Rutas protegidas: requieren sesión
   if (!hasSessionCookie(req)) {
-    return redirectToLogin(req);
+    return redirectToLogin(req, tenantId); // PhaseC: preserva cookie tenant
   }
 
   const role = getRole(req);
@@ -166,40 +182,39 @@ export function middleware(req: NextRequest) {
   // 3.c) Validación por rol
   if (wantsDelivery) {
     if (role === "delivery" || role === "admin") {
-      return withPaypalCsp(NextResponse.next());
+      return withPaypalCsp(nextWithTenant(req, tenantId)); // PhaseC
     }
     const to = new URL("/", req.url);
-    const res = NextResponse.redirect(to);
-    return withPaypalCsp(res);
+    return withPaypalCsp(redirectWithTenant(req, to, tenantId)); // PhaseC
   }
 
   if (wantsAdmin) {
-    if (role === "admin") return withPaypalCsp(NextResponse.next());
+    if (role === "admin") return withPaypalCsp(nextWithTenant(req, tenantId)); // PhaseC
 
     if (role === "kitchen") {
-      if (isPath(vForRoles, "/admin/kitchen")) return withPaypalCsp(NextResponse.next());
+      if (isPath(vForRoles, "/admin/kitchen")) return withPaypalCsp(nextWithTenant(req, tenantId));
       const to = new URL("/", req.url);
-      return withPaypalCsp(NextResponse.redirect(to));
+      return withPaypalCsp(redirectWithTenant(req, to, tenantId));
     }
 
     if (role === "cashier") {
-      if (isPath(vForRoles, "/admin/cashier")) return withPaypalCsp(NextResponse.next());
+      if (isPath(vForRoles, "/admin/cashier")) return withPaypalCsp(nextWithTenant(req, tenantId));
       const to = new URL("/", req.url);
-      return withPaypalCsp(NextResponse.redirect(to));
+      return withPaypalCsp(redirectWithTenant(req, to, tenantId));
     }
 
     if (role === "waiter") {
-      if (isPath(vForRoles, "/admin/edit-orders")) return withPaypalCsp(NextResponse.next());
+      if (isPath(vForRoles, "/admin/edit-orders")) return withPaypalCsp(nextWithTenant(req, tenantId));
       const to = new URL("/", req.url);
-      return withPaypalCsp(NextResponse.redirect(to));
+      return withPaypalCsp(redirectWithTenant(req, to, tenantId));
     }
 
     const to = new URL("/", req.url);
-    return withPaypalCsp(NextResponse.redirect(to));
+    return withPaypalCsp(redirectWithTenant(req, to, tenantId));
   }
 
-  // 4) Fallback
-  return withPaypalCsp(NextResponse.next());
+  // 4) Fallback (tenant flow): adjuntamos x-tenant + cookie + CSP
+  return withPaypalCsp(nextWithTenant(req, tenantId));
 }
 
 // Matcher amplio (Next 15)
