@@ -28,6 +28,7 @@ export default function SiteHomePage() {
   );
 }
 
+/** ===== Server Action: crea el tenant y redirige ===== */
 async function createTenantAction(formData: FormData) {
   'use server';
 
@@ -41,12 +42,12 @@ async function createTenantAction(formData: FormData) {
   const norm = normalizeTenantId(wantSub);
   assertValidTenantId(norm);
 
-  // 1) Disponibilidad
+  // Disponibilidad
   const ref = adminDb.doc(`tenants/${norm}`);
   const snap = await ref.get();
   if (snap.exists) throw new Error('This subdomain is already taken.');
 
-  // 2) Crear tenant (estructura mínima)
+  // Crear tenant
   const now = new Date();
   await ref.set({
     tenantId: norm,
@@ -64,13 +65,23 @@ async function createTenantAction(formData: FormData) {
     customDomain: null,
   });
 
-  // 3) Cookie + redirect al árbol tenant (compat con distintas versiones de Next)
+  // Cookie para que el app lo pueda leer también
   const cookieStore = await cookies();
   cookieStore.set('tenantId', norm, { path: '/', httpOnly: false });
 
-  redirect(`/${norm}/app`);
+  // Redirige a subdominio en prod; a path en local si no hay wildcard
+  const baseDomain = (process.env.NEXT_PUBLIC_BASE_DOMAIN || 'datacraftcoders.cloud').toLowerCase();
+  const supportsWildcard =
+    process.env.NEXT_PUBLIC_USE_WILDCARD_SUBDOMAINS?.toLowerCase() !== 'false';
+
+  const target = supportsWildcard
+    ? `https://${norm}.${baseDomain}/app`
+    : `/${norm}/app`;
+
+  redirect(target);
 }
 
+/** ===== Form (usa la server action) ===== */
 function TenantSignupForm() {
   return (
     <form action={createTenantAction} className="card shadow-sm border-0">
@@ -97,7 +108,8 @@ function TenantSignupForm() {
               required
               minLength={3}
               maxLength={63}
-              pattern="[a-z0-9][a-z0-9-]*[a-z0-9]"
+              // patrón compatible con el engine 'v' (guion escapado)
+              pattern="^[a-z0-9](?:[a-z0-9\-]*[a-z0-9])$"
               placeholder="my-restaurant"
               className="form-control"
             />

@@ -3,6 +3,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { buildCSP, addPaypalToCsp } from "@/lib/security/csp";
 
 // === Dominio base (site) ===
+// Para la Opción A, en .env.local pon: NEXT_PUBLIC_BASE_DOMAIN=localhost
 const BASE_DOMAIN = (process.env.NEXT_PUBLIC_BASE_DOMAIN || "datacraftcoders.cloud").toLowerCase();
 const SITE_HOSTS = new Set([BASE_DOMAIN, `www.${BASE_DOMAIN}`]);
 
@@ -48,20 +49,57 @@ function isPath(pathname: string, prefix: string) {
 
 /** Resuelve host → { isSite, tenantId }
  *  - Root/www -> site
- *  - Tenant = label inmediatamente anterior al dominio base
- *    acme.datacraftcoders.cloud           -> acme
- *    www.acme.datacraftcoders.cloud       -> acme
- *    x.y.acme.datacraftcoders.cloud       -> acme
+ *  - Tenants:
+ *    • BASE_DOMAIN de 1 label (localhost): foo.localhost -> tenant=foo
+ *    • BASE_DOMAIN 2+ labels (prod): acme.datacraftcoders.cloud -> tenant=acme
+ *      www.acme.datacraftcoders.cloud -> tenant=acme
+ *      x.y.acme.datacraftcoders.cloud -> tenant=acme
  */
 function resolveHost(req: NextRequest) {
   const host = (req.nextUrl.hostname || "").toLowerCase();
-  const parts = host.split(".");
-  const domain = parts.slice(-2).join(".");
-  if (SITE_HOSTS.has(host) || domain !== BASE_DOMAIN) {
+  const parts = host.split(".").filter(Boolean);
+
+  const base = BASE_DOMAIN;
+  const baseParts = base.split(".").filter(Boolean);
+
+  // ¿host es exactamente el site (base o www.base)?
+  if (host === base || host === `www.${base}`) {
     return { isSite: true as const, tenantId: null as null };
   }
-  const tenant = parts.length >= 3 ? parts[parts.length - 3] : null;
-  return { isSite: false as const, tenantId: tenant };
+
+  // Caso A: base de 1 label (localhost)
+  if (baseParts.length === 1) {
+    // Debe terminar en ".localhost"
+    if (!host.endsWith(`.${base}`)) {
+      // No pertenece al dominio base → trátalo como "site" (evita forzar tenant en dominios externos)
+      return { isSite: true as const, tenantId: null as null };
+    }
+    // foo.localhost -> ['foo','localhost'] -> tenant = penúltimo label
+    if (parts.length >= 2 && parts[parts.length - 1] === base) {
+      const tenant = parts[parts.length - 2] || null;
+      return { isSite: false as const, tenantId: tenant };
+    }
+    return { isSite: true as const, tenantId: null as null };
+  }
+
+  // Caso B: base con 2+ labels (prod)
+  // Verifica que host termine en ".<BASE_DOMAIN>"
+  const suffix = `.${base}`;
+  if (!host.endsWith(suffix)) {
+    // Host de otro dominio → trátalo como "site"
+    return { isSite: true as const, tenantId: null as null };
+  }
+
+  // El tenant es la label inmediatamente anterior a BASE_DOMAIN
+  // parts: [..., TENANT, ...baseParts]
+  if (parts.length >= baseParts.length + 1) {
+    const tenantIndex = parts.length - (baseParts.length + 1);
+    const tenant = parts[tenantIndex] || null;
+    return { isSite: false as const, tenantId: tenant };
+  }
+
+  // Si no hay label anterior, es el site
+  return { isSite: true as const, tenantId: null as null };
 }
 
 // ---------- PhaseC: helpers para adjuntar tenant a la request downstream ----------
@@ -116,7 +154,7 @@ export function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
-  // 1) Site vs Tenant por host
+  // 1) Site vs Tenant por host (compatible con localhost y producción)
   const { isSite, tenantId } = resolveHost(req);
 
   // Root/www => marketing (site)

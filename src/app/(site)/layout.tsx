@@ -3,7 +3,7 @@ import BootstrapClient from '@/components/BootstrapClient';
 
 export default function SiteLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="es">
       <body>
         <BootstrapClient />
         {children}
