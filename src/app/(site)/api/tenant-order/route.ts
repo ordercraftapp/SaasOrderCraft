@@ -1,3 +1,4 @@
+// src/app/(site)/api/tenant-order/route.ts
 export const runtime = 'nodejs';
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -14,7 +15,7 @@ type CreateOrderBody = {
   companyName: string;
   adminName: string;
   adminEmail: string;
-  adminPassword: string; // ← nuevo
+  adminPassword: string;
   phone?: string;
   address: {
     line1: string;
@@ -37,9 +38,7 @@ const HOLD_MINUTES = 15;
 function buildAdminUrl(tenantId: string) {
   const baseDomain = (process.env.NEXT_PUBLIC_BASE_DOMAIN || 'datacraftcoders.cloud').toLowerCase();
   const supportsWildcard = process.env.NEXT_PUBLIC_USE_WILDCARD_SUBDOMAINS?.toLowerCase() !== 'false';
-  return supportsWildcard
-    ? `https://${tenantId}.${baseDomain}/admin`
-    : `/${tenantId}/admin`;
+  return supportsWildcard ? `https://${tenantId}.${baseDomain}/admin` : `/${tenantId}/admin`;
 }
 
 function welcomeHtml(tenantId: string, adminName: string) {
@@ -168,11 +167,10 @@ export async function POST(req: NextRequest) {
       return json({ error: 'This subdomain is already taken.' }, 409);
     }
 
-    // -------- Crear/obtener usuario Auth (antes de la transacción) --------
+    // -------- Crear/obtener usuario Auth (antes) --------
     const auth = getAuth();
     let ownerUid: string;
     try {
-      // Intentar crear. Si ya existe, capturamos y usamos su uid (no tocamos password).
       const created = await auth.createUser({
         email: adminEmail,
         emailVerified: false,
@@ -182,7 +180,6 @@ export async function POST(req: NextRequest) {
       });
       ownerUid = created.uid;
     } catch (e: any) {
-      // Si ya existe, lo reutilizamos.
       if (e?.code === 'auth/email-already-exists') {
         const existing = await auth.getUserByEmail(adminEmail);
         ownerUid = existing.uid;
@@ -191,7 +188,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // -------- Transacción: revalidar reserva + crear tenant draft + order --------
+    // -------- Transacción: reserva + crear tenant draft + order --------
     const result = await adminDb.runTransaction(async (trx) => {
       const now = Timestamp.now();
 
@@ -199,22 +196,41 @@ export async function POST(req: NextRequest) {
       const tSnap = await trx.get(tRef);
       if (tSnap.exists) throw new Error('This subdomain is already taken.');
 
-      // Reserva: si vigente → bloquear; si expirada/ausente → (re)crear por 15 min
+      // Reserva (con validación del propietario del hold)
       const rSnap = await trx.get(rRef);
       const newHold = Timestamp.fromMillis(now.toMillis() + HOLD_MINUTES * 60 * 1000);
 
       if (rSnap.exists) {
         const holdUntil = rSnap.get('holdUntil') as Timestamp | null;
-        if (holdUntil && holdUntil.toMillis() > now.toMillis()) {
+        const reservedByEmail = (rSnap.get('reservedByEmail') as string | null) || null;
+
+        const isActiveHold = !!(holdUntil && holdUntil.toMillis() > now.toMillis());
+        if (isActiveHold && reservedByEmail && reservedByEmail !== adminEmail) {
+          // Otro usuario está reservando activamente → bloquea
           throw new Error('This subdomain is being reserved. Try again later.');
         }
+
+        // Si no hay dueño o es el mismo email → renueva/reasigna el hold a este email
         trx.set(
           rRef,
-          { name: desired, holdUntil: newHold, updatedAt: now, createdAt: rSnap.get('createdAt') || now },
+          {
+            name: desired,
+            holdUntil: newHold,
+            reservedByEmail: adminEmail,
+            updatedAt: now,
+            createdAt: rSnap.get('createdAt') || now,
+          },
           { merge: true },
         );
       } else {
-        trx.set(rRef, { name: desired, holdUntil: newHold, createdAt: now });
+        // Crear hold nuevo, asignado a este email
+        trx.set(rRef, {
+          name: desired,
+          holdUntil: newHold,
+          reservedByEmail: adminEmail,
+          createdAt: now,
+          updatedAt: now,
+        });
       }
 
       // Crear tenant (draft) — ahora con owner.uid
@@ -268,23 +284,21 @@ export async function POST(req: NextRequest) {
       return { tenantId: desired, orderId: orderRef.id, ownerUid };
     });
 
-    // -------- Enviar email de bienvenida/confirmación (Brevo) --------
+    // Email de bienvenida (no bloqueante)
     try {
       const html = welcomeHtml(result.tenantId, body.adminName);
       const text = welcomeText(result.tenantId);
       await sendTransactionalEmail({
-        toEmail: adminEmail,
+        toEmail: String(body.adminEmail || '').trim().toLowerCase(),
         toName: body.adminName || '',
         subject: `Your workspace "${result.tenantId}" is ready`,
         html,
         text,
       });
     } catch (e) {
-      // No rompemos el flujo si el correo falla; puedes loguearlo a _admin_audit
       console.error('[tenant-order] email send failed:', e);
     }
 
-    // -------- Cookie tenantId para UI del site --------
     const res = json({ tenantId: result.tenantId, orderId: result.orderId }, 200);
     res.cookies.set('tenantId', result.tenantId, { path: '/', httpOnly: false });
     return res;
@@ -297,7 +311,6 @@ export async function POST(req: NextRequest) {
 
 /** =========================
  *  GET: obtener resumen para checkout
- *  query: ?tenantId=...&orderId=...
  *  ========================= */
 export async function GET(req: NextRequest) {
   try {

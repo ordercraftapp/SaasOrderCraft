@@ -77,7 +77,8 @@ export default function SignupForm({ defaultPlan }: { defaultPlan: PlanId }) {
       const resp = await fetch('/api/subdomain-check', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ desiredSubdomain }),
+        // 👇 Enviamos también el email para asociar el hold al mismo correo
+        body: JSON.stringify({ desiredSubdomain, email }),
       });
       if (!resp.ok) {
         const text = await resp.text();
