@@ -6,11 +6,10 @@ import SuccessClient from './SuccessClient';
 export default function SuccessPage({
   searchParams,
 }: {
-  searchParams: { tenantId?: string };
+  searchParams: { tenantId?: string; orderId?: string };
 }) {
   const tenantId = String(searchParams?.tenantId || '').toLowerCase();
+  const orderId  = String(searchParams?.orderId  || '');
 
-  return (
-    <SuccessClient tenantId={tenantId} />
-  );
+  return <SuccessClient tenantId={tenantId} orderId={orderId} />;
 }

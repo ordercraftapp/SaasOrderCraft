@@ -42,7 +42,7 @@ export async function POST(req: NextRequest) {
 
     // Idempotencia: si ya está provisionado, responde success de una vez.
     if (order.orderStatus === 'provisioned' && tenant.status === 'active') {
-      const successUrl = buildSuccessUrl(tenantId);
+      const successUrl = buildSiteSuccessUrl(tenantId, orderId);
       return json({ ok: true, tenantId, orderId, successUrl }, 200);
     }
 
@@ -118,18 +118,15 @@ export async function POST(req: NextRequest) {
       trx.delete(rRef);
     });
 
-    // 4) Success URL
-    const successUrl = buildSuccessUrl(tenantId);
+    // 4) Success URL del **site** (no del subdominio del tenant), incluye orderId
+    const successUrl = buildSiteSuccessUrl(tenantId, orderId);
     return json({ ok: true, tenantId, orderId, successUrl }, 200);
   } catch (err: any) {
     return json({ error: err?.message || 'Unexpected error.' }, 500);
   }
 }
 
-function buildSuccessUrl(tenantId: string) {
-  const baseDomain = (process.env.NEXT_PUBLIC_BASE_DOMAIN || 'datacraftcoders.cloud').toLowerCase();
-  const supportsWildcard = process.env.NEXT_PUBLIC_USE_WILDCARD_SUBDOMAINS?.toLowerCase() !== 'false';
-  return supportsWildcard
-    ? `https://${tenantId}.${baseDomain}/success?tenantId=${encodeURIComponent(tenantId)}`
-    : `/success?tenantId=${encodeURIComponent(tenantId)}`;
+// Ahora devolvemos URL del site (no del subdominio del tenant) e incluimos orderId
+function buildSiteSuccessUrl(tenantId: string, orderId: string) {
+  return `/success?tenantId=${encodeURIComponent(tenantId)}&orderId=${encodeURIComponent(orderId)}`;
 }
