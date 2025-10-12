@@ -82,7 +82,6 @@ export async function POST(req: NextRequest) {
         if (!q.empty) {
           const doc = q.docs[0];
           const res = json({ tenantId: desired, orderId: doc.id }, 200);
-          
           res.cookies.set('tenantId', desired, { path: '/', httpOnly: false });
           return res;
         }
@@ -92,7 +91,7 @@ export async function POST(req: NextRequest) {
       return json({ error: 'This subdomain is already taken.' }, 409);
     }
 
-    // -------- Transacción: revalidar reserva + crear tenant draft + order --------
+    // -------- Transacción: revalidar/renovar reserva + crear tenant draft + order --------
     const result = await adminDb.runTransaction(async (trx) => {
       const now = Timestamp.now();
 
@@ -100,15 +99,11 @@ export async function POST(req: NextRequest) {
       const tSnap = await trx.get(tRef);
       if (tSnap.exists) throw new Error('This subdomain is already taken.');
 
-      // Reserva: si vigente → bloquear; si expirada/ausente → (re)crear por 15 min
+      // Reserva: si existe, **renovar**; si no existe, crear por 15 min
       const rSnap = await trx.get(rRef);
       const newHold = Timestamp.fromMillis(now.toMillis() + HOLD_MINUTES * 60 * 1000);
 
       if (rSnap.exists) {
-        const holdUntil = rSnap.get('holdUntil') as Timestamp | null;
-        if (holdUntil && holdUntil.toMillis() > now.toMillis()) {
-          throw new Error('This subdomain is being reserved. Try again later.');
-        }
         trx.set(
           rRef,
           { name: desired, holdUntil: newHold, updatedAt: now, createdAt: rSnap.get('createdAt') || now },
@@ -171,12 +166,11 @@ export async function POST(req: NextRequest) {
 
     // -------- (Opcional) Cookie tenantId para UI del site --------
     const res = json(result, 200);
-  
     res.cookies.set('tenantId', result.tenantId, { path: '/', httpOnly: false });
     return res;
   } catch (err: any) {
     const msg = err?.message || 'Unexpected error.';
-    const status = /taken|exists|reserved|being reserved/i.test(msg) ? 409 : 500;
+    const status = /taken|exists/i.test(msg) ? 409 : 500;
     return json({ error: msg }, status);
   }
 }
