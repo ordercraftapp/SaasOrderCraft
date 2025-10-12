@@ -2,6 +2,7 @@
 'use client';
 import React, { useEffect, useState } from 'react';
 import { useTenantId } from '@/lib/tenant/context';
+import { tenantPath } from '@/lib/tenant/paths';
 
 export default function FeatureGate({
   name,
@@ -21,7 +22,10 @@ export default function FeatureGate({
       if (!tenantId) { setAllowed(false); return; }
       try {
         const q = new URLSearchParams({ name, tenantId }); // opcional: tenantId explícito
-        const url = `/_t/${tenantId}/app/api/tenant/feature?${q.toString()}`;
+        const path = `/app/api/tenant/feature?${q.toString()}`;
+        const url = tenantId
+          ? tenantPath(tenantId, path)    // wildcard → /app/api/tenant/feature?... | local → /{tenant}/app/api/tenant/feature?...
+          : `/api/tenant/feature?${q.toString()}`; // fallback (site)
         const r = await fetch(url, { cache: 'no-store' });
         const j = await r.json();
         if (active) setAllowed(!!j.allowed);

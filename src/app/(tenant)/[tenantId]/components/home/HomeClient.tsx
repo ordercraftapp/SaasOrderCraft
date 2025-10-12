@@ -8,6 +8,7 @@ import PromoStrip from "@/app/(tenant)/[tenantId]/components/home/PromoStrip";
 import FeaturedMenu from "@/app/(tenant)/[tenantId]/components/home/FeaturedMenu";
 import Gallery from "@/app/(tenant)/[tenantId]/components/home/Gallery";
 import { useTenantId } from "@/lib/tenant/context"; // ✅ tenant
+import { tenantPath } from '@/lib/tenant/paths';
 
 /** Tipos mínimos para las props que le pasa page.tsx */
 type HeroSlide = {
@@ -64,13 +65,17 @@ export default function HomeClient({
   // ✅ tenant
   const tenantId = useTenantId();
   const withTenant = useMemo(() => {
-    return (p: string) => {
-      const norm = p.startsWith("/") ? p : `/${p}`;
-      if (!tenantId) return norm;
-      const base = `/_t/${tenantId}`;
-      return norm.startsWith(`${base}/`) || norm === base ? norm : `${base}${norm}`;
-    };
-  }, [tenantId]);
+  return (p: string) => {
+    const norm = p.startsWith('/') ? p : `/${p}`;
+    if (!tenantId) return norm;
+
+    // Si ya viene como "/{tenantId}/..." no dupliques
+    if (norm === `/${tenantId}` || norm.startsWith(`/${tenantId}/`)) return norm;
+
+    // Construye la ruta correcta (wildcard vs local)
+    return tenantPath(tenantId, norm);
+  };
+}, [tenantId]);
 
   // Estado visual del navbar (claro/oscuro) al hacer scroll
   const [scrolled, setScrolled] = useState(false);

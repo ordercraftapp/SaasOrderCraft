@@ -4,6 +4,7 @@
 import Image from 'next/image';
 import { t } from '@/lib/i18n/t';
 import { useTenantId } from '@/lib/tenant/context';
+import { tenantPath } from '@/lib/tenant/paths';
 
 type Promo = {
   id: string;
@@ -24,9 +25,13 @@ function isAbsoluteUrl(u?: string) {
 }
 function withTenantPrefix(tenantId: string | null, path: string) {
   const norm = path.startsWith('/') ? path : `/${path}`;
-  if (!tenantId) return norm;
-  const base = `/_t/${tenantId}`;
-  return norm.startsWith(`${base}/`) ? norm : `${base}${norm}`;
+  if (!tenantId) return norm;                   // sin contexto de tenant → deja el path tal cual
+
+  // evita prefijo duplicado si ya viene como "/{tenantId}/..."
+  if (norm === `/${tenantId}` || norm.startsWith(`/${tenantId}/`)) return norm;
+
+  // genera la URL correcta según wildcard (prod) o path (local)
+  return tenantPath(tenantId, norm);
 }
 
 export default function PromoStrip({ promos, lang }: { promos: Promo[]; lang: string }) {

@@ -7,6 +7,7 @@ import { useNewCart } from '@/lib/newcart/context';
 import type { NewCartItem } from '@/lib/newcart/types';
 import { useFmtQ } from '@/lib/settings/money';
 import { useAuth } from '@/app/providers';
+import { tenantPath } from '@/lib/tenant/paths';
 
 // 🔤 i18n
 import { useTenantSettings } from '@/lib/settings/hooks';
@@ -22,15 +23,17 @@ export default function CartViewNew() {
   const router = useRouter();
   const tenantId = useTenantId(); // ✅
 
-  // ✅ Prefija rutas con /_t/{tenantId} (consistente con Phase C)
+
   const withTenant = (p: string) => {
-    const norm = p.startsWith('/') ? p : `/${p}`;
-    if (!tenantId) return norm; // fallback visual si aún no hay contexto
-    const base = `/_t/${tenantId}`;
-    // evita doble prefijo si ya viene reescrita
-    if (norm.startsWith(base + '/')) return norm;
-    return `${base}${norm}`;
-  };
+  const norm = p.startsWith('/') ? p : `/${p}`;
+  // Si aún no hay tenantId, devolvemos el path tal cual (fallback visual)
+  if (!tenantId) return norm;
+
+  // Construye la URL correcta según wildcard (prod) o path (local):
+  // - wildcard:        '/app/...' | '/admin/...'
+  // - sin wildcard:    '/{tenantId}/app/...' | '/{tenantId}/admin/...'
+  return tenantPath(tenantId, norm);
+};
 
   // 🔤 idioma actual + helper (LS -> settings.language)
   const { settings } = useTenantSettings();

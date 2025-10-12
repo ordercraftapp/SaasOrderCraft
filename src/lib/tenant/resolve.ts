@@ -4,13 +4,12 @@
  * Orden de resolución:
  * 1) params.tenantId  (por rutas: /app/(tenant)/[tenantId]/...)
  * 2) header: x-tenant-id
- * 3) pathname con prefijo /_t/{tenantId}/...
  * 4) subdominio del host (tenant.example.com)
  */
 
 type MaybeParams = { tenantId?: string } | Record<string, any> | undefined;
 
-/** Si usas el patrón /_t/{tenantId}/... en reescrituras */
+
 export function getTenantIdFromPath(pathname: string): string | null {
   if (!pathname) return null;
   const parts = pathname.split('/').filter(Boolean); // ej: ['_t','abc','app','...']
@@ -51,7 +50,6 @@ export function resolveTenantFromRequest(req: Request, params?: MaybeParams): st
   const hTenant = req.headers.get('x-tenant-id');
   if (hTenant) return hTenant.trim();
 
-  // 3) path reescrito /_t/{tenantId}/...
   try {
     const url = new URL(req.url);
     const fromPath = getTenantIdFromPath(url.pathname);

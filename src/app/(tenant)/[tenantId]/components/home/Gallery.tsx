@@ -3,6 +3,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import Image from 'next/image';
 import { useTenantId } from '@/lib/tenant/context';
+import { tenantPath } from '@/lib/tenant/paths';
+
 
 type GalleryImage = { url: string; alt?: string };
 
@@ -36,15 +38,22 @@ export default function Gallery({
     }
   }, [aspect]);
 
-  // ✅ Resolver URL de imagen: si es relativa → prefijar /_t/{tenantId}
   const resolveImg = (url: string) => {
-    const isAbsolute = /^(https?:)?\/\//i.test(url) || url.startsWith('data:');
-    if (isAbsolute || !tenantId) return url;
-    const norm = url.startsWith('/') ? url : `/${url}`;
-    const base = `/_t/${tenantId}`;
-    return norm.startsWith(`${base}/`) ? norm : `${base}${norm}`;
-  };
+  if (!url) return url;
 
+  // Absolutas (http/https) o data: se devuelven tal cual
+  const isAbsolute = /^(https?:)?\/\//i.test(url) || url.startsWith('data:');
+  if (isAbsolute || !tenantId) return url;
+
+  // Normaliza a path con slash inicial
+  const norm = url.startsWith('/') ? url : `/${url}`;
+
+  // Si ya viene prefijado con /{tenantId}, no lo dupliques
+  if (norm === `/${tenantId}` || norm.startsWith(`/${tenantId}/`)) return norm;
+
+  // Construye el path correcto (wildcard vs local)
+  return tenantPath(tenantId, norm);
+};
   // Visibilidad en viewport
   useEffect(() => {
     const el = containerRef.current;

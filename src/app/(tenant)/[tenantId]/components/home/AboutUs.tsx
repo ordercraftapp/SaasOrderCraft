@@ -4,6 +4,7 @@
 import Image from "next/image";
 import React from "react";
 import { useTenantId } from "@/lib/tenant/context"; // ✅ tenant
+import { tenantPath } from '@/lib/tenant/paths';
 
 export default function AboutUs({
   title,
@@ -19,16 +20,24 @@ export default function AboutUs({
   // Si no hay nada que mostrar, no renderizamos la sección
   if (!title && !text && !imageUrl) return null;
 
-  // ✅ Si la imagen es relativa, prefijamos /_t/{tenantId}; si es absoluta, se deja igual.
   const resolvedImageUrl = React.useMemo(() => {
-    if (!imageUrl) return undefined;
-    const isAbsolute = /^(https?:)?\/\//i.test(imageUrl) || imageUrl.startsWith("data:");
-    if (isAbsolute || !tenantId) return imageUrl;
-    const norm = imageUrl.startsWith("/") ? imageUrl : `/${imageUrl}`;
-    const base = `/_t/${tenantId}`;
-    return norm.startsWith(`${base}/`) ? norm : `${base}${norm}`;
-  }, [imageUrl, tenantId]);
+  if (!imageUrl) return undefined;
 
+  // URLs absolutas o data: se devuelven tal cual
+  const isAbsolute = /^(https?:)?\/\//i.test(imageUrl) || imageUrl.startsWith('data:');
+  if (isAbsolute || !tenantId) return imageUrl;
+
+  // Normaliza a path con slash inicial
+  const norm = imageUrl.startsWith('/') ? imageUrl : `/${imageUrl}`;
+
+  // Si ya viene prefijado con /{tenantId}, no lo dupliques
+  if (norm === `/${tenantId}` || norm.startsWith(`/${tenantId}/`)) {
+    return norm;
+  }
+
+  // Construye path correcto según wildcard (prod) o path (local)
+  return tenantPath(tenantId, norm);
+}, [imageUrl, tenantId]);
   return (
     <section
       id="aboutus"

@@ -6,6 +6,7 @@ import Link from "next/link";
 import { Suspense, useEffect } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useTenantId } from "@/lib/tenant/context";
+import { tenantPath } from '@/lib/tenant/paths';
 
 type Props = {
   children: React.ReactNode;
@@ -38,9 +39,11 @@ function Gate({ children, redirect = false }: Props) {
   const tenantId = useTenantId();
 
   // ✅ login tenant-aware
-  const loginHref = tenantId ? `/_t/${tenantId}/app/login` : `/login`;
+  const loginHref = tenantId
+  ? tenantPath(tenantId, '/app/login') // wildcard → /app/login | local → /{tenantId}/app/login
+  : '/login';
 
-  // ✅ detecta login en cualquier scope (/login, /app/login, /_t/{tid}/app/login, etc.)
+  
   const isLoginRoute = !!pathname && /(?:^|\/)login(\/|$)/.test(pathname);
 
   const search = searchParams?.toString();

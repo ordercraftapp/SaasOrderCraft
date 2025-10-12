@@ -4,6 +4,7 @@
 import { useState, useMemo } from 'react';
 import { getAuth } from 'firebase/auth';
 import { useTenantId } from '@/lib/tenant/context';
+import { tenantPath } from '@/lib/tenant/paths';
 
 // Si ya tienes un helper global, puedes reemplazar por tu import.
 // Este helper local agrega el Bearer token automáticamente.
@@ -69,8 +70,8 @@ export default function OrderStatusActions({
     try {
       // ✅ tenant-aware path (fallback global si aún no hay tenantId)
       const url = tenantId
-        ? `/_t/${tenantId}/app/api/orders/${orderId}/status`
-        : `/api/orders/${orderId}/status`;
+  ? tenantPath(tenantId, `/app/api/orders/${orderId}/status`)
+  : `/api/orders/${orderId}/status`;
 
       const resp = await apiFetch(url, {
         method: 'PATCH',

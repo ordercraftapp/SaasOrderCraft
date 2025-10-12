@@ -5,19 +5,25 @@ import { useState, useMemo } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { useTenantId } from "@/lib/tenant/context";
+import { tenantPath } from '@/lib/tenant/paths';
+
 
 export default function AuthNavbar() {
   const [open, setOpen] = useState(false);
   const tenantId = useTenantId();
 
   const withTenant = useMemo(() => {
-    return (p: string) => {
-      const norm = p.startsWith("/") ? p : `/${p}`;
-      if (!tenantId) return norm;
-      const base = `/_t/${tenantId}`;
-      return norm.startsWith(`${base}/`) || norm === base ? norm : `${base}${norm}`;
-    };
-  }, [tenantId]);
+  return (p: string) => {
+    const norm = p.startsWith('/') ? p : `/${p}`;
+    if (!tenantId) return norm;
+
+    // Si ya viene como "/{tenantId}/..." no dupliques
+    if (norm === `/${tenantId}` || norm.startsWith(`/${tenantId}/`)) return norm;
+
+    // Construye la ruta correcta (wildcard vs local)
+    return tenantPath(tenantId, norm);
+  };
+}, [tenantId]);
 
   const logoSrc = useMemo(() => withTenant("/logo-mark.svg"), [withTenant]);
 

@@ -4,6 +4,8 @@ import { useEffect, useState, useMemo } from "react";
 import Image from "next/image";
 import { t } from "@/lib/i18n/t";
 import { useTenantId } from "@/lib/tenant/context";
+import { tenantPath } from '@/lib/tenant/paths';
+
 
 type Item = { id: string; name: string; price?: number; imageUrl?: string };
 
@@ -25,13 +27,15 @@ export default function FeaturedMenu({
   }, []);
   const resolvedLang = lang || clientLang || "es";
 
-  // ✅ helper para prefijar rutas internas con /_t/{tenantId}
   const withTenant = (p: string) => {
-    const norm = p.startsWith("/") ? p : `/${p}`;
-    if (!tenantId) return norm;
-    const base = `/_t/${tenantId}`;
-    return norm.startsWith(`${base}/`) ? norm : `${base}${norm}`;
-  };
+  const norm = p.startsWith('/') ? p : `/${p}`;
+  if (!tenantId) return norm;
+
+  // evita doble prefijo si ya viene con '/{tenantId}/...'
+  if (norm === `/${tenantId}` || norm.startsWith(`/${tenantId}/`)) return norm;
+
+  return tenantPath(tenantId, norm);
+};
 
   // ✅ resolver src de imagen (si es relativa → tenant-aware; si es absoluta se respeta)
   const resolveImg = (src?: string) => {

@@ -3,7 +3,6 @@ import { NextResponse, type NextRequest } from "next/server";
 import { buildCSP, addPaypalToCsp } from "@/lib/security/csp";
 
 // === Dominio base (site) ===
-// Para la Opción A, en .env.local pon: NEXT_PUBLIC_BASE_DOMAIN=localhost
 const BASE_DOMAIN = (process.env.NEXT_PUBLIC_BASE_DOMAIN || "datacraftcoders.cloud").toLowerCase();
 const SITE_HOSTS = new Set([BASE_DOMAIN, `www.${BASE_DOMAIN}`]);
 
@@ -47,14 +46,7 @@ function isPath(pathname: string, prefix: string) {
   return pathname === prefix || pathname.startsWith(prefix + "/");
 }
 
-/** Resuelve host → { isSite, tenantId }
- *  - Root/www -> site
- *  - Tenants:
- *    • BASE_DOMAIN de 1 label (localhost): foo.localhost -> tenant=foo
- *    • BASE_DOMAIN 2+ labels (prod): acme.datacraftcoders.cloud -> tenant=acme
- *      www.acme.datacraftcoders.cloud -> tenant=acme
- *      x.y.acme.datacraftcoders.cloud -> tenant=acme
- */
+/** Resuelve host → { isSite, tenantId } */
 function resolveHost(req: NextRequest) {
   const host = (req.nextUrl.hostname || "").toLowerCase();
   const parts = host.split(".").filter(Boolean);
@@ -69,12 +61,9 @@ function resolveHost(req: NextRequest) {
 
   // Caso A: base de 1 label (localhost)
   if (baseParts.length === 1) {
-    // Debe terminar en ".localhost"
     if (!host.endsWith(`.${base}`)) {
-      // No pertenece al dominio base → trátalo como "site" (evita forzar tenant en dominios externos)
       return { isSite: true as const, tenantId: null as null };
     }
-    // foo.localhost -> ['foo','localhost'] -> tenant = penúltimo label
     if (parts.length >= 2 && parts[parts.length - 1] === base) {
       const tenant = parts[parts.length - 2] || null;
       return { isSite: false as const, tenantId: tenant };
@@ -83,22 +72,17 @@ function resolveHost(req: NextRequest) {
   }
 
   // Caso B: base con 2+ labels (prod)
-  // Verifica que host termine en ".<BASE_DOMAIN>"
   const suffix = `.${base}`;
   if (!host.endsWith(suffix)) {
-    // Host de otro dominio → trátalo como "site"
     return { isSite: true as const, tenantId: null as null };
   }
 
-  // El tenant es la label inmediatamente anterior a BASE_DOMAIN
-  // parts: [..., TENANT, ...baseParts]
   if (parts.length >= baseParts.length + 1) {
     const tenantIndex = parts.length - (baseParts.length + 1);
     const tenant = parts[tenantIndex] || null;
     return { isSite: false as const, tenantId: tenant };
   }
 
-  // Si no hay label anterior, es el site
   return { isSite: true as const, tenantId: null as null };
 }
 
@@ -119,7 +103,6 @@ function rewriteWithTenant(req: NextRequest, url: URL, tenantId: string) {
 }
 function redirectWithTenant(req: NextRequest, url: URL, tenantId: string) {
   const res = NextResponse.redirect(url);
-  // Nota: los request headers no viajan en redirect, pero mantenemos la cookie
   res.cookies.set("tenantId", tenantId, { path: "/", httpOnly: false });
   return res;
 }
@@ -131,6 +114,17 @@ function redirectToLogin(req: NextRequest, tenantId?: string | null) {
   url.searchParams.set("next", req.nextUrl.pathname + (req.nextUrl.search || ""));
   const res = tenantId ? redirectWithTenant(req, url, tenantId) : NextResponse.redirect(url);
   return withPaypalCsp(res);
+}
+
+/** Compat: parse `/_t/{tenant}/...` → { tenant, restPath } */
+function parseLegacyTenantPath(pathname: string): { tenant: string | null; rest: string | null } {
+  // Ej: /_t/mcsusies/login → tenant=mcsusies, rest=/login
+  if (!pathname.startsWith("/_t/")) return { tenant: null, rest: null };
+  const parts = pathname.split("/").filter(Boolean); // ['_t','tenant',...]
+  if (parts.length < 2) return { tenant: null, rest: null };
+  const tenant = parts[1] || null;
+  const rest = "/" + parts.slice(2).join("/"); // puede ser '' => '/'
+  return { tenant, rest: rest || "/" };
 }
 
 // ---------- Middleware ----------
@@ -154,28 +148,66 @@ export function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
+  // --- Compatibilidad legacy: /_t/{tenant}/... ---
+  if (pathname.startsWith("/_t/")) {
+    const { tenant, rest } = parseLegacyTenantPath(pathname);
+    if (tenant) {
+      let targetPath: string;
+      if (rest === "/" || rest === "") {
+        targetPath = `/${tenant}/app`;
+      } else if (rest === "/login") {
+        targetPath = `/${tenant}/app/login`;
+      } else if ((rest && rest.startsWith("/app/")) || rest === "/app") {
+        targetPath = `/${tenant}${rest}`;
+      } else if ((rest && rest.startsWith("/admin/")) || rest === "/admin") {
+        targetPath = `/${tenant}${rest}`;
+      } else {
+        // Cualquier otra cosa del legacy va a /app/{rest}
+        targetPath = `/${tenant}/app${rest && rest.startsWith("/") ? rest : `/${rest}`}`;
+      }
+      url.pathname = targetPath;
+      return withPaypalCsp(rewriteWithTenant(req, url, tenant));
+    }
+    // Si no pudo parsear, continúa normal
+  }
+
   // 1) Site vs Tenant por host (compatible con localhost y producción)
   const { isSite, tenantId } = resolveHost(req);
 
   // Root/www => marketing (site)
   if (isSite || !tenantId) {
-    // En site solo añadimos CSP PayPal para páginas públicas
     return withPaypalCsp(NextResponse.next());
   }
 
   // 2) Normaliza rutas del tenant al árbol /:tenantId/app/*
+  const supportsWildcard =
+    process.env.NEXT_PUBLIC_USE_WILDCARD_SUBDOMAINS?.toLowerCase() !== "false";
+
   const alreadyPrefixed = pathname.startsWith(`/${tenantId}`);
   let targetPath = pathname;
 
   if (!alreadyPrefixed) {
-    if (pathname === "/") {
-      targetPath = `/${tenantId}/app`;
-    } else if (pathname === "/login") {
-      targetPath = `/${tenantId}/app/login`;
+    // En wildcard queremos paths limpios: '/', '/app/*', '/admin/*'
+    if (supportsWildcard) {
+      if (pathname === "/") {
+        targetPath = `/${tenantId}/app`;
+      } else if (pathname === "/login") {
+        targetPath = `/${tenantId}/app/login`;
+      } else if (pathname === "/app" || pathname.startsWith("/app/")) {
+        targetPath = `/${tenantId}${pathname}`;
+      } else if (pathname === "/admin" || pathname.startsWith("/admin/")) {
+        targetPath = `/${tenantId}${pathname}`;
+      } else {
+        // Cualquier otra ruta pública del tenant cae bajo app
+        // (si no quieres esto, puedes quitar este branch)
+        targetPath = `/${tenantId}${pathname}`;
+      }
     } else {
-      targetPath = `/${tenantId}${pathname}`;
+      // Sin wildcard: ya navegas por /{tenantId}/...
+      // No forzamos nada si el path no está prefijado: lo manejan tus rutas por path.
     }
   } else {
+    // Si ya viene con /{tenantId}, ajusta alias cortos
     if (pathname === `/${tenantId}`) {
       targetPath = `/${tenantId}/app`;
     } else if (pathname === `/${tenantId}/login`) {
@@ -185,7 +217,6 @@ export function middleware(req: NextRequest) {
 
   if (targetPath !== pathname) {
     url.pathname = targetPath;
-    // PhaseC: al reescribir, pasamos header x-tenant y cookie
     const res = rewriteWithTenant(req, url, tenantId);
     return withPaypalCsp(res);
   }
@@ -196,9 +227,8 @@ export function middleware(req: NextRequest) {
 
   // Dejar /login limpio (ya reescrito por tenant). No añadir CSP extra.
   if (vForRoles === "/login") {
-    // PhaseC: incluso en /login, mantenemos cookie + header para downstream (si llaman APIs)
     const res = nextWithTenant(req, tenantId);
-    return res; // no añadimos CSP extra aquí
+    return res;
   }
 
   const wantsAdmin = isPath(vForRoles, "/admin");
@@ -206,13 +236,13 @@ export function middleware(req: NextRequest) {
 
   // 3.a) Rutas públicas del tenant → añadir CSP PayPal y adjuntar tenant
   if (!wantsAdmin && !wantsDelivery) {
-    const res = withPaypalCsp(nextWithTenant(req, tenantId)); // PhaseC
+    const res = withPaypalCsp(nextWithTenant(req, tenantId));
     return res;
   }
 
   // 3.b) Rutas protegidas: requieren sesión
   if (!hasSessionCookie(req)) {
-    return redirectToLogin(req, tenantId); // PhaseC: preserva cookie tenant
+    return redirectToLogin(req, tenantId);
   }
 
   const role = getRole(req);
@@ -220,14 +250,14 @@ export function middleware(req: NextRequest) {
   // 3.c) Validación por rol
   if (wantsDelivery) {
     if (role === "delivery" || role === "admin") {
-      return withPaypalCsp(nextWithTenant(req, tenantId)); // PhaseC
+      return withPaypalCsp(nextWithTenant(req, tenantId));
     }
     const to = new URL("/", req.url);
-    return withPaypalCsp(redirectWithTenant(req, to, tenantId)); // PhaseC
+    return withPaypalCsp(redirectWithTenant(req, to, tenantId));
   }
 
   if (wantsAdmin) {
-    if (role === "admin") return withPaypalCsp(nextWithTenant(req, tenantId)); // PhaseC
+    if (role === "admin") return withPaypalCsp(nextWithTenant(req, tenantId));
 
     if (role === "kitchen") {
       if (isPath(vForRoles, "/admin/kitchen")) return withPaypalCsp(nextWithTenant(req, tenantId));

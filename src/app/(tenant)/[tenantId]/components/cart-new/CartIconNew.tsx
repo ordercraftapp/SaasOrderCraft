@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useNewCart } from '@/lib/newcart/context';
 import { useMemo } from 'react';
+import { tenantPath } from '@/lib/tenant/paths';
 
 // ✅ Tenant (Phase C)
 import { useTenantId } from '@/lib/tenant/context';
@@ -18,9 +19,9 @@ export default function CartIconNew() {
 
   // ✅ URL tenant-aware; fallback si no hay tenantId
   const href = useMemo(
-    () => (tenantId ? `/_t/${tenantId}/app/cart-new` : '/cart-new'),
-    [tenantId]
-  );
+  () => (tenantId ? tenantPath(tenantId, '/app/cart-new') : '/cart-new'),
+  [tenantId]
+);
 
   return (
     <Link href={href} className="position-relative d-inline-flex align-items-center text-decoration-none">

@@ -4,6 +4,8 @@
 
 import React, { useState } from 'react';
 import { useTenantId } from '@/lib/tenant/context'; // ✅ tenant
+import { tenantPath } from '@/lib/tenant/paths';
+
 
 type NewsletterCfg = {
   title?: string;
@@ -37,8 +39,9 @@ export default function Newsletter(props: { cfg?: NewsletterCfg }) {
     try {
       // ✅ tenant-aware API path (fallback a global si aún no hay tenant)
       const apiUrl = tenantId
-        ? `/_t/${tenantId}/app/api/newsletter/subscribe`
-        : `/api/newsletter/subscribe`;
+  ? tenantPath(tenantId, '/app/api/newsletter/subscribe')
+  : '/api/newsletter/subscribe';
+
 
       const res = await fetch(apiUrl, {
         method: 'POST',

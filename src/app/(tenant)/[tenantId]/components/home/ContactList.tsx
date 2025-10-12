@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { useTenantId } from '@/lib/tenant/context';
+import { tenantPath } from '@/lib/tenant/paths';
 
 type Branch = {
   branchId: string;
@@ -57,13 +58,15 @@ export default function ContactList(props: { cfg?: ContactCfg }) {
   const tenantId = useTenantId();
 
   // ✅ Prefijo tenant solo para rutas internas que comienzan con "/"
-  const withTenant = (p?: string) => {
-    if (!p) return undefined;
-    if (!p.startsWith('/')) return p; // no es relativa -> la maneja normWebHref
-    if (!tenantId) return p;
-    const base = `/_t/${tenantId}`;
-    return p.startsWith(`${base}/`) ? p : `${base}${p}`;
-  };
+  const withTenant = (p: string) => {
+  const norm = p.startsWith('/') ? p : `/${p}`;
+  if (!tenantId) return norm;
+
+  // evita doble prefijo si ya viene con '/{tenantId}/...'
+  if (norm === `/${tenantId}` || norm.startsWith(`/${tenantId}/`)) return norm;
+
+  return tenantPath(tenantId, norm);
+};
 
   return (
     <section

@@ -3,6 +3,7 @@
 import Image from 'next/image';
 import { t } from '@/lib/i18n/t';
 import { useTenantId } from '@/lib/tenant/context';
+import { tenantPath } from '@/lib/tenant/paths';
 
 type HeroSlide = {
   imageUrl: string;
@@ -56,9 +57,13 @@ function isAbsoluteUrl(u?: string) {
 }
 function withTenantPrefix(tenantId: string | null, path: string) {
   const norm = path.startsWith('/') ? path : `/${path}`;
-  if (!tenantId) return norm;
-  const base = `/_t/${tenantId}`;
-  return norm.startsWith(`${base}/`) ? norm : `${base}${norm}`;
+  if (!tenantId) return norm; // fallback si aún no hay contexto
+
+  // Evita duplicar prefijo si ya viene como "/{tenantId}/..."
+  if (norm === `/${tenantId}` || norm.startsWith(`/${tenantId}/`)) return norm;
+
+  // Construye la URL correcta según wildcard (prod) o path (local)
+  return tenantPath(tenantId, norm);
 }
 
 export default function Hero({ data, lang }: { data: HeroData; lang: string }) {

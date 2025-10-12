@@ -4,6 +4,8 @@
 import Link from 'next/link';
 import { useMemo } from 'react';
 import { useTenantId } from '@/lib/tenant/context';
+import { tenantPath } from '@/lib/tenant/paths';
+
 
 // Nuevo carrito (opcional si existe)
 let useNewCartHook: any = null;
@@ -83,21 +85,28 @@ export default function CartBadge({ className, href = '/cart-new', showTotal = f
     }, 0);
   }, [items, newCart]);
 
-  // ✅ href tenant-aware:
-  // - '/cart-new'  -> '/_t/{tenantId}/app/cart-new'
-  // - otras rutas relativas -> '/_t/{tenantId}<ruta>'
   const resolvedHref = useMemo(() => {
-    const norm = href.startsWith('/') ? href : `/${href}`;
-    if (!tenantId) return norm;
-    const base = `/_t/${tenantId}`;
-    if (norm.startsWith('/cart-new')) {
-      const cartPath = norm.startsWith('/app/') ? norm : `/app${norm}`;
-      return `${base}${cartPath}`;
-    }
-    if (norm.startsWith(`${base}/`)) return norm;
-    return `${base}${norm}`;
-  }, [href, tenantId]);
+  const norm = href.startsWith('/') ? href : `/${href}`;
 
+  // Si no hay tenantId: asegura que /cart-new viva bajo /app
+  if (!tenantId) {
+    return norm.startsWith('/cart-new') && !norm.startsWith('/app/')
+      ? `/app${norm}`
+      : norm;
+  }
+
+  // Evita doble prefijo si ya viene como "/{tenantId}/..."
+  if (norm === `/${tenantId}` || norm.startsWith(`/${tenantId}/`)) return norm;
+
+  // Para el carrito, fuerza /app/cart-new
+  const pathForTenant =
+    norm.startsWith('/cart-new') && !norm.startsWith('/app/')
+      ? `/app${norm}`
+      : norm;
+
+  // Genera la ruta correcta según wildcard (prod) o path (local)
+  return tenantPath(tenantId, pathForTenant);
+}, [href, tenantId]);
   return (
     <div className={className} {...rest}>
       <Link href={resolvedHref} className="position-relative d-inline-flex align-items-center text-decoration-none">
