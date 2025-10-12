@@ -188,23 +188,18 @@ export function middleware(req: NextRequest) {
 
   if (!alreadyPrefixed) {
     // En wildcard queremos paths limpios: '/', '/app/*', '/admin/*'
-    if (supportsWildcard) {
-      if (pathname === "/") {
-        targetPath = `/${tenantId}/app`;
-      } else if (pathname === "/login") {
-        targetPath = `/${tenantId}/app/login`;
-      } else if (pathname === "/app" || pathname.startsWith("/app/")) {
-        targetPath = `/${tenantId}${pathname}`;
-      } else if (pathname === "/admin" || pathname.startsWith("/admin/")) {
-        targetPath = `/${tenantId}${pathname}`;
-      } else {
-        // Cualquier otra ruta pública del tenant cae bajo app
-        // (si no quieres esto, puedes quitar este branch)
-        targetPath = `/${tenantId}${pathname}`;
-      }
+    if (pathname === "/") {
+      targetPath = `/${tenantId}/app`;
+    } else if (pathname === "/login") {
+      targetPath = `/${tenantId}/app/login`;
+    } else if (pathname === "/app" || pathname.startsWith("/app/")) {
+      targetPath = `/${tenantId}${pathname}`;
+    } else if (pathname === "/admin" || pathname.startsWith("/admin/")) {
+      targetPath = `/${tenantId}${pathname}`;
     } else {
-      // Sin wildcard: ya navegas por /{tenantId}/...
-      // No forzamos nada si el path no está prefijado: lo manejan tus rutas por path.
+      // ✅ NUEVO: rutas cortas del tenant caen bajo /app/*
+      // p.ej. /menu → /{tenantId}/app/menu
+      targetPath = `/${tenantId}/app${pathname}`;
     }
   } else {
     // Si ya viene con /{tenantId}, ajusta alias cortos
@@ -212,6 +207,13 @@ export function middleware(req: NextRequest) {
       targetPath = `/${tenantId}/app`;
     } else if (pathname === `/${tenantId}/login`) {
       targetPath = `/${tenantId}/app/login`;
+    } else if (
+      // ✅ NUEVO: si ya viene /{tenantId}/menu → forzar /{tenantId}/app/menu
+      !pathname.startsWith(`/${tenantId}/app`) &&
+      !pathname.startsWith(`/${tenantId}/admin`)
+    ) {
+      const rest = pathname.slice(tenantId.length + 1); // quita "/{tenantId}"
+      targetPath = `/${tenantId}/app${rest}`;
     }
   }
 
