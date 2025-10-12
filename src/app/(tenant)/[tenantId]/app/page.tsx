@@ -4,12 +4,12 @@ export const revalidate = 300;          // ✅ mantienes ISR como ya lo tenías
 export const dynamic = 'force-dynamic'; // ⬅️ opcional mientras pruebas (desactiva caché)
 
 import type { Metadata } from 'next';
-import HomeClient from '@/components/home/HomeClient';
+import HomeClient from '@/app/(tenant)/[tenantId]/components/home/HomeClient';
 
 // 👇 NUEVO: secciones separadas para controlar el orden
-import AboutUs from '@/components/home/AboutUs';
-import Newsletter from '@/components/home/Newsletter';
-import ContactList from '@/components/home/ContactList';
+import AboutUs from '@/app/(tenant)/[tenantId]/components/home/AboutUs';
+import Newsletter from '@/app/(tenant)/[tenantId]/components/home/Newsletter';
+import ContactList from '@/app/(tenant)/[tenantId]/components/home/ContactList';
 
 // 🔐 Firestore Admin
 import { db } from '@/lib/firebase/admin';

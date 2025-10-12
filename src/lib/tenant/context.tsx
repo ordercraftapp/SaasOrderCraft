@@ -1,33 +1,20 @@
-// src/lib/tenant/context.tsx
-// PhaseC — TenantProvider + hook cliente
-
 'use client';
+import React, { createContext, useContext } from 'react';
+import { useParams } from 'next/navigation';
 
-import React, { createContext, useContext, useMemo } from 'react';
+const TenantCtx = createContext<string | null>(null);
 
-type TenantContextValue = { tenantId: string | null };
-
-const TenantContext = createContext<TenantContextValue | undefined>(undefined);
-
-export function TenantProvider({
-  tenantId,
-  children,
-}: {
-  tenantId: string | null | undefined;
-  children: React.ReactNode;
-}) {
-  const value = useMemo(() => ({ tenantId: tenantId ?? null }), [tenantId]);
-  return <TenantContext.Provider value={value}>{children}</TenantContext.Provider>;
+export function TenantProvider({ children }: { children: React.ReactNode }) {
+  const params = useParams();
+  const tenantId = (params?.tenantId as string) || null;
+  return <TenantCtx.Provider value={tenantId}>{children}</TenantCtx.Provider>;
 }
 
-export function useTenantId(): string | null {
-  const ctx = useContext(TenantContext);
-  if (!ctx) {
-    // Nota: no rompemos el render; devolvemos null y logueamos
-    if (process.env.NODE_ENV !== 'production') {
-      console.warn('[PhaseC] useTenantId() used outside <TenantProvider>. Returning null.');
-    }
-    return null;
+export function useTenantId() {
+  const v = useContext(TenantCtx);
+  if (!v) {
+    // opcional: puedes no lanzar error y retornar null
+    // throw new Error('TenantId not found in context');
   }
-  return ctx.tenantId;
+  return v;
 }

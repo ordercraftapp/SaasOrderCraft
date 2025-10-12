@@ -1,129 +1,138 @@
 // src/app/(site)/page.tsx
 import Link from 'next/link';
-import { cookies } from 'next/headers';
-import { redirect } from 'next/navigation';
 
-import { adminDb } from '@/lib/firebase/admin';
-import { normalizeTenantId, assertValidTenantId } from '@/lib/tenant/validate';
-
-export default function SiteHomePage() {
+export default function PricingHomePage() {
   return (
     <main className="container py-5">
-      <div className="row justify-content-center">
-        <div className="col-12 col-md-8 col-lg-6">
-          <header className="text-center mb-4">
-            <h1 className="h3 fw-bold">Create your restaurant workspace</h1>
-            <p className="text-muted">Start your 14-day trial — no credit card required.</p>
-          </header>
+      {/* Header */}
+      <div className="text-center">
+        <h1 className="display-6 fw-semibold">Choose your plan</h1>
+        <p className="lead text-muted mb-4">
+          Start with a 14-day free trial. No credit card required.
+        </p>
+      </div>
 
-          <TenantSignupForm />
-
-          <p className="mt-3 text-center text-muted small">
-            By continuing you agree to our <Link href="/terms">Terms</Link> and{' '}
-            <Link href="/privacy">Privacy Policy</Link>.
-          </p>
+      {/* Plans */}
+      <div className="row row-cols-1 row-cols-md-3 g-4 mt-1">
+        {/* Starter */}
+        <div className="col">
+          <div className="card h-100 border-0 shadow-sm">
+            <div className="card-header bg-transparent border-0 pt-4 pb-0">
+              <h2 className="h5 text-center mb-0">Starter</h2>
+              <p className="text-center text-muted small mb-0">Core tools to kick off</p>
+            </div>
+            <div className="card-body">
+              <div className="text-center mb-3">
+                <span className="h2 fw-bold">$0</span>
+                <span className="text-muted"> / trial</span>
+              </div>
+              <ul className="list-unstyled small">
+                <li className="mb-2">✅ Kitchen</li>
+                <li className="mb-2">✅ Cashier</li>
+                <li className="mb-2">✅ Menu</li>
+                <li className="mb-2">✅ Roles</li>
+                <li className="mb-2">✅ Taxes</li>
+                <li className="mb-2">✅ Settings (language/currency)</li>
+                <li className="mb-2">✅ Home configure</li>
+                <li className="mb-2">✅ Orders</li>
+                <li className="mb-2">✅ Reports: Sales</li>
+                <li className="mb-2">✅ Reports: Taxes</li>
+                <li className="mb-2">✅ Reports: Product</li>
+              </ul>
+            </div>
+            <div className="card-footer bg-transparent border-0 pb-4">
+              <Link
+                href="/signup?plan=starter"
+                className="btn btn-outline-primary w-100"
+              >
+                Choose Starter
+              </Link>
+            </div>
+          </div>
         </div>
+
+        {/* Pro */}
+        <div className="col">
+          <div className="card h-100 border-primary shadow-sm">
+            <div className="card-header bg-primary text-white py-3">
+              <div className="d-flex justify-content-between align-items-center">
+                <h2 className="h5 mb-0">Pro</h2>
+                <span className="badge bg-light text-primary">Popular</span>
+              </div>
+              <p className="small mb-0 opacity-75">Growing restaurants</p>
+            </div>
+            <div className="card-body">
+              <div className="text-center mb-3">
+                <span className="h2 fw-bold">$—</span>
+                <span className="text-muted"> / month</span>
+              </div>
+              <ul className="list-unstyled small">
+                <li className="mb-2">✅ Everything in Starter</li>
+                <li className="mb-2">✅ Waiter / Tables</li>
+                <li className="mb-2">✅ Edit orders</li>
+                <li className="mb-2">✅ Promotions</li>
+                <li className="mb-2">✅ Reports: Clients</li>
+                <li className="mb-2">✅ Reports: Promotions</li>
+                <li className="mb-2">✅ Reports: Time</li>
+              </ul>
+            </div>
+            <div className="card-footer bg-transparent border-0 pb-4">
+              <Link
+                href="/signup?plan=pro"
+                className="btn btn-primary w-100"
+              >
+                Choose Pro
+              </Link>
+            </div>
+          </div>
+        </div>
+
+        {/* Full */}
+        <div className="col">
+          <div className="card h-100 border-0 shadow-sm">
+            <div className="card-header bg-transparent border-0 pt-4 pb-0">
+              <h2 className="h5 text-center mb-0">Full</h2>
+              <p className="text-center text-muted small mb-0">All-in for scale</p>
+            </div>
+            <div className="card-body">
+              <div className="text-center mb-3">
+                <span className="h2 fw-bold">$—</span>
+                <span className="text-muted"> / month</span>
+              </div>
+              <ul className="list-unstyled small">
+                <li className="mb-2">✅ Everything in Pro</li>
+                <li className="mb-2">✅ Delivery</li>
+                <li className="mb-2">✅ Delivery options</li>
+                <li className="mb-2">✅ Ops</li>
+                <li className="mb-2">✅ Marketing</li>
+                <li className="mb-2">✅ AI Studio</li>
+                <li className="mb-2">✅ Reports: Delivery</li>
+                <li className="mb-2">✅ Reports: Cashier</li>
+              </ul>
+            </div>
+            <div className="card-footer bg-transparent border-0 pb-4">
+              <Link
+                href="/signup?plan=full"
+                className="btn btn-outline-primary w-100"
+              >
+                Choose Full
+              </Link>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Footnotes */}
+      <div className="text-center mt-5">
+        <p className="text-muted small mb-1">
+          14-day free trial. Upgrade, downgrade, or cancel anytime.
+        </p>
+        <p className="text-muted small">
+          By continuing, you agree to our{' '}
+          <Link href="/terms">Terms</Link> and{' '}
+          <Link href="/privacy">Privacy Policy</Link>.
+        </p>
       </div>
     </main>
-  );
-}
-
-/** ===== Server Action: crea el tenant y redirige ===== */
-async function createTenantAction(formData: FormData) {
-  'use server';
-
-  const email = String(formData.get('email') || '').trim();
-  const wantSub = String(formData.get('subdomain') || '').trim();
-
-  if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
-    throw new Error('Please enter a valid email.');
-  }
-
-  const norm = normalizeTenantId(wantSub);
-  assertValidTenantId(norm);
-
-  // Disponibilidad
-  const ref = adminDb.doc(`tenants/${norm}`);
-  const snap = await ref.get();
-  if (snap.exists) throw new Error('This subdomain is already taken.');
-
-  // Crear tenant
-  const now = new Date();
-  await ref.set({
-    tenantId: norm,
-    ownerEmail: email,
-    planId: 'starter',
-    features: {
-      marketing: false,
-      'advanced-reports': false,
-      'delivery-module': true,
-      coupons: false,
-    },
-    status: 'active',
-    createdAt: now,
-    updatedAt: now,
-    customDomain: null,
-  });
-
-  // Cookie para que el app lo pueda leer también
-  const cookieStore = await cookies();
-  cookieStore.set('tenantId', norm, { path: '/', httpOnly: false });
-
-  // Redirige a subdominio en prod; a path en local si no hay wildcard
-  const baseDomain = (process.env.NEXT_PUBLIC_BASE_DOMAIN || 'datacraftcoders.cloud').toLowerCase();
-  const supportsWildcard =
-    process.env.NEXT_PUBLIC_USE_WILDCARD_SUBDOMAINS?.toLowerCase() !== 'false';
-
-  const target = supportsWildcard
-    ? `https://${norm}.${baseDomain}/app`
-    : `/${norm}/app`;
-
-  redirect(target);
-}
-
-/** ===== Form (usa la server action) ===== */
-function TenantSignupForm() {
-  return (
-    <form action={createTenantAction} className="card shadow-sm border-0">
-      <div className="card-body p-4">
-        <div className="mb-3">
-          <label htmlFor="email" className="form-label">Work email</label>
-          <input
-            id="email"
-            name="email"
-            type="email"
-            required
-            placeholder="you@company.com"
-            className="form-control"
-          />
-        </div>
-
-        <div className="mb-2">
-          <label htmlFor="subdomain" className="form-label">Choose a subdomain</label>
-          <div className="input-group">
-            <input
-              id="subdomain"
-              name="subdomain"
-              type="text"
-              required
-              minLength={3}
-              maxLength={63}
-              // patrón compatible con el engine 'v' (guion escapado)
-              pattern="^[a-z0-9](?:[a-z0-9\-]*[a-z0-9])$"
-              placeholder="my-restaurant"
-              className="form-control"
-            />
-            <span className="input-group-text">.datacraftcoders.cloud</span>
-          </div>
-          <div className="form-text">
-            Lowercase letters, numbers, and hyphens. No leading/trailing hyphen.
-          </div>
-        </div>
-
-        <button type="submit" className="btn btn-primary w-100 mt-3">
-          Create my workspace
-        </button>
-      </div>
-    </form>
   );
 }

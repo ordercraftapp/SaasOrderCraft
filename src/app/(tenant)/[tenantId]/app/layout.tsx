@@ -1,22 +1,22 @@
-// src/app/(tenant)/[tenantId]/app/layout.tsx
 import 'bootstrap/dist/css/bootstrap.min.css';
-import BootstrapClient from '@/components/BootstrapClient';
-import { TenantProvider } from '@/lib/tenant/context'; // PhaseC ✅
+import BootstrapClient from '@/app/(tenant)/[tenantId]/components/BootstrapClient';
+// ⬇️ antes: import { TenantProvider } from '@/lib/tenant/context';
+import { TenantProvider } from '@/lib/tenant/context';
 
 export default function TenantAppLayout({
   children,
   params,
 }: {
   children: React.ReactNode;
-  params: { tenantId?: string };
+  params: { tenantId: string };
 }) {
-  const tenantId = params?.tenantId ?? null; // PhaseC ✅
+  const tenantId = params.tenantId; // ya es string
 
   return (
     <html lang="es">
       <body>
-        <BootstrapClient /> {/* JS de Bootstrap para dropdowns/modals */}
-        <TenantProvider tenantId={tenantId}>
+        <BootstrapClient />
+        <TenantProvider>
           {children}
         </TenantProvider>
       </body>

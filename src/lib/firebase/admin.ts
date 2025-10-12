@@ -90,7 +90,6 @@ function getAdminCredential(): admin.credential.Credential {
   }
 
   // 3) ADC: en Vercel normalmente NO existe ADC → mejor ser explícitos
-  // (Si prefieres permitirlo localmente, puedes devolver applicationDefault() si detectas proceso local)
   const onVercel = Boolean(process.env.VERCEL);
   if (!onVercel) {
     // Local: intentar ADC
@@ -165,4 +164,14 @@ export function getAdminAuth() {
 
 export function getAdminDB() {
   return db;
+}
+
+/** ========= Helpers multi-tenant ========= */
+// tenancyUpdate: colecciones bajo tenants/{tenantId}/<subcol>
+export function tColAdmin(subcol: string, tenantId: string) {           // tenancyUpdate (nuevo)
+  return db.collection("tenants").doc(tenantId).collection(subcol);
+}
+
+export function tDocAdmin(subcol: string, tenantId: string, id: string) { // tenancyUpdate (nuevo)
+  return tColAdmin(subcol, tenantId).doc(id);
 }
