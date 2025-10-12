@@ -1,10 +1,11 @@
-// src/app/(site)/api/tenant-order/route.ts
 export const runtime = 'nodejs';
 
 import { NextRequest, NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase/admin';
 import { Timestamp } from 'firebase-admin/firestore';
 import { normalizeTenantId, assertValidTenantId } from '@/lib/tenant/validate';
+import { getAuth } from 'firebase-admin/auth';
+import { sendTransactionalEmail } from '@/lib/email/brevoTx';
 
 type PlanId = 'starter' | 'pro' | 'full';
 
@@ -13,6 +14,7 @@ type CreateOrderBody = {
   companyName: string;
   adminName: string;
   adminEmail: string;
+  adminPassword: string; // ← nuevo
   phone?: string;
   address: {
     line1: string;
@@ -32,8 +34,81 @@ function json(d: unknown, s = 200) {
 const BLACKLIST = new Set(['www', 'app', 'api', 'admin', 'mail', 'root', 'support', 'status']);
 const HOLD_MINUTES = 15;
 
+function buildAdminUrl(tenantId: string) {
+  const baseDomain = (process.env.NEXT_PUBLIC_BASE_DOMAIN || 'datacraftcoders.cloud').toLowerCase();
+  const supportsWildcard = process.env.NEXT_PUBLIC_USE_WILDCARD_SUBDOMAINS?.toLowerCase() !== 'false';
+  return supportsWildcard
+    ? `https://${tenantId}.${baseDomain}/admin`
+    : `/${tenantId}/admin`;
+}
+
+function welcomeHtml(tenantId: string, adminName: string) {
+  const adminUrl = buildAdminUrl(tenantId);
+  const safeName = (adminName || '').trim();
+  return `
+  <div style="display:none;max-height:0;overflow:hidden;font-size:1px;line-height:1px;color:#fff;opacity:0;">
+    Your workspace is almost ready!
+  </div>
+  <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="background:#f6f8fb;padding:24px 0;">
+    <tr>
+      <td align="center">
+        <table role="presentation" cellpadding="0" cellspacing="0" width="600" style="background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 2px 10px rgba(17,24,39,.06);">
+          <tr>
+            <td style="background:#111827;color:#ffffff;padding:16px 24px;font-family:Arial,Helvetica,sans-serif;font-size:16px;font-weight:700;letter-spacing:.2px;">
+              OrderCraft
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:28px 24px 8px 24px;font-family:Arial,Helvetica,sans-serif;">
+              <h1 style="margin:0 0 8px 0;font-size:22px;line-height:1.35;color:#111827;">
+                ${safeName ? `Welcome, ${safeName}!` : 'Welcome!'} 🎉
+              </h1>
+              <p style="margin:0 0 10px 0;font-size:15px;line-height:1.6;color:#374151;">
+                Your restaurant workspace has been created. You can access your Admin panel here:
+              </p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:8px 24px 18px 24px;">
+              <table role="presentation" cellpadding="0" cellspacing="0">
+                <tr>
+                  <td align="center" style="border-radius:10px;background:#0d6efd;">
+                    <a href="${adminUrl}" target="_blank" rel="noopener noreferrer"
+                      style="display:inline-block;padding:12px 18px;color:#ffffff;text-decoration:none;font-family:Arial,Helvetica,sans-serif;font-size:15px;font-weight:700;">
+                      Go to Admin
+                    </a>
+                  </td>
+                </tr>
+              </table>
+              <p style="margin:10px 0 0 0;font-size:12px;color:#6b7280;font-family:Arial,Helvetica,sans-serif;">
+                Or paste this link into your browser: <a href="${adminUrl}" style="color:#2563eb;text-decoration:underline;">${adminUrl.replace(/^https?:\/\//, "")}</a>
+              </p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:16px 24px 24px 24px;font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#6b7280;">
+              <p style="margin:0;">If you have any questions, just reply to this email — we’re happy to help.</p>
+              <p style="margin:0;color:#9ca3af;">© ${new Date().getFullYear()} OrderCraft</p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>`;
+}
+
+function welcomeText(tenantId: string) {
+  const adminUrl = buildAdminUrl(tenantId);
+  return `Welcome!
+
+Your restaurant workspace has been created.
+Open your Admin panel: ${adminUrl}
+
+If you have any questions, just reply to this email.`;
+}
+
 /** =========================
- *  POST: crea tenant draft + tenantOrder (idempotente)
+ *  POST: crea tenant draft + Auth owner + tenantOrder (idempotente)
  *  ========================= */
 export async function POST(req: NextRequest) {
   try {
@@ -43,9 +118,14 @@ export async function POST(req: NextRequest) {
     const plan = (body?.plan || 'starter') as PlanId;
     if (!['starter', 'pro', 'full'].includes(plan)) return json({ error: 'Invalid plan.' }, 400);
 
-    const adminEmail = String(body?.adminEmail || '').trim();
+    const adminEmail = String(body?.adminEmail || '').trim().toLowerCase();
     if (!adminEmail || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(adminEmail)) {
       return json({ error: 'Please provide a valid email.' }, 400);
+    }
+
+    const adminPassword = String(body?.adminPassword || '');
+    if (adminPassword.length < 8) {
+      return json({ error: 'Password must be at least 8 characters.' }, 400);
     }
 
     const adminName = String(body?.adminName || '').trim();
@@ -68,7 +148,6 @@ export async function POST(req: NextRequest) {
     const ordersCol = adminDb.collection(`tenants/${desired}/tenantOrders`);
 
     // -------- Idempotencia previa a escribir --------
-    // Si el tenant YA existe y es draft del site, devuelve la orden 'created' más reciente
     const existingTenantSnap = await tRef.get();
     if (existingTenantSnap.exists) {
       const t = existingTenantSnap.data() || {};
@@ -86,24 +165,49 @@ export async function POST(req: NextRequest) {
           return res;
         }
       }
-
-      // Si ya está activo o no es el flujo de site draft → subdominio tomado
       return json({ error: 'This subdomain is already taken.' }, 409);
     }
 
-    // -------- Transacción: revalidar/renovar reserva + crear tenant draft + order --------
+    // -------- Crear/obtener usuario Auth (antes de la transacción) --------
+    const auth = getAuth();
+    let ownerUid: string;
+    try {
+      // Intentar crear. Si ya existe, capturamos y usamos su uid (no tocamos password).
+      const created = await auth.createUser({
+        email: adminEmail,
+        emailVerified: false,
+        password: adminPassword,
+        displayName: adminName,
+        disabled: false,
+      });
+      ownerUid = created.uid;
+    } catch (e: any) {
+      // Si ya existe, lo reutilizamos.
+      if (e?.code === 'auth/email-already-exists') {
+        const existing = await auth.getUserByEmail(adminEmail);
+        ownerUid = existing.uid;
+      } else {
+        throw e;
+      }
+    }
+
+    // -------- Transacción: revalidar reserva + crear tenant draft + order --------
     const result = await adminDb.runTransaction(async (trx) => {
       const now = Timestamp.now();
 
-      // Verificación extra por carrera: ¿alguien creó el tenant mientras tanto?
+      // Carrera: ¿alguien creó el tenant?
       const tSnap = await trx.get(tRef);
       if (tSnap.exists) throw new Error('This subdomain is already taken.');
 
-      // Reserva: si existe, **renovar**; si no existe, crear por 15 min
+      // Reserva: si vigente → bloquear; si expirada/ausente → (re)crear por 15 min
       const rSnap = await trx.get(rRef);
       const newHold = Timestamp.fromMillis(now.toMillis() + HOLD_MINUTES * 60 * 1000);
 
       if (rSnap.exists) {
+        const holdUntil = rSnap.get('holdUntil') as Timestamp | null;
+        if (holdUntil && holdUntil.toMillis() > now.toMillis()) {
+          throw new Error('This subdomain is being reserved. Try again later.');
+        }
         trx.set(
           rRef,
           { name: desired, holdUntil: newHold, updatedAt: now, createdAt: rSnap.get('createdAt') || now },
@@ -113,13 +217,13 @@ export async function POST(req: NextRequest) {
         trx.set(rRef, { name: desired, holdUntil: newHold, createdAt: now });
       }
 
-      // Crear tenant (draft)
+      // Crear tenant (draft) — ahora con owner.uid
       trx.set(tRef, {
         tenantId: desired,
         plan,
         status: 'draft',
         features: [], // se aplicarán en /provision-tenant
-        owner: { name: adminName, email: adminEmail },
+        owner: { name: adminName, email: adminEmail, uid: ownerUid },
         company: {
           name: companyName,
           address: {
@@ -161,16 +265,32 @@ export async function POST(req: NextRequest) {
         updatedAt: now,
       });
 
-      return { tenantId: desired, orderId: orderRef.id };
+      return { tenantId: desired, orderId: orderRef.id, ownerUid };
     });
 
-    // -------- (Opcional) Cookie tenantId para UI del site --------
-    const res = json(result, 200);
+    // -------- Enviar email de bienvenida/confirmación (Brevo) --------
+    try {
+      const html = welcomeHtml(result.tenantId, body.adminName);
+      const text = welcomeText(result.tenantId);
+      await sendTransactionalEmail({
+        toEmail: adminEmail,
+        toName: body.adminName || '',
+        subject: `Your workspace "${result.tenantId}" is ready`,
+        html,
+        text,
+      });
+    } catch (e) {
+      // No rompemos el flujo si el correo falla; puedes loguearlo a _admin_audit
+      console.error('[tenant-order] email send failed:', e);
+    }
+
+    // -------- Cookie tenantId para UI del site --------
+    const res = json({ tenantId: result.tenantId, orderId: result.orderId }, 200);
     res.cookies.set('tenantId', result.tenantId, { path: '/', httpOnly: false });
     return res;
   } catch (err: any) {
     const msg = err?.message || 'Unexpected error.';
-    const status = /taken|exists/i.test(msg) ? 409 : 500;
+    const status = /taken|exists|reserved|being reserved/i.test(msg) ? 409 : 500;
     return json({ error: msg }, status);
   }
 }

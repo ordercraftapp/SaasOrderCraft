@@ -32,6 +32,10 @@ export default function SignupForm({ defaultPlan }: { defaultPlan: PlanId }) {
   const [companyName, setCompanyName] = useState('');
   const [phone, setPhone] = useState('');
 
+  // 🔐 Contraseña admin del tenant
+  const [password, setPassword] = useState('');
+  const [password2, setPassword2] = useState('');
+
   const [subdomain, setSubdomain] = useState('');
   const [checking, setChecking] = useState(false);
   const [available, setAvailable] = useState<boolean | null>(null);
@@ -70,7 +74,6 @@ export default function SignupForm({ defaultPlan }: { defaultPlan: PlanId }) {
         return;
       }
 
-      // OJO: el segmento de grupo (site) no va en la URL pública.
       const resp = await fetch('/api/subdomain-check', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -93,12 +96,15 @@ export default function SignupForm({ defaultPlan }: { defaultPlan: PlanId }) {
     }
   }
 
+  const passwordValid = password.length >= 8;
+  const passwordsMatch = password && password2 && password === password2;
+
   const canSubmit = useMemo(() => {
     const emailOk = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.trim());
     const subOk = Boolean(subdomain && subdomain.length >= 3 && available === true);
     const reqAddress = Boolean(line1 && city && country);
-    return emailOk && ownerName && companyName && subOk && reqAddress && !submitting;
-  }, [email, ownerName, companyName, subdomain, available, line1, city, country, submitting]);
+    return emailOk && ownerName && companyName && subOk && reqAddress && passwordValid && passwordsMatch && !submitting;
+  }, [email, ownerName, companyName, subdomain, available, line1, city, country, passwordValid, passwordsMatch, submitting]);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -114,6 +120,7 @@ export default function SignupForm({ defaultPlan }: { defaultPlan: PlanId }) {
         companyName,
         adminName: ownerName,
         adminEmail: email,
+        adminPassword: password, // ← 🔐 nuevo
         phone: phone || undefined,
         address: {
           line1,
@@ -126,7 +133,6 @@ export default function SignupForm({ defaultPlan }: { defaultPlan: PlanId }) {
         desiredSubdomain,
       };
 
-      // OJO: el segmento de grupo (site) no va en la URL pública.
       const resp = await fetch('/api/tenant-order', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -216,6 +222,38 @@ export default function SignupForm({ defaultPlan }: { defaultPlan: PlanId }) {
               </div>
             </div>
 
+            {/* 🔐 Password */}
+            <div className="row">
+              <div className="col-12 col-md-6 mb-3">
+                <label className="form-label">Admin password</label>
+                <input
+                  type="password"
+                  className={`form-control ${password ? (passwordValid ? 'is-valid' : 'is-invalid') : ''}`}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                  placeholder="At least 8 characters"
+                  autoComplete="new-password"
+                />
+                <div className="form-text">Min. 8 characters.</div>
+              </div>
+              <div className="col-12 col-md-6 mb-3">
+                <label className="form-label">Confirm password</label>
+                <input
+                  type="password"
+                  className={`form-control ${password2 ? (passwordsMatch ? 'is-valid' : 'is-invalid') : ''}`}
+                  value={password2}
+                  onChange={(e) => setPassword2(e.target.value)}
+                  required
+                  placeholder="Repeat your password"
+                  autoComplete="new-password"
+                />
+                {!passwordsMatch && password2 ? (
+                  <div className="invalid-feedback d-block">Passwords do not match.</div>
+                ) : null}
+              </div>
+            </div>
+
             {/* Subdomain */}
             <div className="mb-2">
               <label className="form-label">Choose a subdomain</label>
@@ -227,9 +265,7 @@ export default function SignupForm({ defaultPlan }: { defaultPlan: PlanId }) {
                   maxLength={63}
                   value={subdomain}
                   onChange={(e) => onSubdomainChange(e.target.value)}
-                  className={`form-control ${
-                    available === true ? 'is-valid' : available === false ? 'is-invalid' : ''
-                  }`}
+                  className={`form-control ${available === true ? 'is-valid' : available === false ? 'is-invalid' : ''}`}
                   placeholder="my-restaurant"
                   pattern="^[a-z0-9](?:[a-z0-9\\-]*[a-z0-9])$"
                   aria-describedby="domainHelp"
@@ -323,11 +359,7 @@ export default function SignupForm({ defaultPlan }: { defaultPlan: PlanId }) {
             {errorMsg ? <div className="alert alert-danger mt-2">{errorMsg}</div> : null}
 
             {/* Submit */}
-            <button
-              type="submit"
-              className="btn btn-primary w-100 mt-2"
-              disabled={!canSubmit}
-            >
+            <button type="submit" className="btn btn-primary w-100 mt-2" disabled={!canSubmit}>
               {submitting ? 'Creating…' : 'Continue'}
             </button>
 

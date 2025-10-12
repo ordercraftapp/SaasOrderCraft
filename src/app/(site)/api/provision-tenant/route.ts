@@ -72,7 +72,7 @@ export async function POST(req: NextRequest) {
       } catch {
         // Crear con contraseña temporal básica (reemplaza por una generada/segura si lo activas)
         const tempPassword = Math.random().toString(36).slice(2, 10) + 'A1!'; // ej. "k3j2l9p9A1!"
-        const created = await auth.createUser({
+        const created = await getAuth().createUser({
           email: ownerEmail,
           emailVerified: false,
           password: tempPassword,
@@ -80,7 +80,6 @@ export async function POST(req: NextRequest) {
           disabled: false,
         });
         ownerUid = created.uid;
-
         // (A futuro) Enviar correo "set your password" / "welcome" aquí.
       }
     }
@@ -113,6 +112,22 @@ export async function POST(req: NextRequest) {
 
       // Actualizar order
       trx.update(oRef, { orderStatus: 'provisioned', updatedAt: now });
+
+      // 🔐 NUEVO: seed de membresía (admin) para el owner en este tenant
+      const effectiveOwnerUid: string | undefined = ownerUid || curT?.owner?.uid;
+      if (effectiveOwnerUid) {
+        const mRef = adminDb.doc(`tenants/${tenantId}/members/${effectiveOwnerUid}`);
+        trx.set(
+          mRef,
+          {
+            uid: effectiveOwnerUid,
+            role: 'admin',
+            createdAt: now,
+            updatedAt: now,
+          },
+          { merge: true }
+        );
+      }
 
       // Borrar reserva
       trx.delete(rRef);
