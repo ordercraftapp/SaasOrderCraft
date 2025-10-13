@@ -1,4 +1,3 @@
-// src/app/(tenant)/[tenantId]/app/account/page.tsx
 "use client";
 
 import { FormEvent, useEffect, useRef, useState } from "react";
@@ -39,14 +38,13 @@ export default function AccountsRegisterPage() {
   const tt = (key: string, fallback: string, vars?: Record<string, unknown>) => {
     const s = translate(lang, key, vars);
     return s === key ? fallback : s;
-    };
+  };
 
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [pass1, setPass1] = useState("");
   const [pass2, setPass2] = useState("");
 
-  // Required acknowledgement + optional marketing opt-in
   const [ackMarketing, setAckMarketing] = useState(false);
   const [marketingOptIn, setMarketingOptIn] = useState(false);
 
@@ -115,32 +113,21 @@ export default function AccountsRegisterPage() {
       await updateProfile(cred.user, { displayName: fullName.trim() });
       const idToken = await cred.user.getIdToken(true);
 
-      // Inicializa customers/{uid} (server tenant-aware)
-      try {
-        await fetch(`${apiBase}/api/customers/me`, {
-          method: "GET",
-          headers: { Authorization: `Bearer ${idToken}` },
-          cache: "no-store",
-        });
-      } catch {}
+      // 🧩 Bootstrap/Update de perfil EN ESTE TENANT vía PUT (idempotente)
+      await fetch(`${apiBase}/api/customers/me`, {
+        method: "PUT",
+        headers: {
+          Authorization: `Bearer ${idToken}`,
+          "content-type": "application/json",
+          "x-turnstile-token": token,
+        },
+        body: JSON.stringify({
+          displayName: fullName.trim(),
+          marketingOptIn,
+        }),
+      });
 
-      // Guarda perfil y marketingOptIn (server validará Turnstile si habilitas)
-      try {
-        await fetch(`${apiBase}/api/customers/me`, {
-          method: "PUT",
-          headers: {
-            Authorization: `Bearer ${idToken}`,
-            "content-type": "application/json",
-            "x-turnstile-token": token,
-          },
-          body: JSON.stringify({
-            displayName: fullName.trim(),
-            marketingOptIn,
-          }),
-        });
-      } catch {}
-
-      // Encola correo de bienvenida (idempotente)
+      // ✉️ Welcome (idempotente) — solo si ya existe membresía (la acabamos de crear)
       try {
         await fetch(`${apiBase}/api/tx/welcome`, {
           method: "POST",

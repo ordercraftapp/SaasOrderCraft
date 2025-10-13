@@ -176,7 +176,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await hydrate(u, true);
   }, [hydrate]);
 
-  // ⬇️⬇️⬇️ AGREGADO: Welcome email para Google Auth (idempotente en el server)
+  // ✅ Welcome email: solo si YA existe membresía en este tenant (GET 200).
   useEffect(() => {
     if (loading) return;
     if (!user || !idToken) return;
@@ -191,25 +191,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       try {
         const tenantId = getTenantIdFromLocation();
 
-        // Asegura que el doc customers/{uid} exista y tenga email/displayName
-        // fetch("/api/customers/me", { headers: { Authorization: `Bearer ${idToken}` } })
-        await fetch("/api/customers/me", {
+        // Verifica membresía en este tenant sin bootstrap (GET debe devolver 200 si existe; 404 si no)
+        const me = await fetch("/api/customers/me", {
           method: "GET",
           headers: {
             Authorization: `Bearer ${idToken}`,
-            ...(tenantId ? { "x-tenant": tenantId } : {}), // ✅ tenant-aware
+            ...(tenantId ? { "x-tenant-id": tenantId } : {}), // ⬅️ header unificado
           },
           cache: "no-store",
         });
 
-        // Dispara el welcome (en server es idempotente; solo envía una vez por usuario)
-        // fetch("/api/tx/welcome", { method: "POST", headers: { Authorization: `Bearer ${idToken}`, "content-type": "application/json" } })
+        if (me.status !== 200) return; // No hay membresía → no envíes welcome
+
+        // Dispara el welcome (idempotente)
         await fetch("/api/tx/welcome", {
           method: "POST",
           headers: {
             Authorization: `Bearer ${idToken}`,
             "content-type": "application/json",
-            ...(tenantId ? { "x-tenant": tenantId } : {}), // ✅ tenant-aware
+            ...(tenantId ? { "x-tenant-id": tenantId } : {}), // ⬅️ header unificado
           },
         });
       } catch {
@@ -217,7 +217,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     })();
   }, [user, idToken, loading]);
-  // ⬆️⬆️⬆️ FIN AGREGADO
 
   const value = useMemo<Ctx>(
     () => ({ user, loading, idToken, claims, flags, refreshRoles }),

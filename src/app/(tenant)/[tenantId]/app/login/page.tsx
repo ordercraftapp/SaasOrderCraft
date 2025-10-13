@@ -1,4 +1,3 @@
-// src/app/(tenant)/[tenantId]/app/login/page.tsx
 'use client';
 
 import { Suspense } from 'react';
@@ -26,17 +25,14 @@ export default function LoginPage() {
 }
 
 // --------- componente real ----------
-import { FormEvent, useEffect, useRef, useState, useMemo } from 'react';
+import { FormEvent, useEffect, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { signInWithEmailAndPassword, getIdTokenResult } from 'firebase/auth';
 import { auth } from '@/lib/firebase/client';
 import { useAuth } from '@/app/providers';
 import { pickRouteByRole } from '@/lib/role-routes';
-
-// Phase C: tenant en cliente
 import { useTenantId } from '@/lib/tenant/context';
 
-// Helpers
 type AppRole = 'admin' | 'kitchen' | 'cashier' | 'waiter' | 'delivery' | 'customer';
 
 function computeAppRole(claims: Record<string, any> | null | undefined): AppRole {
@@ -60,15 +56,10 @@ function setCookie(name: string, value: string, path = '/'): void {
   document.cookie = base + extra;
 }
 
-/** Prefija una ruta relativa con /{tenantId} si aún no lo tiene. */
 function withTenantPrefix(tenantId: string, pathLike: string): string {
-  // Ignora URLs absolutas por seguridad/consistencia
   if (/^https?:\/\//i.test(pathLike)) return `/${tenantId}/app`;
-  // Normaliza
   const p = pathLike.startsWith('/') ? pathLike : `/${pathLike}`;
-  // Si ya viene con /{tenantId}/..., no tocar
   if (p.startsWith(`/${tenantId}/`)) return p;
-  // Prefijo estándar al árbol del app
   return `/${tenantId}${p}`;
 }
 
@@ -80,25 +71,17 @@ async function syncRoleCookiesAndRedirect(
   const u = auth.currentUser;
   if (!u) return;
 
-  // Lee claims del ID token actual
   const tok = await getIdTokenResult(u, true);
   const role = computeAppRole(tok.claims);
 
-  // Cookies que usa tu middleware, scopiadas al tenant
   const cookiePath = `/${tenantId}`;
   setCookie('session', '1', cookiePath);
   setCookie('appRole', role, cookiePath);
 
-  // Destino base pedido
   const requestedRaw = params.get('next') || '/app';
-
-  // Ruta por rol (tu helper suele devolver algo tipo "/app/admin" o "/app")
   const rolePath = pickRouteByRole({}, tok.claims as any) || '/app';
-
-  // Si es "customer", respeta ?next=; si no, manda a su dashboard por rol
   const chosen = role === 'customer' ? requestedRaw : rolePath;
 
-  // Prefija con /{tenantId}
   const dest = withTenantPrefix(tenantId, chosen);
   router.replace(dest);
 }
@@ -107,7 +90,7 @@ function LoginInner() {
   const router = useRouter();
   const params = useSearchParams();
   const { user, loading } = useAuth();
-  const tenantId = useTenantId(); // ✅ tenant del contexto
+  const tenantId = useTenantId();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -115,29 +98,30 @@ function LoginInner() {
   const [err, setErr] = useState<string | null>(null);
   const inFlightRef = useRef(false);
 
-  // URL para Google con ?next= apuntando al árbol del tenant
-  const defaultNext = useMemo(() => (tenantId ? `/${tenantId}/app` : '/app'), [tenantId]);
-  const nextParam = encodeURIComponent(params.get('next') || defaultNext);
-  // ✅ Versión namespaced por tenant
-  const hrefGoogle = tenantId
-    ? `/${tenantId}/app/auth/google/start?next=${nextParam}`
-    : `/auth/google/start?next=${nextParam}`;
-
-  // Si ya hay sesión al entrar a /login, sincroniza cookies+rol y redirige
+  // Si ya hay sesión, intenta redirigir (pero solo si tiene membresía)
   useEffect(() => {
     (async () => {
-      if (!tenantId) return; // espera el contexto
+      if (!tenantId) return;
       if (!loading && user) {
         try {
-          await syncRoleCookiesAndRedirect(tenantId, params, router);
+          const idToken = await user.getIdToken(true);
+          // Verifica membresía en este tenant
+          const me = await fetch(`/${tenantId}/app/api/customers/me`, {
+            method: 'GET',
+            headers: { Authorization: `Bearer ${idToken}` },
+            cache: 'no-store',
+          });
+          if (me.status === 200) {
+            await syncRoleCookiesAndRedirect(tenantId, params, router);
+            return;
+          }
+          // Si 404, no redirige: cuenta no pertenece a este tenant
         } catch {
-          // fallback mínimo si algo falla leyendo claims
-          const requested = params.get('next') || defaultNext;
-          router.replace(withTenantPrefix(tenantId, requested));
+          // fallback: se queda en login
         }
       }
     })();
-  }, [loading, user, params, router, tenantId, defaultNext]);
+  }, [loading, user, params, router, tenantId]);
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -147,11 +131,25 @@ function LoginInner() {
     inFlightRef.current = true;
     try {
       await signInWithEmailAndPassword(auth, email.trim(), password);
-      if (tenantId) {
-        await syncRoleCookiesAndRedirect(tenantId, params, router);
-      } else {
-        // ultra fallback (no debería pasar)
+      if (!tenantId) {
         router.replace('/app');
+        return;
+      }
+      // 🔍 Validar membresía del tenant ANTES de redirigir
+      const u = auth.currentUser;
+      if (!u) throw new Error('No active session');
+      const idToken = await u.getIdToken(true);
+      const me = await fetch(`/${tenantId}/app/api/customers/me`, {
+        method: 'GET',
+        headers: { Authorization: `Bearer ${idToken}` },
+        cache: 'no-store',
+      });
+      if (me.status === 200) {
+        await syncRoleCookiesAndRedirect(tenantId, params, router);
+      } else if (me.status === 404) {
+        setErr('Your account does not belong to this restaurant.');
+      } else {
+        setErr('Could not validate your membership. Please try again.');
       }
     } catch (e: any) {
       setErr(e?.message || 'Could not log in.');
@@ -197,12 +195,8 @@ function LoginInner() {
         {err && <p className="text-danger mt-3 mb-0">{err}</p>}
       </form>
 
-      <div className="text-center my-3">— o —</div>
-
-      {/* Google: solo clientes */}
-      <a href={hrefGoogle} className="btn btn-outline-secondary w-100">
-        Login with Google
-      </a>
+      {/* ✅ Google eliminado */}
+      <div className="text-center my-3" style={{ opacity: 0.4 }}>—</div>
 
       <p className="text-center mt-3 mb-0">
         Don't have an account?{' '}

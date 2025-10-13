@@ -1,17 +1,29 @@
-// src/app/(tenant)/[tenantId]/app/api/auth/refresh-role/route.ts
 export const runtime = 'nodejs';
 
 import { NextRequest, NextResponse } from 'next/server';
 import { adminAuth } from '@/lib/firebase/admin';
 import { resolveTenantFromRequest, requireTenantId } from '@/lib/tenant/server';
 
-const OP_ROLES = new Set(['admin', 'kitchen', 'waiter', 'delivery', 'cashier']);
+const OP_ROLES = ['admin', 'kitchen', 'waiter', 'delivery', 'cashier'] as const;
+type OpRole = typeof OP_ROLES[number];
+
+function pickTenantRole(claims: any, tenantId: string): OpRole | 'customer' {
+  try {
+    const t = claims?.tenants?.[tenantId];
+    const rolesMap = t?.roles || {};
+    // Prioridad: admin > kitchen > cashier > waiter > delivery (ajusta si quieres otro orden)
+    for (const r of OP_ROLES) {
+      if (rolesMap?.[r] === true) return r;
+    }
+  } catch { /* ignore */ }
+  return 'customer';
+}
 
 export async function POST(req: NextRequest, { params }: { params: { tenantId: string } }) {
   const isProd = process.env.NODE_ENV === 'production';
 
   try {
-    // 🔐 Tenant (enforce scope)
+    // 🔐 Tenant
     const tenantId = requireTenantId(
       resolveTenantFromRequest(req, params),
       'api:auth/refresh-role:POST'
@@ -29,13 +41,17 @@ export async function POST(req: NextRequest, { params }: { params: { tenantId: s
     const decoded = await adminAuth.verifyIdToken(token);
     const customClaims = decoded as any;
 
-    // 🏷️ Resolver rol
-    let role: string = 'customer';
-    if (typeof customClaims?.role === 'string' && OP_ROLES.has(customClaims.role)) {
-      role = customClaims.role;
-    } else {
-      for (const r of OP_ROLES) {
-        if (customClaims?.[r] === true) { role = r; break; }
+    // 1) Intenta por-tenant
+    let role: OpRole | 'customer' = pickTenantRole(customClaims, tenantId);
+
+    // 2) Fallback a tu lógica previa (global)
+    if (role === 'customer') {
+      if (typeof customClaims?.role === 'string' && (OP_ROLES as readonly string[]).includes(customClaims.role)) {
+        role = customClaims.role as OpRole;
+      } else {
+        for (const r of OP_ROLES) {
+          if (customClaims?.[r] === true) { role = r; break; }
+        }
       }
     }
 
@@ -50,7 +66,7 @@ export async function POST(req: NextRequest, { params }: { params: { tenantId: s
       maxAge: 60 * 60 * 24 * 7,
     });
 
-    res.cookies.set('isOp', String(OP_ROLES.has(role)), {
+    res.cookies.set('isOp', String((OP_ROLES as readonly string[]).includes(role)), {
       httpOnly: false,
       sameSite: 'lax',
       secure: isProd,

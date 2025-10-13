@@ -1,11 +1,9 @@
-// src/app/(site)/api/provision-tenant/route.ts
 export const runtime = 'nodejs';
 
 import { NextRequest, NextResponse } from 'next/server';
-import { adminDb } from '@/lib/firebase/admin';
+import { adminDb, adminAuth } from '@/lib/firebase/admin';
 import { Timestamp } from 'firebase-admin/firestore';
 import { normalizeTenantId, assertValidTenantId } from '@/lib/tenant/validate';
-// 🔐 Auth (opcional). Habilita CREATE_OWNER_USER=true si quieres crear el usuario owner.
 import { getAuth } from 'firebase-admin/auth';
 
 // 🔗 Mapa centralizado de features por plan
@@ -16,7 +14,7 @@ function json(d: unknown, s = 200) {
   return NextResponse.json(d, { status: s });
 }
 
-// Cambia a true si quieres crear el usuario owner automáticamente
+// Cambia a true si quieres crear el usuario owner automáticamente (aquí no hace falta porque lo creas en /tenant-order)
 const CREATE_OWNER_USER = false;
 
 export async function POST(req: NextRequest) {
@@ -58,8 +56,7 @@ export async function POST(req: NextRequest) {
     // ✅ Usa el mapa centralizado
     const features: FeatureKey[] = PLAN_FEATURES[plan];
 
-    // 2) (Opcional) Crear/obtener usuario owner en Firebase Auth (email/contraseña)
-    //    Se hace antes de la transacción para tener el uid disponible.
+    // 2) (Opcional) Crear/obtener usuario owner en Firebase Auth
     let ownerUid: string | undefined = tenant.owner?.uid;
     if (CREATE_OWNER_USER && tenant.owner?.email) {
       const auth = getAuth();
@@ -70,8 +67,7 @@ export async function POST(req: NextRequest) {
         const existing = await auth.getUserByEmail(ownerEmail);
         ownerUid = existing.uid;
       } catch {
-        // Crear con contraseña temporal básica (reemplaza por una generada/segura si lo activas)
-        const tempPassword = Math.random().toString(36).slice(2, 10) + 'A1!'; // ej. "k3j2l9p9A1!"
+        const tempPassword = Math.random().toString(36).slice(2, 10) + 'A1!';
         const created = await getAuth().createUser({
           email: ownerEmail,
           emailVerified: false,
@@ -80,12 +76,13 @@ export async function POST(req: NextRequest) {
           disabled: false,
         });
         ownerUid = created.uid;
-        // (A futuro) Enviar correo "set your password" / "welcome" aquí.
       }
     }
 
-    // 3) Transacción: aplicar features, activar tenant, provisionar order, limpiar reserva
+    // 3) Transacción: activar tenant, provisionar order, sembrar membresía (customers), limpiar reserva
     const now = Timestamp.now();
+    let effectiveOwnerUid: string | undefined;
+
     await adminDb.runTransaction(async (trx) => {
       const t = await trx.get(tRef);
       const o = await trx.get(oRef);
@@ -104,8 +101,10 @@ export async function POST(req: NextRequest) {
         status: 'active',
         updatedAt: now,
       };
-      if (ownerUid) {
-        updateTenant.owner = { ...(curT.owner || {}), uid: ownerUid };
+      const ownerFromTenant = (curT as any)?.owner || {};
+      const ownerUidFromTenant = ownerUid || ownerFromTenant?.uid;
+      if (ownerUidFromTenant) {
+        updateTenant.owner = { ...(ownerFromTenant || {}), uid: ownerUidFromTenant };
       }
 
       trx.update(tRef, updateTenant);
@@ -113,15 +112,26 @@ export async function POST(req: NextRequest) {
       // Actualizar order
       trx.update(oRef, { orderStatus: 'provisioned', updatedAt: now });
 
-      // 🔐 NUEVO: seed de membresía (admin) para el owner en este tenant
-      const effectiveOwnerUid: string | undefined = ownerUid || curT?.owner?.uid;
+      // 🟩 Si tenemos ownerUid efectivo, sembramos membresía del owner en customers/{uid}
+      effectiveOwnerUid = ownerUidFromTenant;
       if (effectiveOwnerUid) {
-        const mRef = adminDb.doc(`tenants/${tenantId}/members/${effectiveOwnerUid}`);
+        const email = (ownerFromTenant?.email || '').toString().trim().toLowerCase() || null;
+        const displayName = (ownerFromTenant?.name || '').toString().trim() || null;
+
+        const cRef = adminDb.doc(`tenants/${tenantId}/customers/${effectiveOwnerUid}`);
         trx.set(
-          mRef,
+          cRef,
           {
             uid: effectiveOwnerUid,
-            role: 'admin',
+            tenantId,            // 🔐 refuerzo de scope
+            email,
+            displayName,
+            phone: null,
+            addresses: {
+              home: { line1: '', city: '', country: '', zip: '', notes: '' },
+              office: { line1: '', city: '', country: '', zip: '', notes: '' },
+            },
+            marketingOptIn: false,
             createdAt: now,
             updatedAt: now,
           },
@@ -133,7 +143,29 @@ export async function POST(req: NextRequest) {
       trx.delete(rRef);
     });
 
-    // 4) Success URL del **site** (no del subdominio del tenant), incluye orderId
+    // 4) Custom Claims por-tenant: set tenants[tenantId].roles.admin = true
+    try {
+      if (effectiveOwnerUid) {
+        const userRec = await adminAuth.getUser(effectiveOwnerUid);
+        const claims = (userRec.customClaims as any) || {};
+        const tenantsClaims = { ...(claims.tenants || {}) };
+
+        const existingForTenant = tenantsClaims[tenantId] || {};
+        const existingRoles = { ...(existingForTenant.roles || {}) };
+
+        tenantsClaims[tenantId] = {
+          ...(existingForTenant || {}),
+          roles: { ...existingRoles, admin: true }, // ← asigna admin solo en este tenant
+        };
+
+        const nextClaims = { ...claims, tenants: tenantsClaims };
+        await adminAuth.setCustomUserClaims(effectiveOwnerUid, nextClaims);
+      }
+    } catch (e) {
+      console.error('[provision-tenant] setCustomUserClaims failed:', e);
+      // no bloquea la provisión
+    }
+
     const successUrl = buildSiteSuccessUrl(tenantId, orderId);
     return json({ ok: true, tenantId, orderId, successUrl }, 200);
   } catch (err: any) {
@@ -141,7 +173,7 @@ export async function POST(req: NextRequest) {
   }
 }
 
-// Ahora devolvemos URL del site (no del subdominio del tenant) e incluimos orderId
+// URL del site (no del subdominio del tenant) e incluye orderId
 function buildSiteSuccessUrl(tenantId: string, orderId: string) {
   return `/success?tenantId=${encodeURIComponent(tenantId)}&orderId=${encodeURIComponent(orderId)}`;
 }
