@@ -1,4 +1,3 @@
-// next.config.ts
 import type { NextConfig } from "next";
 import { buildCSP } from "./src/lib/security/csp";
 
@@ -18,11 +17,11 @@ const prodCsp = [
   // Estilos (incluye Google Fonts por CSS)
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
   // Imágenes
-  "img-src 'self' https: data: https://*.gstatic.com https://*.googleapis.com https://www.paypalobjects.com https://www.paypal.com https://www.sandbox.paypal.com https://i.ytimg.com https://i.vimeocdn.com",
+  "img-src 'self' https: data: https://*.gstatic.com https://*.googleapis.com https://www.paypalobjects.com https://www.paypal.com https://www.sandbox.paypal.com https://i.ytimg.com https://i.vimeocdn.com https://challenges.cloudflare.com",
   // Fuentes
   "font-src 'self' data: https://fonts.gstatic.com",
   // Fetch/XHR/WebSocket
-  "connect-src 'self' https://securetoken.googleapis.com https://www.googleapis.com https://identitytoolkit.googleapis.com https://firestore.googleapis.com https://*.googleapis.com https://*.firebaseio.com wss://*.firebaseio.com https://apis.google.com https://accounts.google.com https://www.gstatic.com https://www.paypal.com https://www.sandbox.paypal.com",
+  "connect-src 'self' https://securetoken.googleapis.com https://www.googleapis.com https://identitytoolkit.googleapis.com https://firestore.googleapis.com https://*.googleapis.com https://*.firebaseio.com wss://*.firebaseio.com https://apis.google.com https://accounts.google.com https://www.gstatic.com https://www.paypal.com https://www.sandbox.paypal.com https://challenges.cloudflare.com",
   // iframes embebidos (PayPal/Turnstile/YouTube/Vimeo/Google)
   "frame-src 'self' https://*.firebaseapp.com https://*.google.com https://*.gstatic.com https://accounts.google.com https://apis.google.com https://www.paypal.com https://www.sandbox.paypal.com https://challenges.cloudflare.com https://www.youtube.com https://www.youtube-nocookie.com https://player.vimeo.com",
   // Seguridad adicional
@@ -43,9 +42,9 @@ const devCsp = [
   "script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: https://www.gstatic.com https://www.googletagmanager.com https://apis.google.com https://accounts.google.com https://www.paypal.com https://challenges.cloudflare.com",
   "script-src-elem 'self' 'unsafe-inline' 'unsafe-eval' blob: https://www.gstatic.com https://www.googletagmanager.com https://apis.google.com https://accounts.google.com https://www.paypal.com https://challenges.cloudflare.com",
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-  "img-src 'self' https: data: https://*.gstatic.com https://*.googleapis.com https://www.paypalobjects.com https://www.paypal.com https://www.sandbox.paypal.com https://i.ytimg.com https://i.vimeocdn.com",
+  "img-src 'self' https: data: https://*.gstatic.com https://*.googleapis.com https://www.paypalobjects.com https://www.paypal.com https://www.sandbox.paypal.com https://i.ytimg.com https://i.vimeocdn.com https://challenges.cloudflare.com",
   "font-src 'self' data: https://fonts.gstatic.com",
-  "connect-src 'self' http://localhost:* http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:* https://securetoken.googleapis.com https://www.googleapis.com https://identitytoolkit.googleapis.com https://firestore.googleapis.com https://*.googleapis.com https://*.firebaseio.com wss://*.firebaseio.com https://apis.google.com https://accounts.google.com https://www.gstatic.com https://www.paypal.com https://www.sandbox.paypal.com",
+  "connect-src 'self' http://localhost:* http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:* https://securetoken.googleapis.com https://www.googleapis.com https://identitytoolkit.googleapis.com https://firestore.googleapis.com https://*.googleapis.com https://*.firebaseio.com wss://*.firebaseio.com https://apis.google.com https://accounts.google.com https://www.gstatic.com https://www.paypal.com https://www.sandbox.paypal.com https://challenges.cloudflare.com",
   "frame-src 'self' https://*.firebaseapp.com https://*.google.com https://*.gstatic.com https://accounts.google.com https://apis.google.com https://www.paypal.com https://www.sandbox.paypal.com https://challenges.cloudflare.com https://www.youtube.com https://www.youtube-nocookie.com https://player.vimeo.com",
   "frame-ancestors 'none'",
   "form-action 'self' https://accounts.google.com",

@@ -1,4 +1,3 @@
-// src/lib/security/csp.ts
 /**
  * CSP utils para site + tenant (Next.js + Vercel)
  * - buildCSP(): genera una CSP base (dev/prod) para poner en next.config.ts (headers()).
@@ -37,6 +36,8 @@ export function buildCSP({ isDev = false, includeBrevo = true }: { isDev?: boole
     "https://www.youtube.com",
     "https://www.youtube-nocookie.com",
     "https://player.vimeo.com",
+    // ✅ Turnstile
+    "https://challenges.cloudflare.com",
   ]);
 
   if (includeBrevo) {
@@ -83,6 +84,8 @@ export function buildCSP({ isDev = false, includeBrevo = true }: { isDev?: boole
     "https://www.sandbox.paypal.com",
     "https://i.ytimg.com",
     "https://i.vimeocdn.com",
+    // ✅ Turnstile
+    "https://challenges.cloudflare.com",
   ].join(" ");
 
   // --- frame-src / child-src ---
