@@ -16,11 +16,13 @@ const TURNSTILE_SITE_KEY = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY || "";
 
 export default function AccountsRegisterPage() {
   const router = useRouter();
-  const params = useParams<{ tenant: string }>();
-  const tenantId = (params?.tenant || "").trim();
-  const appBase = `/${tenantId}/app`;
-  const apiBase = appBase; // APIs viven en /{tenant}/app/api/...
-  const loginHref = `/${tenantId}/login`;
+  // 👇 usa el nombre correcto del segmento
+  const params = useParams<{ tenantId: string }>();
+  const tenantId = (params?.tenantId || "").trim();
+
+  const appBase = tenantId ? `/${tenantId}/app` : "/app";
+  const apiBase = appBase; // APIs viven en /{tenantId}/app/api/...
+  const loginHref = tenantId ? `/${tenantId}/login` : "/login";
 
   const { user, loading } = useAuth();
 
@@ -45,7 +47,6 @@ export default function AccountsRegisterPage() {
   const [pass1, setPass1] = useState("");
   const [pass2, setPass2] = useState("");
 
-  // Required acknowledgement + optional marketing opt-in
   const [ackMarketing, setAckMarketing] = useState(false);
   const [marketingOptIn, setMarketingOptIn] = useState(false);
 
@@ -72,30 +73,14 @@ export default function AccountsRegisterPage() {
     return token;
   }
 
-  function formatFirebaseError(e: any): string {
+  function prettyFirebaseError(e: any): string {
     const code = String(e?.code || "").replace(/^auth\//, "");
-    // Algunos mensajes útiles
-    if (code === "operation-not-allowed") {
-      return "Email/Password sign-in is disabled in Firebase (operation-not-allowed).";
-    }
-    if (code === "email-already-in-use") {
-      return "This email is already registered (email-already-in-use).";
-    }
-    if (code === "invalid-api-key") {
-      return "Invalid Firebase API key (invalid-api-key).";
-    }
-    if (code === "network-request-failed") {
-      return "Network error talking to Firebase (network-request-failed).";
-    }
-    if (code === "weak-password") {
-      return "Password is too weak (weak-password).";
-    }
-    // Algunos proyectos devuelven mensajes REST con DOMAIN_NOT_AUTHORIZED
     const msg = String(e?.message || "");
-    if (/DOMAIN_NOT_AUTHORIZED/i.test(msg)) {
-      return "Domain not authorized in Firebase Authentication (DOMAIN_NOT_AUTHORIZED).";
-    }
-    return code || msg || "unknown-error";
+    if (code) return code;
+    if (/Failed to fetch/i.test(msg)) return "network-request-failed";
+    // algunos backends devuelven mensajes REST
+    if (/DOMAIN_NOT_AUTHORIZED/i.test(msg)) return "domain-not-authorized";
+    return msg || "unknown-error";
   }
 
   async function onSubmit(e: FormEvent) {
@@ -136,12 +121,13 @@ export default function AccountsRegisterPage() {
 
     setBusy(true);
     try {
+      // 1) Firebase signUp
       const cred = await createUserWithEmailAndPassword(auth, email.trim(), pass1);
       await updateProfile(cred.user, { displayName: fullName.trim() });
       const idToken = await cred.user.getIdToken(true);
 
-      // 🧩 Bootstrap/Update de perfil EN ESTE TENANT vía PUT (idempotente)
-      await fetch(`${apiBase}/api/customers/me`, {
+      // 2) Bootstrap perfil en ESTE tenant (PUT) y manejar errores HTTP explícitamente
+      const putRes = await fetch(`${apiBase}/api/customers/me`, {
         method: "PUT",
         headers: {
           Authorization: `Bearer ${idToken}`,
@@ -153,29 +139,35 @@ export default function AccountsRegisterPage() {
           marketingOptIn,
         }),
       });
+      if (!putRes.ok) {
+        const text = await putRes.text().catch(() => "");
+        console.warn("[customers/me PUT] non-OK:", putRes.status, text);
+        // No abortamos el flujo, pero sí mostramos pista en UI
+        setErr(`Profile bootstrap failed (${putRes.status}).`);
+      }
 
-      // ✉️ Welcome (idempotente)
-      try {
-        await fetch(`${apiBase}/api/tx/welcome`, {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${idToken}`,
-            "content-type": "application/json",
-          },
-        });
-      } catch {}
+      // 3) Welcome (idempotente)
+      const wRes = await fetch(`${apiBase}/api/tx/welcome`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${idToken}`,
+          "content-type": "application/json",
+        },
+      }).catch((er) => {
+        console.warn("[welcome POST] failed:", er);
+        return null;
+      });
+      if (wRes && !wRes.ok) {
+        const text = await wRes.text().catch(() => "");
+        console.warn("[welcome POST] non-OK:", wRes.status, text);
+      }
 
       router.replace(appBase);
     } catch (e: any) {
-      const nice = formatFirebaseError(e);
+      const nice = prettyFirebaseError(e);
       console.error("[account/create] signup failed:", e);
-      setErr(
-        tt("account.err.createFail", "The account could not be created. Please try again.") +
-          (nice ? ` (${nice})` : "")
-      );
-      try {
-        tRef.current?.reset();
-      } catch {}
+      setErr(tt("account.err.createFail", "The account could not be created. Please try again.") + ` (${nice})`);
+      try { tRef.current?.reset(); } catch {}
     } finally {
       setBusy(false);
     }
@@ -259,10 +251,7 @@ export default function AccountsRegisterPage() {
             required
           />
           <label className="form-check-label" htmlFor="ackMarketing">
-            {tt(
-              "account.ack.label",
-              "I understand that my email may be used for marketing communications if I opt in."
-            )}
+            {tt("account.ack.label", "I understand that my email may be used for marketing communications if I opt in.")}
           </label>
         </div>
 
@@ -304,9 +293,7 @@ export default function AccountsRegisterPage() {
 
       <p className="text-center mt-3 mb-0">
         {tt("account.footer.have", "Already have an account?")}{" "}
-        <a href={loginHref} className="link-primary">
-          {tt("account.footer.signin", "Sign in")}
-        </a>
+        <a href={loginHref} className="link-primary">{tt("account.footer.signin", "Sign in")}</a>
       </p>
     </main>
   );

@@ -45,6 +45,8 @@ export function buildCSP({ isDev = false, includeBrevo = true }: { isDev?: boole
     connectSrc.add("https://api.brevo.com");
   }
 
+  connectSrc.add("https://challenges.cloudflare.com");
+
   if (isDev) {
     for (const host of ["localhost", "127.0.0.1"]) {
       connectSrc.add(`http://${host}:*`);
