@@ -17,9 +17,9 @@ export default function TenantAppLayout({
   return (
     <Providers>
       <BootstrapClient />
-     
+     <TenantProvider>
         {children}
-     
+     </TenantProvider>
     </Providers>
   );
 }
