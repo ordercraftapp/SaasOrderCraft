@@ -1,9 +1,9 @@
+// src/app/(tenant)/[tenantId]/layout.tsx (o el TenantAppLayout que uses)
 import 'bootstrap/dist/css/bootstrap.min.css';
 import BootstrapClient from '@/app/(tenant)/[tenantId]/components/BootstrapClient';
 import { TenantProvider } from '@/lib/tenant/context';
-// ⬇️ Asegura contextos de Auth/Cart en todo el subtree
 import Providers from '@/app/providers';
-import { NewCartProvider } from '@/lib/newcart/context'; // 👈 añadido
+import { NewCartProvider } from '@/lib/newcart/context'; // 👈 aquí
 
 export default function TenantAppLayout({
   children,
@@ -12,16 +12,13 @@ export default function TenantAppLayout({
   children: React.ReactNode;
   params: { tenantId: string };
 }) {
-  // Si necesitas el tenantId aquí para algo futuro, lo tienes:
-  // const tenantId = params.tenantId; <TenantProvider> </TenantProvider>
-
   return (
     <Providers>
       <BootstrapClient />
       <TenantProvider>
-        <NewCartProvider> {/* 👈 añadido */}
+        <NewCartProvider> {/* 👈 ahora todo el portal (menu, cart, etc.) tiene carrito */}
           {children}
-        </NewCartProvider> {/* 👈 añadido */}
+        </NewCartProvider>
       </TenantProvider>
     </Providers>
   );

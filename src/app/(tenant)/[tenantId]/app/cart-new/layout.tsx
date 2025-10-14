@@ -5,7 +5,6 @@ import React, { useState, useMemo } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import CartBadge from '@/app/(tenant)/[tenantId]/components/CartBadge';
-import { NewCartProvider } from '@/lib/newcart/context'; // 👈 importar provider
 
 // 🔤 i18n
 import { useTenantSettings } from '@/lib/settings/hooks';
@@ -19,13 +18,13 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
   const pathname = usePathname();
   const tenantIdCtx = useTenantId();
 
-  // tenancyUpdate: fallback de tenant desde la URL si el contexto aún no está listo
+  // fallback de tenant desde la URL si el contexto aún no está listo
   const tenantFromPath = useMemo(() => {
     const segs = (pathname || '').split('/').filter(Boolean);
     return segs[0] || undefined;
   }, [pathname]);
 
-  const tenantId = tenantIdCtx || tenantFromPath; // tenancyUpdate
+  const tenantId = tenantIdCtx || tenantFromPath;
 
   const withTenant = (p: string) => {
     const norm = p.startsWith('/') ? p : `/${p}`;
@@ -56,7 +55,7 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
   };
 
   return (
-    <NewCartProvider>{/* 👈 envolver TODO el layout */}
+    <>
       <nav className="navbar navbar-expand-md navbar-light bg-light border-bottom">
         <div className="container">
           <Link className="navbar-brand fw-semibold" href={withTenant('/app')}>
@@ -120,6 +119,6 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
       </nav>
 
       <main className="container py-4">{children}</main>
-    </NewCartProvider>
+    </>
   );
 }
