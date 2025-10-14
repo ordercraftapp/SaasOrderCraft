@@ -199,7 +199,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     <>
       <nav className="navbar navbar-expand-md navbar-light bg-white border-bottom shadow-sm">
         <div className="container">
-          <Link className="navbar-brand fw-semibold" href="/admin">{tt('admin.nav.brand', 'Admin Portal')}</Link>
+          <Link className="navbar-brand fw-semibold" href="/app/admin">{tt('admin.nav.brand', 'Admin Portal')}</Link>
 
           <button
             className="navbar-toggler"
@@ -216,7 +216,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
               {kitchenAllowed && (
                 <li className="nav-item">
-                  <Link className={`nav-link d-flex align-items-center gap-2 ${isActive('/admin/kitchen') ? 'active' : ''}`} href="/admin/kitchen">
+                  <Link className={`nav-link d-flex align-items-center gap-2 ${isActive('/app/admin/kitchen') ? 'active' : ''}`} href="/app/admin/kitchen">
                     <span>{tt('admin.nav.kitchen', 'Kitchen')}</span>
                     <span className="badge rounded-pill text-bg-primary">
                       {loading && counts == null ? '…' : kitch}
@@ -227,7 +227,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
               {cashierAllowed && (
                 <li className="nav-item">
-                  <Link className={`nav-link d-flex align-items-center gap-2 ${isActive('/admin/cashier') ? 'active' : ''}`} href="/admin/cashier">
+                  <Link className={`nav-link d-flex align-items-center gap-2 ${isActive('/app/admin/cashier') ? 'active' : ''}`} href="/app/admin/cashier">
                     <span>{tt('admin.nav.cashier', 'Cashier')}</span>
                     <span className="badge rounded-pill text-bg-success">
                       {loading && counts == null ? '…' : cashq}
@@ -238,7 +238,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
               {deliveryAllowed && (
                 <li className="nav-item">
-                  <Link className={`nav-link d-flex align-items-center gap-2 ${isActive('/admin/delivery') ? 'active' : ''}`} href="/admin/delivery">
+                  <Link className={`nav-link d-flex align-items-center gap-2 ${isActive('/app/admin/delivery') ? 'active' : ''}`} href="/app/admin/delivery">
                     <span>{tt('admin.nav.delivery', 'Delivery')}</span>
                     <span className="badge rounded-pill text-bg-warning">
                       {loading && counts == null ? '…' : deliv}
@@ -249,7 +249,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
               {waiterAllowed && (
                 <li className="nav-item">
-                  <Link className={`nav-link d-flex align-items-center gap-2 ${isActive('/admin/waiter') ? 'active' : ''}`} href="/admin/waiter">
+                  <Link className={`nav-link d-flex align-items-center gap-2 ${isActive('/app/admin/waiter') ? 'active' : ''}`} href="/app/admin/waiter">
                     <span>{tt('admin.nav.tables', 'Tables')}</span>
                     {/* ===== NUEVO: badge de mesas activas ===== */}
                     <span className="badge rounded-pill text-bg-secondary">
