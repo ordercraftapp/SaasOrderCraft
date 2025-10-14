@@ -1,17 +1,24 @@
+// src/app/(tenant)/[tenantId]/app/api/auth/refresh-role/route.ts
 export const runtime = 'nodejs';
 
 import { NextRequest, NextResponse } from 'next/server';
-import { adminAuth } from '@/lib/firebase/admin';
+import { adminAuth, adminDb, FieldValue } from '@/lib/firebase/admin';
 import { resolveTenantFromRequest, requireTenantId } from '@/lib/tenant/server';
 
 const OP_ROLES = ['admin', 'kitchen', 'waiter', 'delivery', 'cashier'] as const;
 type OpRole = typeof OP_ROLES[number];
 
-function pickTenantRole(claims: any, tenantId: string): OpRole | 'customer' {
+type MemberDoc = { uid: string; role: string; createdAt?: any; updatedAt?: any };
+type TenantDoc = { owner?: { uid?: string; email?: string; name?: string } };
+
+function json(d: unknown, s = 200) {
+  return NextResponse.json(d, { status: s });
+}
+
+function pickTenantRoleFromClaims(claims: any, tenantId: string): OpRole | 'customer' {
   try {
     const t = claims?.tenants?.[tenantId];
     const rolesMap = t?.roles || {};
-    // Prioridad: admin > kitchen > cashier > waiter > delivery (ajusta si quieres otro orden)
     for (const r of OP_ROLES) {
       if (rolesMap?.[r] === true) return r;
     }
@@ -32,53 +39,87 @@ export async function POST(req: NextRequest, { params }: { params: { tenantId: s
     // 🔑 Bearer
     const authHeader = req.headers.get('authorization') ?? req.headers.get('Authorization');
     const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
-
-    if (!token) {
-      return NextResponse.json({ ok: false, error: 'Missing Bearer token' }, { status: 401 });
-    }
+    if (!token) return json({ ok: false, error: 'Missing Bearer token' }, 401);
 
     // ✅ Verificar token con Admin SDK
     const decoded = await adminAuth.verifyIdToken(token);
-    const customClaims = decoded as any;
+    const claims = decoded as any;
+    const uid = decoded.uid;
+    const emailLower = claims?.email ? String(claims.email).toLowerCase() : null;
 
-    // 1) Intenta por-tenant
-    let role: OpRole | 'customer' = pickTenantRole(customClaims, tenantId);
+    let role: OpRole | 'customer' | null = null;
 
-    // 2) Fallback a tu lógica previa (global)
-    if (role === 'customer') {
-      if (typeof customClaims?.role === 'string' && (OP_ROLES as readonly string[]).includes(customClaims.role)) {
-        role = customClaims.role as OpRole;
-      } else {
-        for (const r of OP_ROLES) {
-          if (customClaims?.[r] === true) { role = r; break; }
+    // 1) 🔎 Intentar rol desde Firestore: members/{uid}
+    const mRef = adminDb.doc(`tenants/${tenantId}/members/${uid}`);
+    const mSnap = await mRef.get();
+    if (mSnap.exists) {
+      const data = (mSnap.data() || {}) as MemberDoc;
+      const r = String(data.role || '').toLowerCase();
+      if ((OP_ROLES as readonly string[]).includes(r as OpRole)) {
+        role = r as OpRole;
+      }
+    }
+
+    // 2) 🪄 Auto-seed si es el OWNER del tenant (por email o uid) y no hay membresía
+    if (!role) {
+      const tRef = adminDb.doc(`tenants/${tenantId}`);
+      const tSnap = await tRef.get();
+      if (tSnap.exists) {
+        const t = (tSnap.data() || {}) as TenantDoc;
+        const ownerEmailLower = t?.owner?.email ? String(t.owner.email).toLowerCase() : null;
+        const ownerUid = t?.owner?.uid || null;
+
+        const isOwner =
+          (ownerUid && ownerUid === uid) ||
+          (!!ownerEmailLower && !!emailLower && ownerEmailLower === emailLower);
+
+        if (isOwner) {
+          await mRef.set(
+            { uid, role: 'admin', createdAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp() },
+            { merge: true }
+          );
+          role = 'admin';
         }
       }
     }
 
-    // 🍪 Cookies legibles por middleware (no httpOnly)
-    const res = NextResponse.json({ ok: true, tenantId, role });
+    // 3) Fallback a claims por-tenant → global
+    if (!role) {
+      let fromClaims = pickTenantRoleFromClaims(claims, tenantId);
+      if (fromClaims === 'customer') {
+        // Global (tu lógica previa)
+        if (typeof claims?.role === 'string' && (OP_ROLES as readonly string[]).includes(claims.role as OpRole)) {
+          fromClaims = claims.role as OpRole;
+        } else {
+          for (const r of OP_ROLES) {
+            if (claims?.[r] === true) { fromClaims = r; break; }
+          }
+        }
+      }
+      role = fromClaims || 'customer';
+    }
+
+    // 🍪 Cookies legibles por middleware (no httpOnly) — scopiadas al TENANT
+    const res = json({ ok: true, tenantId, role });
 
     res.cookies.set('appRole', role, {
       httpOnly: false,
       sameSite: 'lax',
       secure: isProd,
-      path: '/',
+      path: `/${tenantId}`,             // 👈 importante para que apliquen en rutas del tenant
       maxAge: 60 * 60 * 24 * 7,
     });
 
-    res.cookies.set('isOp', String((OP_ROLES as readonly string[]).includes(role)), {
+    res.cookies.set('isOp', String((OP_ROLES as readonly string[]).includes(role as OpRole)), {
       httpOnly: false,
       sameSite: 'lax',
       secure: isProd,
-      path: '/',
+      path: `/${tenantId}`,             // 👈 mismo scope
       maxAge: 60 * 60 * 24 * 7,
     });
 
     return res;
   } catch (err: any) {
-    return NextResponse.json(
-      { ok: false, error: err?.message || 'verifyIdToken failed' },
-      { status: 401 }
-    );
+    return json({ ok: false, error: err?.message || 'verifyIdToken failed' }, 401);
   }
 }

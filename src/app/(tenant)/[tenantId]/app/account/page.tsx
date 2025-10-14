@@ -47,6 +47,7 @@ export default function AccountsRegisterPage() {
   const [pass1, setPass1] = useState("");
   const [pass2, setPass2] = useState("");
 
+  // Required acknowledgement + optional marketing opt-in
   const [ackMarketing, setAckMarketing] = useState(false);
   const [marketingOptIn, setMarketingOptIn] = useState(false);
 
@@ -78,7 +79,6 @@ export default function AccountsRegisterPage() {
     const msg = String(e?.message || "");
     if (code) return code;
     if (/Failed to fetch/i.test(msg)) return "network-request-failed";
-    // algunos backends devuelven mensajes REST
     if (/DOMAIN_NOT_AUTHORIZED/i.test(msg)) return "domain-not-authorized";
     return msg || "unknown-error";
   }
@@ -126,40 +126,64 @@ export default function AccountsRegisterPage() {
       await updateProfile(cred.user, { displayName: fullName.trim() });
       const idToken = await cred.user.getIdToken(true);
 
-      // 2) Bootstrap perfil en ESTE tenant (PUT) y manejar errores HTTP explícitamente
+      // 2) Bootstrap GET (idempotente) para inicializar customers/{uid} bajo el tenant
+      //    Mandamos ambos headers por si el server lee uno u otro.
+      try {
+        const gRes = await fetch(`${apiBase}/api/customers/me`, {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${idToken}`,
+            "x-tenant": tenantId || "",
+            "x-tenant-id": tenantId || "",
+          },
+          cache: "no-store",
+        });
+        if (!gRes.ok) {
+          console.warn("[customers/me GET] non-OK:", gRes.status, await gRes.text().catch(() => ""));
+        }
+      } catch (gErr) {
+        console.warn("[customers/me GET] failed:", gErr);
+      }
+
+      // 3) PATCH perfil con PUT (displayName + marketingOptIn)
       const putRes = await fetch(`${apiBase}/api/customers/me`, {
         method: "PUT",
         headers: {
           Authorization: `Bearer ${idToken}`,
           "content-type": "application/json",
           "x-turnstile-token": token,
+          "x-tenant": tenantId || "",
+          "x-tenant-id": tenantId || "",
         },
         body: JSON.stringify({
           displayName: fullName.trim(),
           marketingOptIn,
         }),
       });
+
       if (!putRes.ok) {
         const text = await putRes.text().catch(() => "");
+        // Si el server respondiera 404/405 por alguna razón, no bloqueamos el flujo del usuario:
         console.warn("[customers/me PUT] non-OK:", putRes.status, text);
-        // No abortamos el flujo, pero sí mostramos pista en UI
         setErr(`Profile bootstrap failed (${putRes.status}).`);
       }
 
-      // 3) Welcome (idempotente)
-      const wRes = await fetch(`${apiBase}/api/tx/welcome`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${idToken}`,
-          "content-type": "application/json",
-        },
-      }).catch((er) => {
+      // 4) Welcome (idempotente)
+      try {
+        const wRes = await fetch(`${apiBase}/api/tx/welcome`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${idToken}`,
+            "content-type": "application/json",
+            "x-tenant": tenantId || "",
+            "x-tenant-id": tenantId || "",
+          },
+        });
+        if (!wRes.ok) {
+          console.warn("[welcome POST] non-OK:", wRes.status, await wRes.text().catch(() => ""));
+        }
+      } catch (er) {
         console.warn("[welcome POST] failed:", er);
-        return null;
-      });
-      if (wRes && !wRes.ok) {
-        const text = await wRes.text().catch(() => "");
-        console.warn("[welcome POST] non-OK:", wRes.status, text);
       }
 
       router.replace(appBase);
