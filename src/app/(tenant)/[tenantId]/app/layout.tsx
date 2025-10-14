@@ -3,6 +3,7 @@ import BootstrapClient from '@/app/(tenant)/[tenantId]/components/BootstrapClien
 import { TenantProvider } from '@/lib/tenant/context';
 // ⬇️ Asegura contextos de Auth/Cart en todo el subtree
 import Providers from '@/app/providers';
+import { NewCartProvider } from '@/lib/newcart/context'; // 👈 añadido
 
 export default function TenantAppLayout({
   children,
@@ -17,9 +18,11 @@ export default function TenantAppLayout({
   return (
     <Providers>
       <BootstrapClient />
-     <TenantProvider>
-        {children}
-     </TenantProvider>
+      <TenantProvider>
+        <NewCartProvider> {/* 👈 añadido */}
+          {children}
+        </NewCartProvider> {/* 👈 añadido */}
+      </TenantProvider>
     </Providers>
   );
 }
