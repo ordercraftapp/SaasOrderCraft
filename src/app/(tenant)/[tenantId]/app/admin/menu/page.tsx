@@ -250,8 +250,8 @@ async function deleteImageByPath(path: string) {
    Página Unificada: /admin/menu (con suscripciones en tiempo real)
    ========================================================================= */
 function AdminMenuPage_Inner() {
-  const { authReady, user, isAdmin } = useAuthClaims();
-  const tenantId = useTenantId() || ''; // en AdminOnly siempre debería existir
+  const tenantId = useTenantId() || '';          // ⬅️ primero el tenant
+  const { authReady, user, isAdmin } = useAuthClaims(tenantId); // ⬅️ pásalo aquí
 
   /** ✅ Formateador global (usa currency/locale del tenant) */
   const fmtQ = useFmtQ();
