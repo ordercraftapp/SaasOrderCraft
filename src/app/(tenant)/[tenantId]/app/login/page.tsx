@@ -1,4 +1,3 @@
-// src/app/(tenant)/[tenantId]/app/login/page.tsx
 'use client';
 
 import { Suspense, FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -80,7 +79,8 @@ function LoginInner() {
   const [err, setErr] = useState<string | null>(null);
   const inFlightRef = useRef(false);
 
-  const defaultNext = useMemo(() => (tenantId ? `/${tenantId}/app` : '/app'), [tenantId]);
+  // 👇 por defecto apunta al área cliente
+  const defaultNext = useMemo(() => (tenantId ? `/${tenantId}/app/app` : '/app/app'), [tenantId]);
   const nextParam = useMemo(() => search.get('next') || defaultNext, [search, defaultNext]);
 
   // Redirigir si ya hay sesión activa (por si vuelve al login con sesión viva)
@@ -107,7 +107,8 @@ function LoginInner() {
         setCookie('session', '1', `/${tenantId}`);
 
         const role = data.role;
-        const target = role === 'admin' ? '/app/admin' : nextParam || '/app';
+        // 👇 admin → /app/admin; resto → área cliente
+        const target = role === 'admin' ? '/app/admin' : nextParam || '/app/app';
         if (!cancelled) router.replace(withTenantPrefix(tenantId, target));
       } catch {
         /* se queda en login */
@@ -136,9 +137,9 @@ function LoginInner() {
       // 2) Marca cookie de sesión scopiada al tenant para tu middleware
       setCookie('session', '1', `/${tenantId}`);
 
-      // 3) Redirige según rol
+      // 3) Redirige según rol: admin → /app/admin; cliente/staff → /app/app
       const role = data.role;
-      const target = role === 'admin' ? '/app/admin' : (search.get('next') || '/app');
+      const target = role === 'admin' ? '/app/admin' : (search.get('next') || '/app/app');
       router.replace(withTenantPrefix(tenantId!, target));
     },
     [router, search, tenantId]

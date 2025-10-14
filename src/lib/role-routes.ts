@@ -24,11 +24,11 @@ export function pickRouteByRole(
 ): string {
   const role = (claims?.role || "").toLowerCase();
 
-  if (flags.isAdmin || role === "admin" || claims?.admin) return "/admin";
-  if (flags.isKitchen || role === "kitchen" || claims?.kitchen) return "/admin/kitchen";
-  if (flags.isWaiter || role === "waiter" || claims?.waiter) return "/admin/waiter";
-  if (flags.isDelivery || role === "delivery" || claims?.delivery) return "/admin/delivery";
-  if (flags.isCashier || role === "cashier" || claims?.cashier) return "/admin/cashier";
+  if (flags.isAdmin || role === "admin" || claims?.admin) return "/app/admin";
+  if (flags.isKitchen || role === "kitchen" || claims?.kitchen) return "/app/admin/kitchen";
+  if (flags.isWaiter || role === "waiter" || claims?.waiter) return "/app/admin/waiter";
+  if (flags.isDelivery || role === "delivery" || claims?.delivery) return "/app/admin/delivery";
+  if (flags.isCashier || role === "cashier" || claims?.cashier) return "/app/admin/cashier";
 
   // Cliente / invitado
   return "/app";

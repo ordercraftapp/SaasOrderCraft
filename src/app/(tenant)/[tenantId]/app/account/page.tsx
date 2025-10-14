@@ -21,6 +21,7 @@ export default function AccountsRegisterPage() {
   const tenantId = (params?.tenantId || "").trim();
 
   const appBase = tenantId ? `/${tenantId}/app` : "/app";
+  const clientArea = tenantId ? `/${tenantId}/app/app` : "/app/app"; // 👈 destino cliente
   const apiBase = appBase; // APIs viven en /{tenantId}/app/api/...
   const loginHref = tenantId ? `/${tenantId}/login` : "/login";
 
@@ -59,8 +60,8 @@ export default function AccountsRegisterPage() {
   const tRef = useRef<TurnstileWidgetHandle | null>(null);
 
   useEffect(() => {
-    if (!loading && user) router.replace(appBase);
-  }, [loading, user, router, appBase]);
+    if (!loading && user) router.replace(clientArea); // 👈 si ya tiene sesión, al área cliente
+  }, [loading, user, router, clientArea]);
 
   async function getFreshCaptchaToken(maxMs = 2500): Promise<string> {
     const started = Date.now();
@@ -186,7 +187,7 @@ export default function AccountsRegisterPage() {
         console.warn("[welcome POST] failed:", er);
       }
 
-      router.replace(appBase);
+      router.replace(clientArea); // 👈 tras crear cuenta → área cliente
     } catch (e: any) {
       const nice = prettyFirebaseError(e);
       console.error("[account/create] signup failed:", e);
