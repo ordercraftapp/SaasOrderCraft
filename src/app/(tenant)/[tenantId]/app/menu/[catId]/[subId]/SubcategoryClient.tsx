@@ -14,14 +14,12 @@ import {
 } from "firebase/firestore";
 import Image from "next/image";
 import Link from "next/link";
-import { useNewCart } from "@/lib/newcart/context"; // carrito NUEVO
-import { useFmtQ } from "@/lib/settings/money"; // CurrencyUpdate: usar el formateador global basado en SettingsProvider
+import { useNewCart } from "@/lib/newcart/context";
+import { useFmtQ } from "@/lib/settings/money";
 
-/* 🔤 i18n */
 import { t as translate } from "@/lib/i18n/t";
 import { useTenantSettings } from "@/lib/settings/hooks";
 
-/* ✅ Tenant (cliente) + helpers Firestore namespaced */
 import { useTenantId } from "@/lib/tenant/context";
 import { tCol } from "@/lib/db";
 
@@ -61,20 +59,12 @@ type OptionItem = {
   active?: boolean;
 };
 
-// CurrencyUpdate: eliminada la función local fmtQ con valores fijos de "USD"/"es-GT"
-
-/* =========================
-   NUEVO: helpers de centavos
-   ========================= */
 function toCents(x: any): number {
   const n = Number(x);
   if (!Number.isFinite(n)) return 0;
   return Math.round(n * 100);
 }
 
-/* --------------------------------------------
-   🔤 Helper i18n
---------------------------------------------- */
 function useLangTT() {
   const { settings } = useTenantSettings();
   const lang = useMemo(() => {
@@ -97,7 +87,6 @@ export default function SubcategoryClient({ catId, subId }: { catId: string; sub
   const db = useMemo(() => getFirestore(), []);
   const tenantId = useTenantId();
 
-  // Prefija rutas con /{tenantId}
   const withTenant = (p: string) => {
     if (!tenantId) return p;
     const norm = p.startsWith("/") ? p : `/${p}`;
@@ -109,74 +98,87 @@ export default function SubcategoryClient({ catId, subId }: { catId: string; sub
   const [subcategory, setSubcategory] = useState<Subcategory | null>(null);
   const [items, setItems] = useState<MenuItem[]>([]);
   const [addingId, setAddingId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
 
   const { tt } = useLangTT();
 
-  // 👇 Mensaje pequeño “Agregado”
   const [flash, setFlash] = useState<{ id: string; name: string } | null>(null);
 
-  // carrito NUEVO
   const newCart = (() => {
     try { return useNewCart(); } catch { return null as any; }
   })();
 
-  // CurrencyUpdate: formateador conectado a SettingsProvider (currency/locale por tenant)
   const fmtQ = useFmtQ();
 
-  // Estados por tarjeta
   const [expandedItemId, setExpandedItemId] = useState<string | null>(null);
   const [selectedAddons, setSelectedAddons] = useState<Record<string, Record<string, boolean>>>({});
-  // - 'single': guarda string con id seleccionado
-  // - 'multi' : guarda Record<optionId:boolean>
   const [selectedOptions, setSelectedOptions] =
     useState<Record<string, Record<string, string | Record<string, boolean>>>>({});
 
-  // Cache de groups e items
   const [itemGroups, setItemGroups] = useState<Record<string, OptionGroup[]>>({});
-  const [groupItems, setGroupItems] = useState<Record<string, OptionItem[]>>({}); // key: groupId -> items
+  const [groupItems, setGroupItems] = useState<Record<string, OptionItem[]>>({});
 
-  // Carga categoría/subcat y items (✅ ahora bajo tenants/{tenantId}/...)
+  // Carga categoría (por id o slug), subcategoría (por id o slug) e items
   useEffect(() => {
     if (!tenantId) return;
-    const unsubList: Array<() => void> = [];
+    const unsubs: Array<() => void> = [];
+    let cancelled = false;
+
     (async () => {
-      // categoría
-      const catRef = doc(tCol("categories", tenantId), catId);
-      const catSnap = await getDoc(catRef);
-      if (catSnap.exists()) setCategory({ id: catSnap.id, ...(catSnap.data() as any) });
+      setLoading(true);
 
-      // Resolver sub por id o por slug
-      let realSubId = subId;
-      let subData: any | null = null;
-
-      const subRefById = doc(tCol("subcategories", tenantId), subId);
-      const byId = await getDoc(subRefById);
-
-      if (byId.exists()) {
-        subData = byId.data();
+      // ---- Resolver CATEGORÍA por id o slug ----
+      let realCatId = catId;
+      let catSnap = await getDoc(doc(tCol("categories", tenantId), catId));
+      if (!catSnap.exists()) {
+        const bySlug = await getDocs(
+          query(tCol("categories", tenantId), where("slug", "==", catId), limit(1))
+        );
+        if (!bySlug.empty) {
+          catSnap = bySlug.docs[0];
+          realCatId = catSnap.id;
+        }
+      }
+      if (catSnap.exists()) {
+        setCategory({ id: catSnap.id, ...(catSnap.data() as any) });
       } else {
+        setCategory(null); // breadcrumb fallback
+      }
+
+      // ---- Resolver SUBCATEGORÍA por id o slug ----
+      let realSubId = subId;
+      let subSnap = await getDoc(doc(tCol("subcategories", tenantId), subId));
+      if (!subSnap.exists()) {
         const bySlug = await getDocs(
           query(tCol("subcategories", tenantId), where("slug", "==", subId), limit(1))
         );
         if (!bySlug.empty) {
-          const d = bySlug.docs[0];
-          realSubId = d.id;
-          subData = d.data();
+          subSnap = bySlug.docs[0];
+          realSubId = subSnap.id;
         }
       }
-      if (subData) setSubcategory({ id: realSubId, ...(subData as any) });
+      if (subSnap.exists()) {
+        setSubcategory({ id: realSubId, ...(subSnap.data() as any) });
+      } else {
+        setSubcategory(null);
+      }
 
-      // Items de la subcategoría
+      // ---- Suscripción a ITEMS de la subcategoría (por id real) ----
       const qItems = query(tCol("menuItems", tenantId), where("subcategoryId", "==", realSubId));
       const unsub = onSnapshot(qItems, (s) => {
+        if (cancelled) return;
         const rows: MenuItem[] = s.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
         rows.sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")));
         setItems(rows);
+        setLoading(false);
       });
-      unsubList.push(unsub);
+      unsubs.push(unsub);
     })();
 
-    return () => unsubList.forEach((fn) => { try { fn(); } catch {} });
+    return () => {
+      cancelled = true;
+      unsubs.forEach((fn) => { try { fn(); } catch {} });
+    };
   }, [db, catId, subId, tenantId]);
 
   function isDisabled(mi: MenuItem) {
@@ -185,69 +187,68 @@ export default function SubcategoryClient({ catId, subId }: { catId: string; sub
     return false;
   }
 
+  // ⚠️ Arreglado: evitar condición de carrera al inicializar defaults
   async function onToggleOptions(mi: MenuItem) {
     const nowExpanded = expandedItemId === mi.id ? null : mi.id;
     setExpandedItemId(nowExpanded);
+    if (!nowExpanded || !tenantId) return;
 
-    if (!nowExpanded || !tenantId) return; // cerrando o sin tenant aún
-
-    // Cargar groups del item si no están ya
     const ogIds = Array.isArray(mi.optionGroupIds) ? mi.optionGroupIds : [];
-    if (ogIds.length) {
-      // obtener grupos que falten
-      const missing = ogIds.filter(
-        (gid) => !(itemGroups[mi.id]?.some((g) => g.id === gid))
-      );
-      if (missing.length) {
-        const fetched: OptionGroup[] = [];
-        for (const gid of missing) {
-          const gRef = doc(tCol("option-groups", tenantId), gid);
-          const snap = await getDoc(gRef);
-          if (snap.exists()) {
-            fetched.push({ id: snap.id, ...(snap.data() as any) });
-          }
-        }
-        if (fetched.length) {
-          setItemGroups((prev) => ({
-            ...prev,
-            [mi.id]: [...(prev[mi.id] || []), ...fetched].filter(Boolean),
-          }));
-        }
-      }
-
-      // por cada groupId, cargar sus option-items (si faltan)
-      const groupsToEnsure = itemGroups[mi.id] || [];
-      const ensureIds = new Set<string>([...ogIds, ...groupsToEnsure.map((g) => g.id)]);
-      for (const gid of ensureIds) {
-        if (!groupItems[gid]) {
-          const qIt = query(tCol("option-items", tenantId), where("groupId", "==", gid));
-          const snaps = await getDocs(qIt);
-          const its: OptionItem[] = snaps.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
-          its.sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")));
-          setGroupItems((prev) => ({ ...prev, [gid]: its }));
-        }
-      }
+    if (!ogIds.length) {
+      // aún así inicializamos contenedores vacíos
+      setSelectedAddons((prev) => prev[mi.id] ? prev : { ...prev, [mi.id]: {} });
+      setSelectedOptions((prev) => prev[mi.id] ? prev : { ...prev, [mi.id]: {} as any });
+      return;
     }
 
-    // Inicializar selecciones por defecto si no existe estado previo
+    // 1) Traer grupos faltantes
+    const currentGroups = itemGroups[mi.id] || [];
+    const missingGroupIds = ogIds.filter((gid) => !currentGroups.some((g) => g.id === gid));
+    const newlyFetchedGroups: OptionGroup[] = [];
+    for (const gid of missingGroupIds) {
+      const gRef = doc(tCol("option-groups", tenantId), gid);
+      const snap = await getDoc(gRef);
+      if (snap.exists()) newlyFetchedGroups.push({ id: snap.id, ...(snap.data() as any) });
+    }
+    // fusion local inmediata (sin esperar setState)
+    const mergedGroups = [...currentGroups, ...newlyFetchedGroups];
+
+    if (newlyFetchedGroups.length) {
+      setItemGroups((prev) => ({ ...prev, [mi.id]: mergedGroups }));
+    }
+
+    // 2) Traer option-items faltantes por cada groupId
+    const fetchedGroupItems: Record<string, OptionItem[]> = {};
+    for (const g of mergedGroups) {
+      if (!groupItems[g.id]) {
+        const qIt = query(tCol("option-items", tenantId), where("groupId", "==", g.id));
+        const snaps = await getDocs(qIt);
+        const its: OptionItem[] = snaps.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
+        its.sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")));
+        fetchedGroupItems[g.id] = its;
+      }
+    }
+    if (Object.keys(fetchedGroupItems).length) {
+      setGroupItems((prev) => ({ ...prev, ...fetchedGroupItems }));
+    }
+
+    // 3) Inicializar selecciones por defecto usando los datos *ya cargados* (mergedGroups + fetchedGroupItems + state)
     setSelectedAddons((prev) => prev[mi.id] ? prev : { ...prev, [mi.id]: {} });
 
     setSelectedOptions((prev) => {
-      if (prev[mi.id]) return prev; // ya inicializado
+      if (prev[mi.id]) return prev; // ya inicializado antes
+
       const nextForItem: Record<string, string | Record<string, boolean>> = {};
-      const groups = itemGroups[mi.id] || [];
-      for (const g of groups) {
-        const items = groupItems[g.id] || [];
+      for (const g of mergedGroups) {
+        const itemsOfG = fetchedGroupItems[g.id] ?? groupItems[g.id] ?? [];
         if (g.type === "single") {
-          // buscar default
-          const def = items.find((oi) => oi.isDefault && oi.active !== false);
+          const def = itemsOfG.find((oi) => oi.isDefault && oi.active !== false);
           if (def) nextForItem[g.id] = def.id;
-          else if (g.required && items.length) nextForItem[g.id] = items[0].id; // fallback
+          else if (g.required && itemsOfG.length) nextForItem[g.id] = itemsOfG[0].id;
           else nextForItem[g.id] = "";
         } else {
-          // multi: iniciar con los que tengan isDefault
           const bag: Record<string, boolean> = {};
-          items.forEach((oi) => {
+          itemsOfG.forEach((oi) => {
             if (oi.isDefault && oi.active !== false) bag[oi.id] = true;
           });
           nextForItem[g.id] = bag;
@@ -296,9 +297,7 @@ export default function SubcategoryClient({ catId, subId }: { catId: string; sub
 
     const addonBag = selectedAddons[mi.id] || {};
     for (const ad of (mi.addons || [])) {
-      if (addonBag[ad.name]) {
-        total += Number(ad.price || 0);
-      }
+      if (addonBag[ad.name]) total += Number(ad.price || 0);
     }
 
     const groups = itemGroups[mi.id] || [];
@@ -358,14 +357,9 @@ export default function SubcategoryClient({ catId, subId }: { catId: string; sub
       }
     });
 
-    // ===========================
-    // NUEVO: totales en CENTAVOS
-    // ===========================
-    const qty = 1; // aquí siempre agregas 1
+    const qty = 1;
     const baseC = toCents(basePrice);
-
     const addonsC = addonsPicked.reduce((s, ad) => s + toCents(ad.price), 0);
-
     const optsC = optionGroups.reduce((sum, g) => {
       const gSum = (g.items || []).reduce((s, it) => s + toCents(it.priceDelta || 0), 0);
       return sum + gSum;
@@ -374,7 +368,6 @@ export default function SubcategoryClient({ catId, subId }: { catId: string; sub
     const unitPriceCents = baseC + addonsC + optsC;
     const lineSubtotalCents = unitPriceCents * qty;
 
-    // Mantengo totalPrice numérico como antes para el resto del flujo/UI
     const totalPrice = computeTotal(mi);
 
     return {
@@ -385,8 +378,6 @@ export default function SubcategoryClient({ catId, subId }: { catId: string; sub
       addons: addonsPicked,
       optionGroups,
       totalPrice,
-
-      // 👇 NUEVO: campos exactos en centavos para el checkout / apply-promo
       unitPriceCents,
       lineSubtotalCents,
       totalPriceCents: lineSubtotalCents,
@@ -395,11 +386,9 @@ export default function SubcategoryClient({ catId, subId }: { catId: string; sub
 
   function onAddToCart(mi: MenuItem) {
     const payload = buildCartPayload(mi);
-    console.log("[ADD TO CART] payload listo:", payload);
     setAddingId(mi.id);
     try {
       if (newCart && typeof newCart.add === "function") {
-        // Pasamos también los campos en centavos (no rompen nada si el cart los ignora)
         newCart.add({
           menuItemId: payload.menuItemId,
           menuItemName: payload.menuItemName,
@@ -408,14 +397,11 @@ export default function SubcategoryClient({ catId, subId }: { catId: string; sub
           addons: payload.addons || [],
           optionGroups: payload.optionGroups || [],
           totalPrice: payload.totalPrice,
-
-          // NUEVO: centavos
           unitPriceCents: payload.unitPriceCents,
           lineSubtotalCents: payload.lineSubtotalCents,
           totalPriceCents: payload.totalPriceCents,
         } as any);
       }
-      // 👇 Dispara el mensaje “Agregado”
       setFlash({ id: mi.id, name: mi.name });
       window.clearTimeout((window as any).__flashTimer);
       (window as any).__flashTimer = window.setTimeout(() => setFlash(null), 1500);
@@ -443,6 +429,8 @@ export default function SubcategoryClient({ catId, subId }: { catId: string; sub
     return false;
   }
 
+  const realCatForLinks = category?.id ?? catId;
+
   return (
     <div className="container py-4">
       <div className="d-flex align-items-center justify-content-between mb-3">
@@ -453,7 +441,7 @@ export default function SubcategoryClient({ catId, subId }: { catId: string; sub
           <h1 className="h4 m-0">{subcategory?.name ?? tt("menu.subcat.subcategoryFallback", "Subcategory")}</h1>
         </div>
         <div className="d-flex gap-2">
-          <Link href={withTenant(`/app/menu/${catId}`)} className="btn btn-sm btn-outline-secondary">
+          <Link href={withTenant(`/app/menu/${realCatForLinks}`)} className="btn btn-sm btn-outline-secondary">
             ← {tt("menu.subcat.backSubcats", "Subcategories")}
           </Link>
           <Link href={withTenant("/app/menu")} className="btn btn-sm btn-outline-secondary">
@@ -461,6 +449,10 @@ export default function SubcategoryClient({ catId, subId }: { catId: string; sub
           </Link>
         </div>
       </div>
+
+      {loading && (
+        <div className="text-muted mb-3">{tt("menu.subcat.loading", "Loading items…")}</div>
+      )}
 
       <div className="row g-4">
         {items.map((it) => {
@@ -470,7 +462,6 @@ export default function SubcategoryClient({ catId, subId }: { catId: string; sub
           return (
             <div className="col-12 col-sm-6 col-lg-4" key={it.id}>
               <div className="card border-0 shadow-sm h-100 d-flex flex-column">
-                {/* 👇 ÚNICO CAMBIO: hacer clic en la imagen también abre/cierra opciones */}
                 <div
                   className="ratio ratio-4x3 rounded-top overflow-hidden"
                   role="button"
@@ -500,7 +491,6 @@ export default function SubcategoryClient({ catId, subId }: { catId: string; sub
                     <div className="fw-semibold">{fmtQ(total)}</div>
                   </div>
 
-                  {/* descripción en menú (no se pasa al carrito) */}
                   {it.description && (
                     <p className="text-muted small mb-2">{it.description}</p>
                   )}
@@ -553,7 +543,7 @@ export default function SubcategoryClient({ catId, subId }: { catId: string; sub
                             {(itemGroups[it.id] || [])
                               .filter((g) => g.active !== false)
                               .map((g) => {
-                                const items = (groupItems[g.id] || []).filter((oi) => oi.active !== false);
+                                const itemsOI = (groupItems[g.id] || []).filter((oi) => oi.active !== false);
                                 const invalid = groupIsInvalid(it, g);
                                 const count = groupSelectionCount(it, g);
 
@@ -576,7 +566,7 @@ export default function SubcategoryClient({ catId, subId }: { catId: string; sub
 
                                     <div className="d-flex flex-column gap-1">
                                       {g.type === "single" ? (
-                                        items.map((oi) => {
+                                        itemsOI.map((oi) => {
                                           const selId = (selectedOptions[it.id]?.[g.id] as string) || "";
                                           const checked = selId === oi.id;
                                           return (
@@ -596,7 +586,7 @@ export default function SubcategoryClient({ catId, subId }: { catId: string; sub
                                           );
                                         })
                                       ) : (
-                                        items.map((oi) => {
+                                        itemsOI.map((oi) => {
                                           const bag = (selectedOptions[it.id]?.[g.id] as Record<string, boolean>) || {};
                                           const checked = !!bag[oi.id];
                                           const max = Number(g.max ?? Infinity);
@@ -652,19 +642,17 @@ export default function SubcategoryClient({ catId, subId }: { catId: string; sub
           );
         })}
 
-        {items.length === 0 && (
+        {!loading && items.length === 0 && (
           <div className="col-12">
             <div className="alert alert-light border">{tt("menu.subcat.empty", "There are no items in this subcategory yet.")}</div>
           </div>
         )}
       </div>
 
-      {/* Toast “Agregado” */}
       <div
         className={`position-fixed bottom-0 start-50 translate-middle-x mb-3 ${flash ? "" : "d-none"}`}
         style={{ zIndex: 1080 }}
-        aria-live="polite"
-        aria-atomic="true"
+        aria-live="polite" aria-atomic="true"
       >
         <div className="alert alert-success py-2 px-3 shadow-sm border-0 d-flex align-items-center gap-2">
           <span role="img" aria-label="check">✅</span>

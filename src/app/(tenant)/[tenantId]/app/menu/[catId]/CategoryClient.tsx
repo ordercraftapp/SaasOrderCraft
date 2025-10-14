@@ -3,22 +3,20 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   getFirestore,
-  // collection, // ⛔️ old (global, sin tenant) — ahora usamos tCol(...)
   query,
   where,
   onSnapshot,
   getDoc,
   doc,
   orderBy,
+  getDocs,
+  limit,
 } from "firebase/firestore";
 import Image from "next/image";
 import Link from "next/link";
 
-// 🔤 i18n
 import { useTenantSettings } from "@/lib/settings/hooks";
 import { t as translate } from "@/lib/i18n/t";
-
-/* ✅ Multi-tenant (cliente) */
 import { useTenantId } from "@/lib/tenant/context";
 import { tCol } from "@/lib/db";
 
@@ -34,11 +32,12 @@ type Subcategory = {
 
 export default function CategoryClient({ catId }: { catId: string }) {
   const db = useMemo(() => getFirestore(), []);
-  const tenantId = useTenantId(); // ✅ tenant actual
+  const tenantId = useTenantId();
   const [category, setCategory] = useState<Category | null>(null);
   const [subcats, setSubcats] = useState<Subcategory[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  // 🔤 idioma actual + helper
+  // i18n
   const { settings } = useTenantSettings();
   const lang = useMemo(() => {
     try {
@@ -54,63 +53,115 @@ export default function CategoryClient({ catId }: { catId: string }) {
     return s === key ? fallback : s;
   };
 
-  // Helper: prefija rutas con /{tenantId}
   const withTenant = (p: string) => {
-    if (!tenantId) return p; // fallback visual mientras carga el contexto
+    if (!tenantId) return p;
     const norm = p.startsWith("/") ? p : `/${p}`;
     if (norm.startsWith(`/${tenantId}/`)) return norm;
     return `/${tenantId}${norm}`;
   };
 
   useEffect(() => {
-    if (!tenantId) return; // espera contexto tenant
-    const unsubList: Array<() => void> = [];
+    if (!tenantId) return;
+
+    let unsubSubcats: (() => void) | null = null;
+    let cancelled = false;
 
     (async () => {
-      // ⛔️ OLD (global):
-      // const snap = await getDoc(doc(db, "categories", catId));
-      // ✅ NEW (scoped): tenants/{tenantId}/categories/{catId}
-      const snap = await getDoc(doc(tCol("categories", tenantId), catId));
-      if (snap.exists()) setCategory({ id: snap.id, ...(snap.data() as any) });
+      try {
+        setLoading(true);
 
-      // ⛔️ OLD (global):
-      // const qSub = query(
-      //   collection(db, "subcategories"),
-      //   where("categoryId", "==", catId),
-      //   orderBy("sortOrder", "asc")
-      // );
-      // ✅ NEW (scoped): tenants/{tenantId}/subcategories (mismo filtro/orden)
-      const qSub = query(
-        tCol("subcategories", tenantId),
-        where("categoryId", "==", catId),
-        orderBy("sortOrder", "asc")
-      );
+        // 1) Intentar resolver categoría por ID directo
+        let catSnap = await getDoc(doc(tCol("categories", tenantId), catId));
 
-      const unsub = onSnapshot(qSub, (s) => {
-        const rows = s.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
-        setSubcats(rows);
-      });
-      unsubList.push(unsub);
+        // 2) Si no existe, intentar por slug == catId
+        if (!catSnap.exists()) {
+          const qBySlug = query(
+            tCol("categories", tenantId),
+            where("slug", "==", catId),
+            limit(1)
+          );
+          const snapSlug = await getDocs(qBySlug);
+          if (!snapSlug.empty) {
+            catSnap = snapSlug.docs[0];
+          }
+        }
+
+        if (!catSnap.exists()) {
+          // No se encontró ni por id ni por slug
+          setCategory(null);
+          setSubcats([]);
+          setLoading(false);
+          return;
+        }
+
+        const catData = { id: catSnap.id, ...(catSnap.data() as any) } as Category;
+        setCategory(catData);
+
+        // 3) Suscripción a subcategorías por categoryId == ID REAL
+        const qSubBase = query(
+          tCol("subcategories", tenantId),
+          where("categoryId", "==", catData.id)
+        );
+
+        // Preferimos con orderBy(sortOrder)…
+        try {
+          const qSub = query(qSubBase, orderBy("sortOrder", "asc"));
+          unsubSubcats = onSnapshot(qSub, (s) => {
+            if (cancelled) return;
+            const rows = s.docs.map((d) => ({ id: d.id, ...(d.data() as any) }));
+            setSubcats(rows);
+            setLoading(false);
+          });
+        } catch {
+          // …si falla (p. ej. índice), hacemos fallback sin orderBy
+          unsubSubcats = onSnapshot(qSubBase, (s) => {
+            if (cancelled) return;
+            const rows = s.docs
+              .map((d) => ({ id: d.id, ...(d.data() as any) }))
+              .sort(
+                (a, b) =>
+                  (Number(a.sortOrder || 0) - Number(b.sortOrder || 0)) ||
+                  String(a.name || "").localeCompare(String(b.name || ""))
+              );
+            setSubcats(rows);
+            setLoading(false);
+          });
+        }
+      } catch (e) {
+        if (!cancelled) {
+          console.error("[CategoryClient] error:", e);
+          setCategory(null);
+          setSubcats([]);
+          setLoading(false);
+        }
+      }
     })();
 
-    return () => unsubList.forEach((u) => { try { u(); } catch {} });
+    return () => {
+      cancelled = true;
+      if (unsubSubcats) {
+        try { unsubSubcats(); } catch {}
+      }
+    };
   }, [db, catId, tenantId]);
 
   return (
     <div className="container py-4">
       <div className="d-flex align-items-center justify-content-between mb-3">
         <h1 className="h4 m-0">{category?.name ?? tt("menu.category.title", "Category")}</h1>
-        {/* ⛔️ OLD: <Link href="/menu" ...> */}
         <Link href={withTenant("/app/menu")} className="btn btn-sm btn-outline-secondary">
           ← {tt("menu.category.back", "Back")}
         </Link>
       </div>
 
+      {loading && (
+        <div className="text-muted mb-3">{tt("menu.category.loading", "Loading subcategories…")}</div>
+      )}
+
       <div className="row g-4">
         {subcats.map((sub, i) => (
           <div className="col-12 col-sm-6 col-lg-3" key={sub.id}>
-            {/* ⛔️ OLD: href={`/menu/${catId}/${sub.id}`} */}
-            <Link href={withTenant(`/app/menu/${catId}/${sub.id}`)} className="text-decoration-none">
+            <Link href={withTenant(`/app/menu/${category?.id ?? catId}/${sub.id}`)} className="text-decoration-none">
               <div className="card border-0 shadow-sm h-100 position-relative">
                 <div className="ratio ratio-16x9 rounded-top overflow-hidden">
                   {sub.imageUrl ? (
@@ -120,7 +171,6 @@ export default function CategoryClient({ catId }: { catId: string }) {
                       fill
                       sizes="(max-width: 576px) 100vw, (max-width: 992px) 50vw, 25vw"
                       className="object-fit-cover"
-                      // prioridad solo a la primera imagen en grid (micro-perf percibida)
                       priority={i < 1}
                     />
                   ) : (
@@ -139,7 +189,7 @@ export default function CategoryClient({ catId }: { catId: string }) {
           </div>
         ))}
 
-        {subcats.length === 0 && (
+        {!loading && subcats.length === 0 && (
           <div className="col-12">
             <div className="alert alert-light border">
               {tt("menu.category.empty", "There are no subcategories in this category yet.")}
