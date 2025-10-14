@@ -4,16 +4,30 @@
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useParams } from 'next/navigation';
+// 🔧 Corrige la ruta del import para el mismo segmento [tenant]
 import CartBadge from '@/app/(tenant)/[tenantId]/components/CartBadge';
 
 // i18n
 import { t, getLang } from '@/lib/i18n/t';
 import { useTenantSettings } from '@/lib/settings/hooks';
 
+function useSafeTenantId() {
+  const p = useParams() as Record<string, string | string[] | undefined>;
+  let v =
+    (typeof p?.tenantId === 'string' ? p.tenantId : Array.isArray(p?.tenantId) ? p.tenantId[0] : undefined) ||
+    (typeof p?.tenant === 'string' ? p.tenant : Array.isArray(p?.tenant) ? p.tenant[0] : undefined) ||
+    '';
+  v = (v || '').trim();
+  if (!v && typeof window !== 'undefined') {
+    const first = (window.location.pathname || '/').split('/').filter(Boolean)[0] || '';
+    v = first.trim();
+  }
+  return v;
+}
+
 function useTenantAppBase() {
-  const params = useParams<{ tenant: string }>();
-  const tenant = (params?.tenant || '').trim();
-  return `/${tenant}/app`;
+  const tenant = useSafeTenantId();
+  return `/${tenant}/app`; // base del árbol “app”
 }
 
 export default function ClientLayout(
@@ -24,7 +38,7 @@ export default function ClientLayout(
 
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
-  const appBase = useTenantAppBase(); // 👈 /{tenant}/app
+  const appBase = useTenantAppBase(); // 👉 "/{tenant}/app"
 
   // idioma actual desde settings / localStorage
   const { settings } = useTenantSettings();
@@ -48,12 +62,13 @@ export default function ClientLayout(
   const isActive = (href: string) => pathname?.startsWith(href);
 
   // Rutas tenant-aware
-  const hrefHome = `${appBase}`;
+  const tenantSlug = useSafeTenantId();
+  const hrefHome = `${appBase}/app`; // ✅ home del área cliente
   const hrefMenu = `${appBase}/menu`;
   const hrefCart = `${appBase}/cart-new`;
   const hrefOrders = `${appBase}/orders`;
   const hrefTracking = `${appBase}/tracking`;
-  const hrefLogout = `/${(useParams() as any)?.tenant || ''}/logout`;
+  const hrefLogout = `/${tenantSlug}/logout`;
 
   return (
     <>

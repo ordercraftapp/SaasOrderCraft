@@ -49,6 +49,22 @@ function uniqById(list: PromoDoc[]): PromoDoc[] {
   return out;
 }
 
+/** Lee tenantId soportando [tenant] y [tenantId] (y como fallback, primer segmento del path). */
+function useSafeTenantId() {
+  const p = useParams() as Record<string, string | string[] | undefined>;
+  let v =
+    (typeof p?.tenantId === 'string' ? p.tenantId : Array.isArray(p?.tenantId) ? p.tenantId[0] : undefined) ||
+    (typeof p?.tenant === 'string' ? p.tenant : Array.isArray(p?.tenant) ? p.tenant[0] : undefined) ||
+    '';
+
+  v = (v || '').trim();
+  if (!v && typeof window !== 'undefined') {
+    const first = (window.location.pathname || '/').split('/').filter(Boolean)[0] || '';
+    v = first.trim();
+  }
+  return v;
+}
+
 export default function AppHome() {
   const { settings } = useTenantSettings();
   const rawLang =
@@ -56,14 +72,14 @@ export default function AppHome() {
     (typeof window !== "undefined" ? localStorage.getItem("tenant.language") || undefined : undefined);
   const lang = getLang(rawLang);
 
-  // 👇 tenant y bases de ruta
-  const params = useParams<{ tenant: string }>();
-  const tenantId = (params?.tenant || '').trim();
-  const appBase = `/${tenantId}/app`;
-  const apiBase = appBase; // tus APIs viven bajo /{tenant}/app/api/...
+  // 👇 tenant y bases de ruta (tenantId seguro)
+  const tenantId = useSafeTenantId();
+  const appBase = tenantId ? `/${tenantId}/app` : '/app';
+  const apiBase = appBase; // tus APIs viven bajo /{tenantId}/app/api/...
 
   const [promos, setPromos] = useState<PromoDoc[]>([]);
   const [loadingPromos, setLoadingPromos] = useState<boolean>(true);
+  const [noTenantMsg, setNoTenantMsg] = useState<string | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -122,12 +138,13 @@ export default function AppHome() {
           if (res.ok) {
             const j = await res.json().catch(() => ({}));
             const arr = normalizeList<any>(j?.items ?? j?.promotions ?? []);
+            const now2 = new Date();
             const filtered = arr
               .filter((p) => {
                 const active = p?.active !== false;
                 const start = toDateMaybe(p?.startAt);
                 const end = toDateMaybe(p?.endAt);
-                const inWindow = (!start || now >= start) && (!end || now <= end);
+                const inWindow = (!start || now2 >= start) && (!end || now2 <= end);
                 const code = p?.code ? String(p.code) : undefined;
 
                 // Si el API expone el secreto, se honra; sino se asegura con Firestore secret sets
@@ -162,10 +179,14 @@ export default function AppHome() {
       }
     }
 
-    if (tenantId) {
-      load();
+    if (!tenantId) {
+      // 🔸 Evita spinner eterno cuando el param falla
+      setNoTenantMsg('Missing tenant context.');
+      setLoadingPromos(false);
+      return;
     }
 
+    load();
     return () => { alive = false; };
   }, [tenantId, apiBase]);
 
@@ -193,6 +214,12 @@ export default function AppHome() {
                 {t(lang, "home.btnOrders")}
               </a>
             </div>
+
+            {noTenantMsg && (
+              <div className="alert alert-warning mt-3 mb-0 small">
+                {noTenantMsg}
+              </div>
+            )}
           </div>
         </div>
 

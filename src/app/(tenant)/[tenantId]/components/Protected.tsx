@@ -4,9 +4,10 @@
 import { useAuth } from "@/app/providers";
 import Link from "next/link";
 import { Suspense, useEffect } from "react";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams, useParams } from "next/navigation";
 import { useTenantId } from "@/lib/tenant/context";
-import { tenantPath } from '@/lib/tenant/paths';
+// (Opcional) si prefieres, puedes seguir usando tenantPath, pero no es necesario.
+// import { tenantPath } from '@/lib/tenant/paths';
 
 type Props = {
   children: React.ReactNode;
@@ -36,16 +37,24 @@ function Gate({ children, redirect = false }: Props) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const tenantId = useTenantId();
 
-  // ✅ login tenant-aware
-  const loginHref = tenantId
-  ? tenantPath(tenantId, '/app/login') // wildcard → /app/login | local → /{tenantId}/app/login
-  : '/login';
+  // 1) Intenta con tu hook actual…
+  let tenantId = useTenantId();
 
-  
+  // 2) …si no hay valor, cae a los params de la ruta y acepta [tenant] o [tenantId]
+  if (!tenantId) {
+    const p = useParams() as Record<string, string | string[] | undefined>;
+    tenantId =
+      (typeof p?.tenantId === "string" ? p.tenantId : Array.isArray(p?.tenantId) ? p.tenantId[0] : undefined) ||
+      (typeof p?.tenant === "string" ? p.tenant : Array.isArray(p?.tenant) ? p.tenant[0] : undefined) ||
+      "";
+    tenantId = (tenantId || "").trim();
+  }
+
+  // ✅ login tenant-aware (simple y robusto)
+  const loginHref = tenantId ? `/${tenantId}/app/login` : '/login';
+
   const isLoginRoute = !!pathname && /(?:^|\/)login(\/|$)/.test(pathname);
-
   const search = searchParams?.toString();
   const next = pathname + (search ? `?${search}` : "");
 
