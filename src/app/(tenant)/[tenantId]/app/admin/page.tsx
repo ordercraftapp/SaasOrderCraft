@@ -22,67 +22,67 @@ type AdminTile = {
 };
 
 const TILES: AdminTile[] = [
-  { title: "Kitchen",     subtitle: "admin/kitchen",     href: "/admin/kitchen",     emoji: "🍳", hint: "Orders and kitchen status" },
-  { title: "Cashier",     subtitle: "admin/cashier",     href: "/admin/cashier",     emoji: "💵", hint: "Collection, receipts and closing" },
-  { title: "Delivery",    subtitle: "admin/delivery",    href: "/admin/delivery",    emoji: "🚚", hint: "Allocation and monitoring" },
-  { title: "Menu",        subtitle: "admin/menu",        href: "/admin/menu",        emoji: "📋", hint: "Categories, subcategories and dishes" },
-  { title: "Tables",      subtitle: "admin/waiter",      href: "/admin/waiter",      emoji: "🍴", hint: "Manage tables" },
-  { title: "Orders",      subtitle: "admin/orders",      href: "/admin/orders",      emoji: "🧾", hint: "List and details of orders" },
-  { title: "Edit Orders", subtitle: "admin/edit-orders", href: "/admin/edit-orders", emoji: "✏️", hint: "Edit existing orders" },
-  { title: "Roles",       subtitle: "admin/roles",       href: "/admin/roles",       emoji: "👥", hint: "Management of permits and personnel" },
-  { title: "OPS",         subtitle: "admin/ops",         href: "/admin/ops",         emoji: "🛠️", hint: "Operations and tools" },
-  { title: "Promotions",  subtitle: "admin/promotions",  href: "/admin/promotions",  emoji: "🎟️", hint: "Discount codes and conditions" },
-  { title: "Delivery options",  subtitle: "admin/delivery-options",  href: "/admin/delivery-options",  emoji: "🛵", hint: "Manage delivery options" },
-  { title: "Marketing", subtitle: "admin/marketing", href: "/admin/marketing", emoji: "✉️", hint: "Brevo: contactos y campañas" },
-  { title: "Taxes", subtitle: "admin/taxes", href: "/admin/taxes", emoji: "🧾", hint: "Configure tax profile" },
-  { title: "Reports", subtitle: "admin/reports", href: "/admin/reports", emoji: "📊", hint: "Create reports" },
-  { title: "AI Studio", subtitle: "admin/ai-studio", href: "/admin/ai-studio", emoji: "🤖", hint: "Create Dishes & Promots with AI" },
-  { title: "Language & Currency", subtitle: "admin/settings", href: "/admin/settings", emoji: "⚙️", hint: "Set the currency and language" },
-  { title: "Settings", subtitle: "admin/home-configure", href: "/admin/home-configure", emoji: "🏠", hint: "Configure the Home Page" },
+  { title: "Kitchen",     subtitle: "admin/kitchen",     href: "/app/admin/kitchen",     emoji: "🍳", hint: "Orders and kitchen status" },
+  { title: "Cashier",     subtitle: "admin/cashier",     href: "/app/admin/cashier",     emoji: "💵", hint: "Collection, receipts and closing" },
+  { title: "Delivery",    subtitle: "admin/delivery",    href: "/app/admin/delivery",    emoji: "🚚", hint: "Allocation and monitoring" },
+  { title: "Menu",        subtitle: "admin/menu",        href: "/app/admin/menu",        emoji: "📋", hint: "Categories, subcategories and dishes" },
+  { title: "Tables",      subtitle: "admin/waiter",      href: "/app/admin/waiter",      emoji: "🍴", hint: "Manage tables" },
+  { title: "Orders",      subtitle: "admin/orders",      href: "/app/admin/orders",      emoji: "🧾", hint: "List and details of orders" },
+  { title: "Edit Orders", subtitle: "admin/edit-orders", href: "/app/admin/edit-orders", emoji: "✏️", hint: "Edit existing orders" },
+  { title: "Roles",       subtitle: "admin/roles",       href: "/app/admin/roles",       emoji: "👥", hint: "Management of permits and personnel" },
+  { title: "OPS",         subtitle: "admin/ops",         href: "/app/admin/ops",         emoji: "🛠️", hint: "Operations and tools" },
+  { title: "Promotions",  subtitle: "admin/promotions",  href: "/app/admin/promotions",  emoji: "🎟️", hint: "Discount codes and conditions" },
+  { title: "Delivery options",  subtitle: "admin/delivery-options",  href: "/app/admin/delivery-options",  emoji: "🛵", hint: "Manage delivery options" },
+  { title: "Marketing", subtitle: "admin/marketing", href: "/app/admin/marketing", emoji: "✉️", hint: "Brevo: contactos y campañas" },
+  { title: "Taxes", subtitle: "admin/taxes", href: "/app/admin/taxes", emoji: "🧾", hint: "Configure tax profile" },
+  { title: "Reports", subtitle: "admin/reports", href: "/app/admin/reports", emoji: "📊", hint: "Create reports" },
+  { title: "AI Studio", subtitle: "admin/ai-studio", href: "/app/admin/ai-studio", emoji: "🤖", hint: "Create Dishes & Promots with AI" },
+  { title: "Language & Currency", subtitle: "admin/settings", href: "/app/admin/settings", emoji: "⚙️", hint: "Set the currency and language" },
+  { title: "Settings", subtitle: "admin/home-configure", href: "/app/admin/home-configure", emoji: "🏠", hint: "Configure the Home Page" },
 ];
 
 function getTitleKeyByHref(href: string): string {
   switch (href) {
-    case "/admin/kitchen": return "admin.tiles.kitchen.title";
-    case "/admin/cashier": return "admin.tiles.cashier.title";
-    case "/admin/delivery": return "admin.tiles.delivery.title";
-    case "/admin/menu": return "admin.tiles.menu.title";
-    case "/admin/waiter": return "admin.tiles.tables.title";
-    case "/admin/orders": return "admin.tiles.orders.title";
-    case "/admin/edit-orders": return "admin.tiles.editOrders.title";
-    case "/admin/roles": return "admin.tiles.roles.title";
-    case "/admin/ops": return "admin.tiles.ops.title";
-    case "/admin/promotions": return "admin.tiles.promotions.title";
-    case "/admin/delivery-options": return "admin.tiles.deliveryOptions.title";
-    case "/admin/marketing": return "admin.tiles.marketing.title";
-    case "/admin/taxes": return "admin.tiles.taxes.title";
-    case "/admin/reports": return "admin.tiles.reports.title";
-    case "/admin/ai-studio": return "admin.tiles.aiStudio.title";
-    case "/admin/settings": return "admin.tiles.settings.title";
-    case "/admin/home-configure": return "admin.tiles.homeConfigure.title";
+    case "/app/admin/kitchen": return "admin.tiles.kitchen.title";
+    case "/app/admin/cashier": return "admin.tiles.cashier.title";
+    case "/app/admin/delivery": return "admin.tiles.delivery.title";
+    case "/app/admin/menu": return "admin.tiles.menu.title";
+    case "/app/admin/waiter": return "admin.tiles.tables.title";
+    case "/app/admin/orders": return "admin.tiles.orders.title";
+    case "/app/admin/edit-orders": return "admin.tiles.editOrders.title";
+    case "/app/admin/roles": return "admin.tiles.roles.title";
+    case "/app/admin/ops": return "admin.tiles.ops.title";
+    case "/app/admin/promotions": return "admin.tiles.promotions.title";
+    case "/app/admin/delivery-options": return "admin.tiles.deliveryOptions.title";
+    case "/app/admin/marketing": return "admin.tiles.marketing.title";
+    case "/app/admin/taxes": return "admin.tiles.taxes.title";
+    case "/app/admin/reports": return "admin.tiles.reports.title";
+    case "/app/admin/ai-studio": return "admin.tiles.aiStudio.title";
+    case "/app/admin/settings": return "admin.tiles.settings.title";
+    case "/app/dmin/home-configure": return "admin.tiles.homeConfigure.title";
     default: return "admin.tiles.unknown.title";
   }
 }
 
 function getHintKeyByHref(href: string): string {
   switch (href) {
-    case "/admin/kitchen": return "admin.tiles.kitchen.hint";
-    case "/admin/cashier": return "admin.tiles.cashier.hint";
-    case "/admin/delivery": return "admin.tiles.delivery.hint";
-    case "/admin/menu": return "admin.tiles.menu.hint";
-    case "/admin/waiter": return "admin.tiles.tables.hint";
-    case "/admin/orders": return "admin.tiles.orders.hint";
-    case "/admin/edit-orders": return "admin.tiles.editOrders.hint";
-    case "/admin/roles": return "admin.tiles.roles.hint";
-    case "/admin/ops": return "admin.tiles.ops.hint";
-    case "/admin/promotions": return "admin.tiles.promotions.hint";
-    case "/admin/delivery-options": return "admin.tiles.deliveryOptions.hint";
-    case "/admin/marketing": return "admin.tiles.marketing.hint";
-    case "/admin/taxes": return "admin.tiles.taxes.hint";
-    case "/admin/reports": return "admin.tiles.reports.hint";
-    case "/admin/ai-studio": return "admin.tiles.aiStudio.hint";
-    case "/admin/settings": return "admin.tiles.settings.hint";
-    case "/admin/home-configure": return "admin.tiles.homeConfigure.hint";
+    case "/app/admin/kitchen": return "admin.tiles.kitchen.hint";
+    case "/app/admin/cashier": return "admin.tiles.cashier.hint";
+    case "/app/admin/delivery": return "admin.tiles.delivery.hint";
+    case "/app/admin/menu": return "admin.tiles.menu.hint";
+    case "/app/admin/waiter": return "admin.tiles.tables.hint";
+    case "/app/admin/orders": return "admin.tiles.orders.hint";
+    case "/app/admin/edit-orders": return "admin.tiles.editOrders.hint";
+    case "/app/admin/roles": return "admin.tiles.roles.hint";
+    case "/app/admin/ops": return "admin.tiles.ops.hint";
+    case "/app/admin/promotions": return "admin.tiles.promotions.hint";
+    case "/app/admin/delivery-options": return "admin.tiles.deliveryOptions.hint";
+    case "/app/admin/marketing": return "admin.tiles.marketing.hint";
+    case "/app/admin/taxes": return "admin.tiles.taxes.hint";
+    case "/app/admin/reports": return "admin.tiles.reports.hint";
+    case "/app/admin/ai-studio": return "admin.tiles.aiStudio.hint";
+    case "/app/admin/settings": return "admin.tiles.settings.hint";
+    case "/app/admin/home-configure": return "admin.tiles.homeConfigure.hint";
     default: return "admin.tiles.unknown.hint";
   }
 }

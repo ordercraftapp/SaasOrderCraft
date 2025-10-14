@@ -22,14 +22,14 @@ type AdminTile = {
 };
 
 const TILES: AdminTile[] = [
-  { title: "Taxes",     subtitle: "/reports/taxes",             href: "/admin/reports/taxes",             emoji: "📊", hint: "Tax reports" },
-  { title: "Sales",     subtitle: "/reports/sales-reports",     href: "/admin/reports/sales-reports",     emoji: "💰", hint: "Sales reports" },
-  { title: "Products",  subtitle: "/reports/product-reports",   href: "/admin/reports/product-reports",   emoji: "🍽️", hint: "Product reports" },
-  { title: "Clients",   subtitle: "/reports/client-reports",    href: "/admin/reports/client-reports",    emoji: "👥", hint: "Client reports" },
-  { title: "Promotion", subtitle: "/reports/promotion-reports", href: "/admin/reports/promotion-reports", emoji: "🏷️", hint: "Promotions reports" },
-  { title: "Delivery",  subtitle: "/reports/delivery-reports",  href: "/admin/reports/delivery-reports",  emoji: "🛵", hint: "Delivery reports" },
-  { title: "Cashier",   subtitle: "/reports/cashier-reports",   href: "/admin/reports/cashier-reports",   emoji: "💵", hint: "Cashier reports" },
-  { title: "Time",      subtitle: "/reports/Time-reports",      href: "/admin/reports/time-reports",      emoji: "⏰", hint: "Time reports" },
+  { title: "Taxes",     subtitle: "/reports/taxes",             href: "/app/admin/reports/taxes",             emoji: "📊", hint: "Tax reports" },
+  { title: "Sales",     subtitle: "/reports/sales-reports",     href: "/app/admin/reports/sales-reports",     emoji: "💰", hint: "Sales reports" },
+  { title: "Products",  subtitle: "/reports/product-reports",   href: "/app/admin/reports/product-reports",   emoji: "🍽️", hint: "Product reports" },
+  { title: "Clients",   subtitle: "/reports/client-reports",    href: "/app/admin/reports/client-reports",    emoji: "👥", hint: "Client reports" },
+  { title: "Promotion", subtitle: "/reports/promotion-reports", href: "/app/admin/reports/promotion-reports", emoji: "🏷️", hint: "Promotions reports" },
+  { title: "Delivery",  subtitle: "/reports/delivery-reports",  href: "/app/admin/reports/delivery-reports",  emoji: "🛵", hint: "Delivery reports" },
+  { title: "Cashier",   subtitle: "/reports/cashier-reports",   href: "/app/admin/reports/cashier-reports",   emoji: "💵", hint: "Cashier reports" },
+  { title: "Time",      subtitle: "/reports/Time-reports",      href: "/app/admin/reports/time-reports",      emoji: "⏰", hint: "Time reports" },
 ];
 
 /** 🔑 Mapa href → featureKey (según tu matriz Reports Starter/Pro/Full) */
@@ -39,14 +39,14 @@ function getFeatureKeyByHref(href: string):
   | null
 {
   switch (href) {
-    case "/admin/reports/sales-reports":     return "salesReports";
-    case "/admin/reports/taxes":             return "taxesReports";
-    case "/admin/reports/product-reports":   return "productReports";
-    case "/admin/reports/client-reports":    return "clientReports";
-    case "/admin/reports/promotion-reports": return "promotionReports";
-    case "/admin/reports/delivery-reports":  return "deliveryReports";
-    case "/admin/reports/cashier-reports":   return "cashierReports";
-    case "/admin/reports/time-reports":      return "timeReports";
+    case "/app/admin/reports/sales-reports":     return "salesReports";
+    case "/app/admin/reports/taxes":             return "taxesReports";
+    case "/app/admin/reports/product-reports":   return "productReports";
+    case "/app/admin/reports/client-reports":    return "clientReports";
+    case "/app/admin/reports/promotion-reports": return "promotionReports";
+    case "/app/admin/reports/delivery-reports":  return "deliveryReports";
+    case "/app/admin/reports/cashier-reports":   return "cashierReports";
+    case "/app/admin/reports/time-reports":      return "timeReports";
     default: return null;
   }
 }
