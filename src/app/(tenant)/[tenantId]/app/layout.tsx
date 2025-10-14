@@ -1,7 +1,8 @@
 import 'bootstrap/dist/css/bootstrap.min.css';
 import BootstrapClient from '@/app/(tenant)/[tenantId]/components/BootstrapClient';
-// ⬇️ antes: import { TenantProvider } from '@/lib/tenant/context';
 import { TenantProvider } from '@/lib/tenant/context';
+// ⬇️ Asegura contextos de Auth/Cart en todo el subtree
+import Providers from '@/app/providers';
 
 export default function TenantAppLayout({
   children,
@@ -10,16 +11,15 @@ export default function TenantAppLayout({
   children: React.ReactNode;
   params: { tenantId: string };
 }) {
-  const tenantId = params.tenantId; // ya es string
+  // Si necesitas el tenantId aquí para algo futuro, lo tienes:
+  // const tenantId = params.tenantId; <TenantProvider> </TenantProvider>
 
   return (
-    <html lang="es">
-      <body>
-        <BootstrapClient />
-        <TenantProvider>
-          {children}
-        </TenantProvider>
-      </body>
-    </html>
+    <Providers>
+      <BootstrapClient />
+     
+        {children}
+     
+    </Providers>
   );
 }

@@ -201,7 +201,7 @@ export function middleware(req: NextRequest) {
 
   if (vForRoles === "/login") {
     const res = nextWithTenant(req, tenantId);
-    return res;
+    return withPaypalCsp(res); // ⬅️ añadido para mantener CSP consistente en /login
   }
 
   const wantsAdmin = isPath(vForRoles, "/admin");
