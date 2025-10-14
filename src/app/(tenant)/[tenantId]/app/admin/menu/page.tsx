@@ -33,15 +33,20 @@ async function getStorageMod() {
 }
 
 /* =========================================================================
-   Auth (solo para reflejar isAdmin como tenías antes)
+   Auth (solo para reflejar isAdmin como tenías antes)  ⬅️ ACTUALIZADO
    ========================================================================= */
 async function getAuthMod() {
   return await import('firebase/auth');
 }
-function useAuthClaims() {
+
+function useAuthClaims(tenantId?: string) {
   const [authReady, setAuthReady] = useState(false);
   const [user, setUser] = useState<any | null>(null);
   const [claims, setClaims] = useState<any | null>(null);
+
+  // ➕ estado extra para rol resuelto por el backend del tenant
+  const [serverRole, setServerRole] = useState<string | null>(null);
+  const [loadingRole, setLoadingRole] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -60,6 +65,7 @@ function useAuthClaims() {
           }
         } else {
           setClaims(null);
+          setServerRole(null);
         }
         setAuthReady(true);
       });
@@ -68,12 +74,42 @@ function useAuthClaims() {
     return () => { alive = false; };
   }, []);
 
+  // 🔄 refresca rol tenant-aware (usa cookie/appRole o JSON { role })
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        if (!tenantId || !user) return;
+        setLoadingRole(true);
+        const idToken = await user.getIdToken(true);
+        const resp = await fetch(`/${tenantId}/app/api/auth/refresh-role`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${idToken}` },
+          cache: 'no-store',
+        });
+        const data = await resp.json().catch(() => ({}));
+        if (!alive) return;
+        if (resp.ok && data?.ok === true && typeof data.role === 'string') {
+          setServerRole(String(data.role).toLowerCase());
+        }
+      } catch {
+        // silencioso
+      } finally {
+        if (alive) setLoadingRole(false);
+      }
+    })();
+    return () => { alive = false; };
+  }, [tenantId, user]);
+
   return {
-    authReady,
+    // auth listo cuando Firebase listo y, si aplica, terminó el refresh de rol
+    authReady: authReady && !loadingRole,
     user,
-    isAdmin: !!claims?.admin,
+    // ✅ Admin si: custom claim global o serverRole === 'admin'
+    isAdmin: !!claims?.admin || serverRole === 'admin',
   } as const;
 }
+
 
 /* =========================================================================
    Tipos (Firestore)
