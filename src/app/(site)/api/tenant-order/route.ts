@@ -35,14 +35,15 @@ function json(d: unknown, s = 200) {
 const BLACKLIST = new Set(['www', 'app', 'api', 'admin', 'mail', 'root', 'support', 'status']);
 const HOLD_MINUTES = 15;
 
-function buildAdminUrl(tenantId: string) {
+/** 🔗 URL de login del tenant */
+function buildLoginUrl(tenantId: string) {
   const baseDomain = (process.env.NEXT_PUBLIC_BASE_DOMAIN || 'datacraftcoders.cloud').toLowerCase();
   const supportsWildcard = process.env.NEXT_PUBLIC_USE_WILDCARD_SUBDOMAINS?.toLowerCase() !== 'false';
-  return supportsWildcard ? `https://${tenantId}.${baseDomain}/admin` : `/${tenantId}/admin`;
+  return supportsWildcard ? `https://${tenantId}.${baseDomain}/app/login` : `/${tenantId}/app/login`;
 }
 
 function welcomeHtml(tenantId: string, adminName: string) {
-  const adminUrl = buildAdminUrl(tenantId);
+  const loginUrl = buildLoginUrl(tenantId);
   const safeName = (adminName || '').trim();
   return `
   <div style="display:none;max-height:0;overflow:hidden;font-size:1px;line-height:1px;color:#fff;opacity:0;">
@@ -63,7 +64,7 @@ function welcomeHtml(tenantId: string, adminName: string) {
                 ${safeName ? `Welcome, ${safeName}!` : 'Welcome!'} 🎉
               </h1>
               <p style="margin:0 0 10px 0;font-size:15px;line-height:1.6;color:#374151;">
-                Your restaurant workspace has been created. You can access your Admin panel here:
+                Your restaurant workspace has been created. You can sign in here:
               </p>
             </td>
           </tr>
@@ -72,15 +73,15 @@ function welcomeHtml(tenantId: string, adminName: string) {
               <table role="presentation" cellpadding="0" cellspacing="0">
                 <tr>
                   <td align="center" style="border-radius:10px;background:#0d6efd;">
-                    <a href="${adminUrl}" target="_blank" rel="noopener noreferrer"
+                    <a href="${loginUrl}" target="_blank" rel="noopener noreferrer"
                       style="display:inline-block;padding:12px 18px;color:#ffffff;text-decoration:none;font-family:Arial,Helvetica,sans-serif;font-size:15px;font-weight:700;">
-                      Go to Admin
+                      Go to Login
                     </a>
                   </td>
                 </tr>
               </table>
               <p style="margin:10px 0 0 0;font-size:12px;color:#6b7280;font-family:Arial,Helvetica,sans-serif;">
-                Or paste this link into your browser: <a href="${adminUrl}" style="color:#2563eb;text-decoration:underline;">${adminUrl.replace(/^https?:\/\//, "")}</a>
+                Or paste this link into your browser: <a href="${loginUrl}" style="color:#2563eb;text-decoration:underline;">${loginUrl.replace(/^https?:\/\//, "")}</a>
               </p>
             </td>
           </tr>
@@ -97,11 +98,11 @@ function welcomeHtml(tenantId: string, adminName: string) {
 }
 
 function welcomeText(tenantId: string) {
-  const adminUrl = buildAdminUrl(tenantId);
+  const loginUrl = buildLoginUrl(tenantId);
   return `Welcome!
 
 Your restaurant workspace has been created.
-Open your Admin panel: ${adminUrl}
+Open your login page: ${loginUrl}
 
 If you have any questions, just reply to this email.`;
 }
