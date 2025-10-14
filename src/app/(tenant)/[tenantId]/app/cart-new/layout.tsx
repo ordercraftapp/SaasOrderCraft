@@ -5,6 +5,7 @@ import React, { useState, useMemo } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import CartBadge from '@/app/(tenant)/[tenantId]/components/CartBadge';
+import { NewCartProvider } from '@/lib/newcart/context'; // 👈 importar provider
 
 // 🔤 i18n
 import { useTenantSettings } from '@/lib/settings/hooks';
@@ -20,18 +21,15 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
 
   // tenancyUpdate: fallback de tenant desde la URL si el contexto aún no está listo
   const tenantFromPath = useMemo(() => {
-    // pathname típico: "/{tenantId}/app/..."
     const segs = (pathname || '').split('/').filter(Boolean);
     return segs[0] || undefined;
   }, [pathname]);
 
   const tenantId = tenantIdCtx || tenantFromPath; // tenancyUpdate
 
-  // Helper para prefijar rutas con /{tenantId}
   const withTenant = (p: string) => {
     const norm = p.startsWith('/') ? p : `/${p}`;
-    if (!tenantId) return norm; // tenancyUpdate: al menos normaliza a absoluto
-    // si ya viene con /{tenantId}/ no tocar
+    if (!tenantId) return norm;
     if (norm.startsWith(`/${tenantId}/`)) return norm;
     return `/${tenantId}${norm}`;
   };
@@ -55,10 +53,10 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
   const tt = (key: string, fallback: string, vars?: Record<string, unknown>) => {
     const s = translate(lang, key, vars);
     return s === key ? fallback : s;
-    };
+  };
 
   return (
-    <>
+    <NewCartProvider>{/* 👈 envolver TODO el layout */}
       <nav className="navbar navbar-expand-md navbar-light bg-light border-bottom">
         <div className="container">
           <Link className="navbar-brand fw-semibold" href={withTenant('/app')}>
@@ -112,7 +110,6 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
             </ul>
 
             <div className="d-flex align-items-center gap-2">
-              {/* CartBadge ya cuenta items con useCart */}
               <CartBadge href={withTenant('/app/cart-new')} />
               <Link className="btn btn-outline-secondary btn-sm" href={withTenant('/app/logout')}>
                 {tt('client.app.nav.logout', 'Logout')}
@@ -123,6 +120,6 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
       </nav>
 
       <main className="container py-4">{children}</main>
-    </>
+    </NewCartProvider>
   );
 }
