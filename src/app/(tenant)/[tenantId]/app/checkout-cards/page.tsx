@@ -837,8 +837,124 @@ function CheckoutUI(props: {
           </div>
         </div>
 
-        {/* Resumen derecho, sin cambios visuales */}
-        {/* ... */}
+        {/* Columna derecha: Resumen del pedido (añadido) */}
+        <div className="col-12 col-lg-5">
+          <div className="card border-0 shadow-sm">
+            <div className="card-header">
+              <div className="fw-semibold">{tt('checkout.summary', 'Summary')}</div>
+            </div>
+            <div className="card-body">
+              {cart.items.length === 0 ? (
+                <div className="text-muted">{tt('checkout.empty', 'Your cart is empty.')}</div>
+              ) : (
+                <div className="d-flex flex-column gap-3">
+                  {cart.items.map((ln, idx) => {
+                    const unitExtras = cart.computeLineTotal({ ...ln, quantity: 1 }) - ln.basePrice;
+                    const lineSum = cart.computeLineTotal(ln);
+                    return (
+                      <div key={`${ln.menuItemId}-${idx}`} className="border rounded p-3">
+                        <div className="d-flex justify-content-between align-items-start">
+                          <div className="me-3">
+                            <div className="fw-semibold">
+                              {ln.menuItemName} <span className="text-muted">× {ln.quantity}</span>
+                            </div>
+                            <div className="text-muted small">
+                              {tt('cart.base', 'Base')}: {fmtQ(ln.basePrice)}{' '}
+                              {unitExtras > 0
+                                ? `· ${tt('cart.extras', 'Extras')}: ${fmtQ(unitExtras)}/${tt('cart.perUnitShort', 'ea')}`
+                                : ''}
+                            </div>
+                          </div>
+                          <div className="text-end">
+                            <div className="fw-semibold">{fmtQ(lineSum)}</div>
+                            <div className="text-muted small">
+                              ({fmtQ(ln.basePrice + unitExtras)} {tt('cart.perUnitShort', 'ea')})
+                            </div>
+                          </div>
+                        </div>
+
+                        {(ln.addons.length > 0 || ln.optionGroups.some(g => g.items.length > 0)) && (
+                          <div className="mt-3">
+                            {ln.addons.length > 0 && (
+                              <div className="mb-1">
+                                {ln.addons.map((ad, i) => (
+                                  <div className="d-flex justify-content-between small" key={`ad-${idx}-${i}`}>
+                                    <div>— ({tt('cart.addons', 'Add-ons')}) {ad.name}</div>
+                                    <div>{fmtQ(ad.price)}</div>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+
+                            {ln.optionGroups.map(g => (
+                              g.items.length > 0 && (
+                                <div className="mb-1" key={`g-${idx}-${g.groupId}`}>
+                                  {g.items.map(it => (
+                                    <div className="d-flex justify-content-between small" key={`gi-${idx}-${g.groupId}-${it.id}`}>
+                                      <div>— ({tt('cart.groupItems', 'Group items')}) {it.name}</div>
+                                      <div>{fmtQ(it.priceDelta)}</div>
+                                    </div>
+                                  ))}
+                                </div>
+                              )
+                            ))}
+                          </div>
+                        )}
+
+                        <div className="mt-2 border-top pt-2 d-flex justify-content-between">
+                          <div className="fw-semibold">{tt('cart.lineTotal', 'Total')}</div>
+                          <div className="fw-semibold">{fmtQ(lineSum)}</div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              <hr />
+              <div className="d-flex justify-content-between">
+                <span>{tt('checkout.subtotal', 'Subtotal')}</span>
+                <span className="fw-semibold">{fmtQ(subtotal)}</span>
+              </div>
+
+              {deliveryFee > 0 && (
+                <div className="d-flex justify-content-between">
+                  <span>{tt('checkout.delivery', 'Delivery')}</span>
+                  <span className="fw-semibold">{fmtQ(deliveryFee)}</span>
+                </div>
+              )}
+
+              {state.mode !== 'delivery' && state.tip > 0 && (
+                <div className="d-flex justify-content-between">
+                  <span>{tt('checkout.tip', 'Tip')}</span>
+                  <span className="fw-semibold">{fmtQ(state.tip)}</span>
+                </div>
+              )}
+
+              {state.promo && state.promo.discountTotalCents > 0 && (
+                <div className="d-flex justify-content-between">
+                  <span>{tt('checkout.discount', 'Discount')}</span>
+                  <span className="fw-semibold">-{fmtQ(state.promo.discountTotalCents / 100)}</span>
+                </div>
+              )}
+
+              {state.taxUI && (
+                <div className="d-flex justify-content-between">
+                  <span>{tt('checkout.tax', 'Tax')}</span>
+                  <span className="fw-semibold">{fmtQ(state.taxUI.taxQ)}</span>
+                </div>
+              )}
+
+              <div className="d-flex justify-content-between mt-2 border-top pt-2">
+                <span className="fw-semibold">{tt('checkout.totalToPay', 'Total to pay')}</span>
+                <span className="fw-bold fs-5">
+                  {fmtQ((state.taxUI?.grandPayableQ ?? state.grandTotal))}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+        {/* Fin columna derecha añadida */}
       </div>
     </div>
   );
