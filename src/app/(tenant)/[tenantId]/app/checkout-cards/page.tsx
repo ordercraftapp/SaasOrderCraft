@@ -757,7 +757,7 @@ function useCheckoutState() {
   } as const;
 }
 
-/** ------- UI ------- */
+/** ------- UI (efectivo + PayPal, sin Stripe) ------- */
 function CheckoutUI(props: {
   state: ReturnType<typeof useCheckoutState>['state'],
   actions: ReturnType<typeof useCheckoutState>['actions'],
@@ -826,135 +826,365 @@ function CheckoutUI(props: {
           <div className="card border-0 shadow-sm">
             <div className="card-header"><div className="fw-semibold">{tt('checkout.details', 'Details')}</div></div>
             <div className="card-body">
-              {/* ... UI igual (omito por brevedad, es el mismo que compartiste) ... */}
-              {/* He dejado todo tal cual tu UI original */}
-              {/* — La sección completa que pegaste arriba se mantiene sin cambios visuales — */}
-              {/* (El bloque es muy largo; ya está incluido íntegro en tu versión original) */}
+              {/* Tipo de pedido */}
+              <div className="mb-3">
+                <label className="form-label fw-semibold">{tt('checkout.orderType', 'Order type')}</label>
+                <div className="d-flex gap-2">
+                  <button className={`btn ${mode === 'dine-in' ? 'btn-primary' : 'btn-outline-primary'}`} onClick={() => { setMode('dine-in'); setTipEdited(false); }} disabled={saving}>{tt('checkout.type.dinein', 'Dine-in')}</button>
+                  <button className={`btn ${mode === 'delivery' ? 'btn-primary' : 'btn-outline-primary'}`} onClick={() => { setMode('delivery'); setTipEdited(false); }} disabled={saving}>{tt('checkout.type.delivery', 'Delivery')}</button>
+                  <button className={`btn ${mode === 'pickup' ? 'btn-primary' : 'btn-outline-primary'}`} onClick={() => { setMode('pickup'); setTipEdited(false); }} disabled={saving}>{tt('checkout.type.pickup', 'Pickup')}</button>
+                </div>
+              </div>
+
+              {mode === 'dine-in' && (
+                <>
+                  <div className="mb-3">
+                    <label className="form-label">{tt('checkout.table.label', 'Table')}</label>
+                    {tablesLoading ? (
+                      <div className="form-text">{tt('checkout.table.loading', 'Loading tables…')}</div>
+                    ) : availableTables.length === 0 ? (
+                      <div className="alert alert-warning py-2 mb-2">
+                        {tt('checkout.table.none', 'No tables available right now.')}
+                      </div>
+                    ) : (
+                      <select
+                        className="form-select"
+                        value={table}
+                        onChange={(e) => setTable(e.target.value)}
+                        disabled={saving}
+                      >
+                        <option value="">{tt('checkout.table.selectPh', 'Select a table…')}</option>
+                        {availableTables.map((t: string) => (
+                          <option key={t} value={t}>
+                            {tt('checkout.table.option', 'Table {t}', { t })}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                  </div>
+
+                  <div className="mb-3">
+                    <label className="form-label">{tt('checkout.notes.label', 'Notes (optional)')}</label>
+                    <textarea className="form-control" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder={tt('checkout.notes.ph', 'Additional instructions')} disabled={saving} />
+                  </div>
+                </>
+              )}
+
+              {mode === 'delivery' && (
+                <>
+                  <div className="mb-3">
+                    <label className="form-label">{tt('checkout.address.label', 'Address')}</label>
+                    {hasDropdown ? (
+                      <>
+                        <select className="form-select" value={addressLabel || ''} onChange={(e) => onChangeAddressLabel(e.target.value as 'home' | 'office')} disabled={saving}>
+                          {homeAddr?.line1 && String(homeAddr.line1).trim() !== '' && (
+                            <option value="home">
+                              {tt('checkout.address.home', 'Home — {line1}', { line1: homeAddr.line1 as any })}
+                            </option>
+                          )}
+                          {officeAddr?.line1 && String(officeAddr.line1).trim() !== '' && (
+                            <option value="office">
+                              {tt('checkout.address.office', 'Office — {line1}', { line1: officeAddr.line1 as any })}
+                            </option>
+                          )}
+                        </select>
+                        {addressLabel && (
+                          <div className="form-text">
+                            {addressLabel === 'home' ? (
+                              <>
+                                {homeAddr?.city ? `${tt('checkout.address.city', 'City')}: ${homeAddr.city}. ` : ''}
+                                {homeAddr?.zip ? `${tt('checkout.address.zip', 'ZIP')}: ${homeAddr.zip}. ` : ''}
+                                {homeAddr?.notes ? `${tt('checkout.address.notes', 'Notes')}: ${homeAddr.notes}.` : ''}
+                              </>
+                            ) : (
+                              <>
+                                {officeAddr?.city ? `${tt('checkout.address.city', 'City')}: ${officeAddr.city}. ` : ''}
+                                {officeAddr?.zip ? `${tt('checkout.address.zip', 'ZIP')}: ${officeAddr.zip}. ` : ''}
+                                {officeAddr?.notes ? `${tt('checkout.address.notes', 'Notes')}: ${officeAddr.notes}.` : ''}
+                              </>
+                            )}
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <input className="form-control" value={address} onChange={(e) => setAddress(e.target.value)} placeholder={tt('checkout.address.inputPh', 'Ex. 5a avenida 10-11...')} disabled={saving} />
+                    )}
+                  </div>
+
+                  <div className="mb-3">
+                    <label className="form-label">{tt('checkout.phone.label', 'Phone')}</label>
+                    <input className="form-control" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder={tt('checkout.phone.ph', 'Ex. 5555-5555')} disabled={saving} />
+                  </div>
+
+                  <div className="mb-3">
+                    <label className="form-label">{tt('checkout.deliveryOptions.label', 'Delivery options')}</label>
+                    {deliveryOptions.length === 0 ? (
+                      <div className="form-text">{tt('checkout.deliveryOptions.none', 'No shipping options available.')}</div>
+                    ) : (
+                      <div className="d-flex flex-column gap-2">
+                        {deliveryOptions.map((opt) => (
+                          <label key={opt.id} className="border rounded p-2 d-flex align-items-start gap-2">
+                            <input type="radio" name="delivery-opt" className="form-check-input mt-1" checked={selectedDeliveryOptionId === opt.id} onChange={() => setSelectedDeliveryOptionId(opt.id)} disabled={saving} />
+                            <div className="w-100">
+                              <div className="d-flex justify-content-between">
+                                <div className="fw-semibold">{opt.title}</div>
+                                <div className="fw-semibold">{fmtQ(opt.price)}</div>
+                              </div>
+                              {opt.description && <div className="text-muted small">{opt.description}</div>}
+                            </div>
+                          </label>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="mb-3">
+                    <label className="form-label">{tt('checkout.notes.label', 'Notes (optional)')}</label>
+                    <textarea className="form-control" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder={tt('checkout.notes.ph', 'Additional instructions')} disabled={saving} />
+                  </div>
+                </>
+              )}
+
+              {mode === 'pickup' && (
+                <>
+                  <div className="mb-3">
+                    <label className="form-label">{tt('checkout.phone.label', 'Phone')}</label>
+                    <input className="form-control" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder={tt('checkout.phone.ph', 'Ex. 5555-5555')} disabled={saving} />
+                  </div>
+                  <div className="mb-3">
+                    <label className="form-label">{tt('checkout.notes.label', 'Notes (optional)')}</label>
+                    <textarea className="form-control" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder={tt('checkout.notes.ph', 'Additional instructions')} disabled={saving} />
+                  </div>
+                </>
+              )}
+
+              {/* --- Código de promoción --- */}
+              <div className="mb-3">
+                <label className="form-label fw-semibold">{tt('checkout.promo.label', 'Promotion coupon')}</label>
+                <div className="d-flex gap-2">
+                  <input
+                    className="form-control"
+                    placeholder={tt('checkout.promo.ph', 'Ex. DESSERT10')}
+                    value={promoCode}
+                    onChange={(e) => setPromoCode(e.target.value.toUpperCase())}
+                    disabled={promoApplying || saving}
+                  />
+                  {!promo ? (
+                    <button className="btn btn-outline-primary" onClick={applyPromo} disabled={promoApplying || saving}>
+                      {promoApplying ? tt('checkout.promo.applying', 'Applying...') : tt('checkout.promo.apply', 'Apply')}
+                    </button>
+                  ) : (
+                    <button className="btn btn-outline-secondary" onClick={clearPromo} disabled={saving}>
+                      {tt('checkout.promo.remove', 'Remove')}
+                    </button>
+                  )}
+                </div>
+                {promo && (
+                  <div className="text-success small mt-1">✓ {tt('checkout.promo.applied', 'Coupon applied: {code}', { code: <strong>{promo.code}</strong> as any })}</div>
+                )}
+                {promoErrorText && (
+                  <div className="text-danger small mt-1">{promoErrorText}</div>
+                )}
+              </div>
+
+              {/* MÉTODO DE PAGO */}
+              <div className="mb-3">
+                <label className="form-label fw-semibold">{tt('checkout.payment.method', 'Payment Method')}</label>
+
+                {paymentsLoading ? (
+                  <div className="form-text">{tt('common.loading', 'Loading…')}</div>
+                ) : (
+                  <div className="d-flex flex-column gap-2">
+                    {paymentsFlags.cash && (
+                      <label className="d-flex align-items-center gap-2">
+                        <input type="radio" name="pm" className="form-check-input" checked={payMethod==='cash'} onChange={() => setPayMethod('cash')} />
+                        <span>{tt('checkout.payment.cash', 'Cash')}</span>
+                      </label>
+                    )}
+
+                    {paymentsFlags.paypal && (
+                      <label className="d-flex align-items-center gap-2">
+                        <input type="radio" name="pm" className="form-check-input" checked={payMethod==='paypal'} onChange={() => setPayMethod('paypal')} />
+                        <span>{tt('checkout.payment.paypal', 'PayPal')}</span>
+                        {paypalActiveHint && <span className="small text-muted ms-2">{paypalActiveHint}</span>}
+                      </label>
+                    )}
+
+                    {!paymentsFlags.cash && !paymentsFlags.paypal && (
+                      <div className="alert alert-warning py-2 mb-0">
+                        {tt('checkout.payment.none', 'No payment methods available.')}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* PayPal Buttons */}
+              {payMethod === 'paypal' && paymentsFlags.paypal && (
+                <div className="mb-3">
+                  <div id="paypal-buttons-container" />
+                </div>
+              )}
             </div>
 
-            {/* Footer con botón confirmar/pagar, sin cambios */}
-            {/* ... */}
+            <div className="card-footer">
+              <div className="d-flex justify-content-between align-items-center">
+                <div className="text-muted small">{tt('checkout.submit.note', 'It will be charged according to the selected method.')}</div>
+                <button
+                  className="btn btn-primary"
+                  disabled={disableSubmit}
+                  onClick={() => {
+                    if (payMethod === 'cash') return onSubmitCash();
+                    if (payMethod === 'paypal') {
+                      alert(tt('checkout.payment.paypal.useBtn', 'Use the PayPal button to continue.'));
+                    }
+                  }}
+                >
+                  {saving ? tt('checkout.submit.processing', 'Processing…') : (payMethod === 'cash' ? tt('checkout.submit.confirmCash', 'Confirm order') : tt('checkout.submit.payNow', 'Pay now'))}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
 
-        {/* Columna derecha: Resumen del pedido (añadido) */}
+        {/* Resumen */}
         <div className="col-12 col-lg-5">
           <div className="card border-0 shadow-sm">
             <div className="card-header">
-              <div className="fw-semibold">{tt('checkout.summary', 'Summary')}</div>
+              <div className="fw-semibold">{tt('checkout.summary.title', 'Summary')}</div>
             </div>
             <div className="card-body">
-              {cart.items.length === 0 ? (
-                <div className="text-muted">{tt('checkout.empty', 'Your cart is empty.')}</div>
-              ) : (
-                <div className="d-flex flex-column gap-3">
-                  {cart.items.map((ln, idx) => {
-                    const unitExtras = cart.computeLineTotal({ ...ln, quantity: 1 }) - ln.basePrice;
-                    const lineSum = cart.computeLineTotal(ln);
-                    return (
-                      <div key={`${ln.menuItemId}-${idx}`} className="border rounded p-3">
-                        <div className="d-flex justify-content-between align-items-start">
-                          <div className="me-3">
-                            <div className="fw-semibold">
-                              {ln.menuItemName} <span className="text-muted">× {ln.quantity}</span>
-                            </div>
-                            <div className="text-muted small">
-                              {tt('cart.base', 'Base')}: {fmtQ(ln.basePrice)}{' '}
-                              {unitExtras > 0
-                                ? `· ${tt('cart.extras', 'Extras')}: ${fmtQ(unitExtras)}/${tt('cart.perUnitShort', 'ea')}`
-                                : ''}
-                            </div>
-                          </div>
-                          <div className="text-end">
-                            <div className="fw-semibold">{fmtQ(lineSum)}</div>
-                            <div className="text-muted small">
-                              ({fmtQ(ln.basePrice + unitExtras)} {tt('cart.perUnitShort', 'ea')})
-                            </div>
-                          </div>
+              {mode === 'delivery' && (
+                <div className="border rounded p-2 mb-3 bg-light">
+                  <div className="small text-muted">{tt('checkout.summary.deliver.title', 'Deliver')}</div>
+                  <div className="fw-semibold">
+                    {addressLabel === 'home'
+                      ? tt('checkout.summary.address.home', 'Home')
+                      : addressLabel === 'office'
+                      ? tt('checkout.summary.address.office', 'Office')
+                      : tt('checkout.summary.address.address', 'Address')}
+                    {': '}
+                    {address || (addressLabel === 'home' ? homeAddr?.line1 : officeAddr?.line1) || '—'}
+                  </div>
+                  {(addressLabel && (addressLabel === 'home' ? homeAddr : officeAddr)) && (
+                    <div className="small text-muted mt-1">
+                      {addressLabel === 'home'
+                        ? [
+                            homeAddr?.city ? `${tt('checkout.address.city', 'City')}: ${homeAddr.city}` : null,
+                            homeAddr?.country ? `${tt('checkout.address.country', 'Country')}: ${homeAddr.country}` : null,
+                            homeAddr?.zip ? `${tt('checkout.address.zip', 'ZIP')}: ${homeAddr.zip}` : null,
+                          ].filter(Boolean).join(' · ')
+                        : [
+                            officeAddr?.city ? `${tt('checkout.address.city', 'City')}: ${officeAddr.city}` : null,
+                            officeAddr?.country ? `${tt('checkout.address.country', 'Country')}: ${officeAddr.country}` : null,
+                            officeAddr?.zip ? `${tt('checkout.address.zip', 'ZIP')}: ${officeAddr.zip}` : null,
+                          ].filter(Boolean).join(' · ')
+                      }
+                    </div>
+                  )}
+                  <div className="mt-2 small">
+                    <span className="text-muted">{tt('checkout.summary.client', 'Client:')}</span> {customerName || '—'}
+                    <span className="text-muted ms-2">{tt('checkout.summary.phone', 'Phone:')}</span> {phone || '—'}
+                  </div>
+                </div>
+              )}
+
+              <div className="d-flex flex-column gap-3 mb-3">
+                {cart.items.map((ln: any, idx: number) => {
+                  const unitExtras = cart.computeLineTotal({ ...ln, quantity: 1 }) - ln.basePrice;
+                  const lineSum = cart.computeLineTotal(ln);
+                  return (
+                    <div key={`${ln.menuItemId}-${idx}`} className="border rounded p-2">
+                      <div className="d-flex justify-content-between">
+                        <div className="fw-semibold">
+                          {ln.menuItemName} <span className="text-muted">× {ln.quantity}</span>
                         </div>
-
-                        {(ln.addons.length > 0 || ln.optionGroups.some(g => g.items.length > 0)) && (
-                          <div className="mt-3">
-                            {ln.addons.length > 0 && (
-                              <div className="mb-1">
-                                {ln.addons.map((ad, i) => (
-                                  <div className="d-flex justify-content-between small" key={`ad-${idx}-${i}`}>
-                                    <div>— ({tt('cart.addons', 'Add-ons')}) {ad.name}</div>
-                                    <div>{fmtQ(ad.price)}</div>
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-
-                            {ln.optionGroups.map(g => (
-                              g.items.length > 0 && (
-                                <div className="mb-1" key={`g-${idx}-${g.groupId}`}>
-                                  {g.items.map(it => (
-                                    <div className="d-flex justify-content-between small" key={`gi-${idx}-${g.groupId}-${it.id}`}>
-                                      <div>— ({tt('cart.groupItems', 'Group items')}) {it.name}</div>
-                                      <div>{fmtQ(it.priceDelta)}</div>
-                                    </div>
-                                  ))}
-                                </div>
-                              )
-                            ))}
-                          </div>
-                        )}
-
-                        <div className="mt-2 border-top pt-2 d-flex justify-content-between">
-                          <div className="fw-semibold">{tt('cart.lineTotal', 'Total')}</div>
-                          <div className="fw-semibold">{fmtQ(lineSum)}</div>
-                        </div>
+                        <div className="fw-semibold">{fmtQ(lineSum)}</div>
                       </div>
-                    );
-                  })}
-                </div>
-              )}
-
-              <hr />
-              <div className="d-flex justify-content-between">
-                <span>{tt('checkout.subtotal', 'Subtotal')}</span>
-                <span className="fw-semibold">{fmtQ(subtotal)}</span>
+                      {(ln.addons.length > 0 || ln.optionGroups.some((g: any) => g.items.length > 0)) && (
+                        <div className="mt-2">
+                          {ln.addons.map((ad: any, i: number) => (
+                            <div className="d-flex justify-content-between small" key={`ad-${idx}-${i}`}>
+                              <div>{tt('checkout.cart.addon.prefix', '— (addons) {name}', { name: ad.name })}</div>
+                              <div>{fmtQ(ad.price)}</div>
+                            </div>
+                          ))}
+                          {ln.optionGroups.map((g: any) =>
+                            g.items.map((it: any) => (
+                              <div
+                                className="d-flex justify-content-between small"
+                                key={`gi-${idx}-${g.groupId}-${it.id}`}
+                              >
+                                <div>— {it.name}</div>
+                                <div>{fmtQ(it.priceDelta)}</div>
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      )}
+                      <div className="text-muted small mt-1">
+                        {tt('checkout.cart.each', '({price} each)', { price: fmtQ(ln.basePrice + unitExtras) })}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
-
-              {deliveryFee > 0 && (
+              
+              <div className="mt-3">
                 <div className="d-flex justify-content-between">
-                  <span>{tt('checkout.delivery', 'Delivery')}</span>
-                  <span className="fw-semibold">{fmtQ(deliveryFee)}</span>
+                  <div>{tt('checkout.totals.subtotal', 'Subtotal')}</div>
+                  <div className="fw-semibold">{fmtQ(subtotal)}</div>
                 </div>
-              )}
 
-              {state.mode !== 'delivery' && state.tip > 0 && (
+                {promo && (
+                  <div className="d-flex justify-content-between text-success">
+                    <div>{tt('checkout.totals.discount', 'Discount ({code})', { code: promo.code })}</div>
+                    <div className="fw-semibold">- {fmtQ((promo.discountTotalCents||0)/100)}</div>
+                  </div>
+                )}
+
+                {mode === 'delivery' && (
+                  <div className="d-flex justify-content-between">
+                    <div>{tt('checkout.totals.delivery', 'Delivery')}</div>
+                    <div className="fw-semibold">{fmtQ(deliveryFee)}</div>
+                  </div>
+                )}
+
+                {!!taxUI && !taxUI.pricesIncludeTax && taxUI.taxQ > 0 && (
+                  <div className="d-flex justify-content-between">
+                    <div>{tt('checkout.totals.tax', 'Tax')}</div>
+                    <div className="fw-semibold">{fmtQ(taxUI?.taxQ || 0)}</div>
+                  </div>
+                )}
+
+                {mode !== 'delivery' && (
+                  <div className="d-flex align-items-center justify-content-between gap-2 mt-2">
+                    <label className="mb-0">{tt('checkout.totals.tip.label', 'Tip (suggested 10%)')}</label>
+                    <div className="d-flex align-items-center gap-2">
+                      <input type="number" min="0" step="0.01" className="form-control form-control-sm" style={{ width: 120 }}
+                        value={Number.isFinite(tip) ? tip : 0}
+                        onChange={(e) => { setTipEdited(true); const v = Number(e.target.value); setTip(Number.isFinite(v) ? v : 0); }} />
+                      <span className="text-muted small">{fmtQ(tip)}</span>
+                    </div>
+                  </div>
+                )}
+                <hr />
                 <div className="d-flex justify-content-between">
-                  <span>{tt('checkout.tip', 'Tip')}</span>
-                  <span className="fw-semibold">{fmtQ(state.tip)}</span>
+                  <div className="fw-semibold">{tt('checkout.totals.grand', 'Grand total')}</div>
+                  <div className="fw-bold">{fmtQ(grandToShow)}</div>
                 </div>
-              )}
-
-              {state.promo && state.promo.discountTotalCents > 0 && (
-                <div className="d-flex justify-content-between">
-                  <span>{tt('checkout.discount', 'Discount')}</span>
-                  <span className="fw-semibold">-{fmtQ(state.promo.discountTotalCents / 100)}</span>
-                </div>
-              )}
-
-              {state.taxUI && (
-                <div className="d-flex justify-content-between">
-                  <span>{tt('checkout.tax', 'Tax')}</span>
-                  <span className="fw-semibold">{fmtQ(state.taxUI.taxQ)}</span>
-                </div>
-              )}
-
-              <div className="d-flex justify-content-between mt-2 border-top pt-2">
-                <span className="fw-semibold">{tt('checkout.totalToPay', 'Total to pay')}</span>
-                <span className="fw-bold fs-5">
-                  {fmtQ((state.taxUI?.grandPayableQ ?? state.grandTotal))}
-                </span>
               </div>
+            </div>
+            <div className="card-footer d-flex justify-content-between">
+              <div className="small text-muted">
+                {tt('checkout.footer.totalNote', 'Total according to selected method{suffix}.', {
+                  suffix: promo ? tt('checkout.footer.includesPromo', ' (includes {code})', { code: promo.code }) : ''
+                })}
+              </div>
+              <div />
             </div>
           </div>
         </div>
-        {/* Fin columna derecha añadida */}
       </div>
     </div>
   );
