@@ -30,7 +30,7 @@ export default function AuthNavbar() {
   return (
     <nav className="navbar navbar-expand-md navbar-light bg-light border-bottom">
       <div className="container">
-        <Link className="navbar-brand d-flex align-items-center gap-2" href={withTenant("/")}>
+        <Link className="navbar-brand d-flex align-items-center gap-2" href={withTenant("/app")}> 
           <Image src={logoSrc} alt="Logo" width={28} height={28} />
           <span className="fw-semibold">OrderCraft</span>
         </Link>
@@ -49,12 +49,12 @@ export default function AuthNavbar() {
         <div className={`collapse navbar-collapse ${open ? "show" : ""}`} id="authNav">
           <ul className="navbar-nav me-auto mb-2 mb-md-0">
             <li className="nav-item">
-              <Link className="nav-link" href={withTenant("/menu")} onClick={() => setOpen(false)}>
+              <Link className="nav-link" href={withTenant("/app/menu")} onClick={() => setOpen(false)}>
                 Menu
               </Link>
             </li>
             <li className="nav-item">
-              <Link className="nav-link" href={withTenant("/promos")} onClick={() => setOpen(false)}>
+              <Link className="nav-link" href={withTenant("/app/promos")} onClick={() => setOpen(false)}>
                 Promotions
               </Link>
             </li>
