@@ -31,7 +31,7 @@ async function handleRefresh(req: NextRequest, params: { tenantId: string }) {
   // 🔐 Tenant
   const tenantId = requireTenantId(
     resolveTenantFromRequest(req, params),
-    'api:auth/refresh-role'
+    'app/api:auth/refresh-role'
   );
 
   // 🔑 Bearer
@@ -103,7 +103,7 @@ async function handleRefresh(req: NextRequest, params: { tenantId: string }) {
     httpOnly: false,
     sameSite: 'lax',
     secure: isProd,
-    path: `/${tenantId}`,
+    path: `/${tenantId}/app/`,
     maxAge: 60 * 60 * 24 * 7,
   });
 
@@ -111,7 +111,7 @@ async function handleRefresh(req: NextRequest, params: { tenantId: string }) {
     httpOnly: false,
     sameSite: 'lax',
     secure: isProd,
-    path: `/${tenantId}`,
+    path: `/${tenantId}/app/`,
     maxAge: 60 * 60 * 24 * 7,
   });
 
