@@ -64,10 +64,10 @@ export default function ClientLayout(
   // Rutas tenant-aware
   const tenantSlug = useSafeTenantId();
   const hrefHome = `${appBase}/app`; // ✅ home del área cliente
-  const hrefMenu = `${appBase}/menu`;
-  const hrefCart = `${appBase}/cart-new`;
-  const hrefOrders = `${appBase}/orders`;
-  const hrefTracking = `${appBase}/tracking`;
+  const hrefMenu = `${appBase}/app/menu`;
+  const hrefCart = `${appBase}/app/cart-new`;
+  const hrefOrders = `${appBase}/app/orders`;
+  const hrefTracking = `${appBase}/app/tracking`;
   const hrefLogout = `/${tenantSlug}/logout`;
 
   return (
