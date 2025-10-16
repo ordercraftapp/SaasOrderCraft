@@ -92,7 +92,7 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
               </li>
               <li className="nav-item">
                 <Link
-                  className={`nav-link ${isActive('/app/orders') ? 'active' : ''}`}
+                  className={`nav-link ${isActive('/app/app/orders') ? 'active' : ''}`}
                   href={withTenant('/app/orders')}
                 >
                   {tt('client.app.nav.orders', 'Orders')}
@@ -100,7 +100,7 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
               </li>
               <li className="nav-item">
                 <Link
-                  className={`nav-link ${isActive('/app/tracking') ? 'active' : ''}`}
+                  className={`nav-link ${isActive('/app/app/tracking') ? 'active' : ''}`}
                   href={withTenant('/app/tracking')}
                 >
                   {tt('client.app.nav.tracking', 'Tracking')}
