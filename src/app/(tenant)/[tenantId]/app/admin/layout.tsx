@@ -1,4 +1,4 @@
-// src/app/admin/layout.tsx
+// src/app/(tenant)/[tenantId]/app/admin/layout.tsx
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
@@ -48,16 +48,52 @@ async function getIdTokenSafe(forceRefresh = false): Promise<string | null> {
     return null;
   }
 }
+
+/* ============================
+   🔹 Tenant helpers (mínimos)
+   ============================ */
+function getTenantIdFromLocation(): string | null {
+  if (typeof window === 'undefined') return null;
+  const parts = (window.location.pathname || '/').split('/').filter(Boolean);
+  return parts.length >= 1 ? parts[0] || null : null;
+}
+
+function makeTenantUrl(path: string): string {
+  const tenantId = getTenantIdFromLocation();
+  const rel = path.startsWith('/') ? path : `/${path}`;
+  // Si ya viene con /{tenantId}/..., respétalo
+  if (tenantId && (rel === `/${tenantId}` || rel.startsWith(`/${tenantId}/`))) {
+    return new URL(rel, window.location.origin).toString();
+  }
+  // API vive bajo "/{tenantId}/app/api/..."
+  if (tenantId && rel.startsWith('/api/')) {
+    return new URL(`/${tenantId}/app${rel}`, window.location.origin).toString();
+  }
+  // Rutas bajo "/app/..." deben llevar "/{tenantId}" delante
+  if (tenantId && rel.startsWith('/app/')) {
+    return new URL(`/${tenantId}${rel}`, window.location.origin).toString();
+  }
+  // Fallback: si hay tenant, préfixalo
+  if (tenantId) {
+    return new URL(`/${tenantId}${rel}`, window.location.origin).toString();
+  }
+  // Sin tenant (entornos donde no aplique)
+  return new URL(rel, window.location.origin).toString();
+}
+
 async function apiFetch(path: string, init?: RequestInit) {
   let token = await getIdTokenSafe(false);
   let headers: HeadersInit = { ...(init?.headers || {}) };
   if (token) (headers as any)['Authorization'] = `Bearer ${token}`;
-  let res = await fetch(path, { ...init, headers });
+
+  const url = typeof window !== 'undefined' ? makeTenantUrl(path) : path;
+
+  let res = await fetch(url, { ...init, headers });
   if (res.status === 401) {
     token = await getIdTokenSafe(true);
     headers = { ...(init?.headers || {}) };
     if (token) (headers as any)['Authorization'] = `Bearer ${token}`;
-    res = await fetch(path, { ...init, headers });
+    res = await fetch(url, { ...init, headers });
   }
   return res;
 }
@@ -78,6 +114,7 @@ function useNavCounts(pollMs = 15000) {
     try {
       setErr(null);
       setLoading(true);
+      // ⬇️ Mismo path lógico; apiFetch lo vuelve tenant-aware y same-origin
       const res = await apiFetch('/app/api/admin/nav-counts', { cache: 'no-store' });
       const data = await res.json().catch(() => ({} as any));
       if (!res.ok || data?.ok === false) throw new Error(data?.error || `HTTP ${res.status}`);
@@ -120,12 +157,13 @@ function useActiveTablesCount(pollMs = 15000) {
       const { getFirestore, collection, query, where, getDocs, limit } = await import('firebase/firestore');
       const db = getFirestore();
 
-      // Una sola 'in' por status (4 valores) — es válido y eficiente
+      // ⚠️ Nota: si tus órdenes ahora viven en tenants/{tenantId}/orders,
+      // este collection('orders') debería ajustarse. Lo dejo igual ya que pediste no cambiar lógica.
       const qRef = query(
         collection(db, 'orders'),
         where('orderInfo.type', '==', 'dine-in'),
         where('status', 'in', OPEN_STATUSES as unknown as string[]),
-        limit(1000) // seguridad: evita descargar demasiado (ajusta si tu volumen es mayor)
+        limit(1000)
       );
 
       const snap = await getDocs(qRef);
@@ -137,7 +175,6 @@ function useActiveTablesCount(pollMs = 15000) {
       });
       setCount(tables.size);
     } catch {
-      // en error, no rompemos la UI
       setCount(0);
     } finally {
       setLoading(false);

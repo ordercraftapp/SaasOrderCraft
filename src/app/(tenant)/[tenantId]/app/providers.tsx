@@ -1,4 +1,4 @@
-// src/app/providers.tsx
+// src/app/(tenant)/[tenantId]/app/providers.tsx
 "use client";
 
 import {
@@ -70,7 +70,14 @@ const AuthContext = createContext<Ctx>({
 // --- Helpers para cookie de rol leída por el middleware ---
 async function syncRoleCookie(idToken: string) {
   try {
-    await fetch("/app/api/auth/refresh-role", {
+    const tenantId = getTenantIdFromLocation();
+    const path = tenantId ? `/${tenantId}/app/api/auth/refresh-role` : `/app/api/auth/refresh-role`;
+    const url =
+      typeof window !== "undefined"
+        ? new URL(path, window.location.origin).toString()
+        : path;
+
+    await fetch(url, {
       method: "POST",
       headers: { Authorization: `Bearer ${idToken}` },
     });
