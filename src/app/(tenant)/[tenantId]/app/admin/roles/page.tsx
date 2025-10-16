@@ -253,12 +253,12 @@ function RolesPage_Inner() {
 
 export default function RolesPage() {
   return (
+  <ToolGate feature="roles">
     <Protected>
-      <AdminOnly>
-        <ToolGate feature="roles">
-          <RolesPage_Inner />
-        </ToolGate>
+      <AdminOnly>        
+          <RolesPage_Inner />        
       </AdminOnly>
     </Protected>
+  </ToolGate>
   );
 }
