@@ -65,7 +65,7 @@ export default function ClientLayout(
   const tenantSlug = useSafeTenantId();
   const hrefHome = `${appBase}/app`; // ✅ home del área cliente
   const hrefMenu = `${appBase}/app/menu`;
-  const hrefCart = `${appBase}/app/cart-new`;
+  const hrefCart = `${appBase}/cart-new`;
   const hrefOrders = `${appBase}/app/orders`;
   const hrefTracking = `${appBase}/app/tracking`;
   const hrefLogout = `/${tenantSlug}/logout`;

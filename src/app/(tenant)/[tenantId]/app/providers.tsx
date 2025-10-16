@@ -70,7 +70,7 @@ const AuthContext = createContext<Ctx>({
 // --- Helpers para cookie de rol leída por el middleware ---
 async function syncRoleCookie(idToken: string) {
   try {
-    await fetch("/api/auth/refresh-role", {
+    await fetch("/app/api/auth/refresh-role", {
       method: "POST",
       headers: { Authorization: `Bearer ${idToken}` },
     });

@@ -78,7 +78,7 @@ function useNavCounts(pollMs = 15000) {
     try {
       setErr(null);
       setLoading(true);
-      const res = await apiFetch('/api/admin/nav-counts', { cache: 'no-store' });
+      const res = await apiFetch('/app/api/admin/nav-counts', { cache: 'no-store' });
       const data = await res.json().catch(() => ({} as any));
       if (!res.ok || data?.ok === false) throw new Error(data?.error || `HTTP ${res.status}`);
       setCounts({
