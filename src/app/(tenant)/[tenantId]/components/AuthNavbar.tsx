@@ -52,12 +52,7 @@ export default function AuthNavbar() {
               <Link className="nav-link" href={withTenant("/app/menu")} onClick={() => setOpen(false)}>
                 Menu
               </Link>
-            </li>
-            <li className="nav-item">
-              <Link className="nav-link" href={withTenant("/app/promos")} onClick={() => setOpen(false)}>
-                Promotions
-              </Link>
-            </li>
+            </li>            
           </ul>
         </div>
       </div>

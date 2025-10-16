@@ -1,3 +1,4 @@
+// src/app/(tenant)/[tenantId]/app/login/page.tsx
 'use client';
 
 import { Suspense, FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
