@@ -63,7 +63,7 @@ export async function GET(req: NextRequest, { params }: { params: { tenantId: st
       ts: new Date().toISOString(),
     });
   } catch (e: any) {
-    console.error('[GET /api/admin/nav-counts] error:', e);
+    console.error('[GET /${tenantId}/app/api/admin/nav-counts] error:', e);
     return json({ ok: false, error: e?.message || 'Server error' }, 500);
   }
 }

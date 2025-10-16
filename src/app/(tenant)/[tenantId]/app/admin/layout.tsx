@@ -122,7 +122,7 @@ function useNavCounts(pollMs = 15000) {
       setErr(null);
       setLoading(true);
       // ⬇️ Mismo path lógico; apiFetch lo vuelve tenant-aware y same-origin
-      const res = await apiFetch('/app/api/admin/nav-counts', { cache: 'no-store' });
+      const res = await apiFetch('app/api/admin/nav-counts', { cache: 'no-store' });
       const data = await res.json().catch(() => ({} as any));
       if (!res.ok || data?.ok === false) throw new Error(data?.error || `HTTP ${res.status}`);
       setCounts({

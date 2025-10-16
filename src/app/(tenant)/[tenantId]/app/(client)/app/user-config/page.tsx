@@ -118,7 +118,7 @@ function useCustomer() {
       setErr(null);
       setLoading(true);
       const res = await fetchWithRetryAuth(
-        makeUrl("/api/customers/me"), // 👈 antes: `${apiBase}/api/customers/me`
+        makeUrl("/${tenantId}/app//api/customers/me"), // 👈 antes: `${apiBase}/api/customers/me`
         { headers, cache: "no-store" },
         getFreshToken
       );
@@ -135,7 +135,7 @@ function useCustomer() {
 
   const saveProfile = async (payload: { displayName?: string; phone?: string }) => {
     const res = await fetchWithRetryAuth(
-      makeUrl("/api/customers/me"), // 👈 antes: `${apiBase}/api/customers/me`
+      makeUrl("/${tenantId}/app//api/customers/me"), // 👈 antes: `${apiBase}/api/customers/me`
       {
         method: "PUT",
         headers,
@@ -151,7 +151,7 @@ function useCustomer() {
 
   const saveAddresses = async (addresses: { home?: Partial<Addr>; office?: Partial<Addr> }) => {
     const res = await fetchWithRetryAuth(
-      makeUrl("/api/customers/me"), // 👈 antes: `${apiBase}/api/customers/me`
+      makeUrl("/${tenantId}/app/api/customers/me"), // 👈 antes: `${apiBase}/api/customers/me`
       {
         method: "PUT",
         headers,
@@ -167,7 +167,7 @@ function useCustomer() {
 
   const saveBilling = async (billing: { name?: string; taxId?: string }) => {
     const res = await fetchWithRetryAuth(
-      makeUrl("/api/customers/me"), // 👈 antes: `${apiBase}/api/customers/me`
+      makeUrl("/${tenantId}/app/api/customers/me"), // 👈 antes: `${apiBase}/api/customers/me`
       {
         method: "PUT",
         headers,
