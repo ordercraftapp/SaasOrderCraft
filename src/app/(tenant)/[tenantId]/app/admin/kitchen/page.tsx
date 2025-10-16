@@ -5,7 +5,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Protected from '@/app/(tenant)/[tenantId]/components/Protected';
 import { OnlyKitchen } from "@/app/(tenant)/[tenantId]/components/Only";
-import ToolGate from '@/components/ToolGate';
+import ToolGate from '@/components/ToolGate'; 
 
 // 🔤 i18n
 import { t as translate } from "@/lib/i18n/t";
