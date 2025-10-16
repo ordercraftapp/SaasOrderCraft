@@ -67,12 +67,41 @@ const AuthContext = createContext<Ctx>({
   refreshRoles: async () => {},
 });
 
+/* ============================
+   🔹 Helpers de URL tenant-aware
+   ============================ */
+function getTenantIdFromLocation(): string | null {
+  try {
+    if (typeof window === "undefined") return null;
+    const parts = (window.location.pathname || "/").split("/").filter(Boolean);
+    // Esperamos rutas tipo: /{tenantId}/app/...
+    return parts.length >= 1 ? parts[0] || null : null;
+  } catch {
+    return null;
+  }
+}
+function tenantApiPath(p: string): string {
+  // p debe empezar con "/api/..." o "/app/..."
+  const rel = p.startsWith("/") ? p : `/${p}`;
+  const tenantId = getTenantIdFromLocation();
+  if (!tenantId) return rel.startsWith("/app") ? rel : `/app${rel}`; // fallback sin tenant
+  if (rel.startsWith(`/${tenantId}/`)) return rel; // ya viene con tenant
+  if (rel.startsWith("/api/")) return `/${tenantId}/app${rel}`;
+  if (rel.startsWith("/app/")) return `/${tenantId}${rel}`;
+  // fallback
+  return `/${tenantId}${rel}`;
+}
+
 // --- Helpers para cookie de rol leída por el middleware ---
 async function syncRoleCookie(idToken: string) {
   try {
-    await fetch("/${tenantId}/app/api/auth/refresh-role", {
+    const path = tenantApiPath("/api/auth/refresh-role");
+    const url = typeof window !== "undefined" ? new URL(path, window.location.origin).toString() : path;
+    await fetch(url, {
       method: "POST",
       headers: { Authorization: `Bearer ${idToken}` },
+      credentials: "same-origin",
+      cache: "no-store",
     });
   } catch {
     // Silencioso: si falla, el middleware tratará al usuario como customer.
@@ -160,7 +189,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await hydrate(u, true);
   }, [hydrate]);
 
-  // ⬇️⬇️⬇️ AGREGADO: Welcome email para Google Auth (idempotente en el server)
+  // ⬇️ Welcome email (idempotente en server)
   useEffect(() => {
     if (loading) return;
     if (!user || !idToken) return;
@@ -173,27 +202,37 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     (async () => {
       try {
-        // Asegura que el doc customers/{uid} exista y tenga email/displayName
-        await fetch("/${tenantId}/app/api/customers/me", {
-          method: "GET",
-          headers: { Authorization: `Bearer ${idToken}` },
-          cache: "no-store",
-        });
+        // GET /{tenantId}/app/api/customers/me
+        {
+          const path = tenantApiPath("/api/customers/me");
+          const url = typeof window !== "undefined" ? new URL(path, window.location.origin).toString() : path;
+          await fetch(url, {
+            method: "GET",
+            headers: { Authorization: `Bearer ${idToken}` },
+            cache: "no-store",
+            credentials: "same-origin",
+          });
+        }
 
-        // Dispara el welcome (en server es idempotente; solo envía una vez por usuario)
-        await fetch("/${tenantId}/app/api/tx/welcome", {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${idToken}`,
-            "content-type": "application/json",
-          },
-        });
+        // POST /{tenantId}/app/api/tx/welcome
+        {
+          const path = tenantApiPath("/api/tx/welcome");
+          const url = typeof window !== "undefined" ? new URL(path, window.location.origin).toString() : path;
+          await fetch(url, {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${idToken}`,
+              "content-type": "application/json",
+            },
+            credentials: "same-origin",
+            cache: "no-store",
+          });
+        }
       } catch {
         // silencioso
       }
     })();
   }, [user, idToken, loading]);
-  // ⬆️⬆️⬆️ FIN AGREGADO
 
   const value = useMemo<Ctx>(
     () => ({ user, loading, idToken, claims, flags, refreshRoles }),
