@@ -67,17 +67,29 @@ async function fetchWithRetryAuth(
   return fetch(input, nextInit);
 }
 
-// 👇 Hook para obtener el prefijo tenant-aware: "/{tenant}/app"
+// 👇 Hook para obtener el prefijo tenant-aware: "/{tenantId}/app"
 function useTenantApiBase() {
-  const params = useParams<{ tenant: string }>();
-  const tenant = (params?.tenant || "").trim();
-  // Normalizamos a "/{tenant}/app"
-  return `/${tenant}/app`;
+  // ⬇️ antes: useParams<{ tenant: string }>();
+  const params = useParams<{ tenantId: string }>();
+  const tenantId = (params?.tenantId || "").trim();
+  // Normalizamos a "/{tenantId}/app" o "/app" si no hay tenant
+  return tenantId ? `/${tenantId}/app` : `/app`;
+}
+
+// Pequeño helper local para construir URLs absolutas same-origin (respeta CSP 'self')
+function useApiUrl() {
+  const apiBase = useTenantApiBase();
+  return (p: string) => {
+    const rel = p.startsWith("/") ? p : `/${p}`;
+    if (typeof window === "undefined") return `${apiBase}${rel}`;
+    return new URL(`${apiBase}${rel}`, window.location.origin).toString();
+  };
 }
 
 function useCustomer() {
   const { idToken } = useAuth();
   const apiBase = useTenantApiBase(); // 👈 prefijo tenant-aware
+  const makeUrl = useApiUrl();        // 👈 URLs absolutas same-origin
 
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
@@ -106,7 +118,7 @@ function useCustomer() {
       setErr(null);
       setLoading(true);
       const res = await fetchWithRetryAuth(
-        `${apiBase}/api/customers/me`, // 👈 tenant-aware
+        makeUrl("/api/customers/me"), // 👈 antes: `${apiBase}/api/customers/me`
         { headers, cache: "no-store" },
         getFreshToken
       );
@@ -123,7 +135,7 @@ function useCustomer() {
 
   const saveProfile = async (payload: { displayName?: string; phone?: string }) => {
     const res = await fetchWithRetryAuth(
-      `${apiBase}/api/customers/me`, // 👈 tenant-aware
+      makeUrl("/api/customers/me"), // 👈 antes: `${apiBase}/api/customers/me`
       {
         method: "PUT",
         headers,
@@ -139,7 +151,7 @@ function useCustomer() {
 
   const saveAddresses = async (addresses: { home?: Partial<Addr>; office?: Partial<Addr> }) => {
     const res = await fetchWithRetryAuth(
-      `${apiBase}/api/customers/me`, // 👈 tenant-aware
+      makeUrl("/api/customers/me"), // 👈 antes: `${apiBase}/api/customers/me`
       {
         method: "PUT",
         headers,
@@ -155,7 +167,7 @@ function useCustomer() {
 
   const saveBilling = async (billing: { name?: string; taxId?: string }) => {
     const res = await fetchWithRetryAuth(
-      `${apiBase}/api/customers/me`, // 👈 tenant-aware
+      makeUrl("/api/customers/me"), // 👈 antes: `${apiBase}/api/customers/me`
       {
         method: "PUT",
         headers,

@@ -245,7 +245,7 @@ export default function AppHome() {
               <p className="mb-2 text-body-secondary">
                 {t(lang, "home.trackingDesc")}
               </p>
-              <a className="btn btn-outline-primary" href={`${appBase}/tracking`} aria-label="Ver seguimiento">
+              <a className="btn btn-outline-primary" href={`${appBase}/app/tracking`} aria-label="Ver seguimiento">
                 {t(lang, "home.trackingBtn")}
               </a>
 
