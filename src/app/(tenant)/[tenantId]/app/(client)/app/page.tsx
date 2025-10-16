@@ -74,7 +74,7 @@ export default function AppHome() {
 
   // 👇 tenant y bases de ruta (tenantId seguro)
   const tenantId = useSafeTenantId();
-  const appBase = tenantId ? `/${tenantId}/app/` : '/app/';
+  const appBase = tenantId ? `/${tenantId}/app/app/` : '/app/app/';
   const apiBase = appBase; // tus APIs viven bajo /{tenantId}/app/api/...
 
   const [promos, setPromos] = useState<PromoDoc[]>([]);
