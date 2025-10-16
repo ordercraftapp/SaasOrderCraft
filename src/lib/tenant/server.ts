@@ -1,3 +1,4 @@
+// src/lib/tenant/server.ts
 import { NextRequest, NextResponse } from 'next/server';
 
 export type TenantRouteParams = {

@@ -1,4 +1,4 @@
-// src/app/(tenant)/[tenantId]/layout.tsx
+// src/app/(tenant)/[tenantId]/app/layout.tsx
 import 'bootstrap/dist/css/bootstrap.min.css';
 import BootstrapClient from '@/app/(tenant)/[tenantId]/components/BootstrapClient';
 import { TenantProvider } from '@/lib/tenant/context';

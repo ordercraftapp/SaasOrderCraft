@@ -112,6 +112,13 @@ function useNavCounts(pollMs = 15000) {
 
   const load = async () => {
     try {
+      // ⬇️ NUEVO: si todavía no hay idToken (usuario no hidratado), salimos sin error
+      const maybeToken = await getIdTokenSafe(false);
+      if (!maybeToken) {
+        setLoading(false);
+        return;
+      }
+
       setErr(null);
       setLoading(true);
       // ⬇️ Mismo path lógico; apiFetch lo vuelve tenant-aware y same-origin
