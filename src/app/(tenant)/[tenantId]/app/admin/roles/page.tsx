@@ -59,7 +59,8 @@ function useAuthClaims() {
         if (!alive) return;
         setUser(u ?? null);
         if (u) {
-          const res = await getIdTokenResult(u);
+          // ⬅️ CAMBIO 1: forzar refresh para traer claims actualizados
+          const res = await getIdTokenResult(u, true);
           setClaims(res.claims || null);
         } else {
           setClaims(null);
@@ -105,7 +106,8 @@ function RolesPage_Inner() {
   const isTenantAdmin = React.useMemo(() => {
     if (!tenantId) return false;
     const t = claims?.tenants?.[tenantId];
-    return !!(t?.admin === true || claims?.role === 'superadmin' || claims?.admin === true);
+    // ⬅️ CAMBIO 2: usar truthiness para tolerar valores truthy
+    return !!(t?.admin || claims?.role === 'superadmin' || claims?.admin === true);
   }, [claims, tenantId]);
 
   // idioma del tenant
