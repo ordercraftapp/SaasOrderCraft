@@ -7,7 +7,7 @@ import { getFirestore, getDocs, query, where } from 'firebase/firestore';
 import { t, getLang } from '@/lib/i18n/t';
 import { useTenantSettings } from '@/lib/settings/hooks';
 import { useParams } from 'next/navigation';
-
+ 
 // ✅ Firestore Web SDK (tenant-aware)
 import { tCol } from '@/lib/db'; // tCol('<subcol>', tenantId)
 
@@ -75,7 +75,7 @@ export default function AppHome() {
   // 👇 tenant y bases de ruta (tenantId seguro)
   const tenantId = useSafeTenantId();
   const appBase = tenantId ? `/${tenantId}/app/app/` : '/app/app/';
-  const apiBase = tenantId ? `/${tenantId}/app/` : '/app/'; // tus APIs viven bajo /{tenantId}/app/api/...
+  const apiBase = tenantId ? `/${tenantId}/app` : '/app'; // tus APIs viven bajo /{tenantId}/app/api/...
 
   const [promos, setPromos] = useState<PromoDoc[]>([]);
   const [loadingPromos, setLoadingPromos] = useState<boolean>(true);
