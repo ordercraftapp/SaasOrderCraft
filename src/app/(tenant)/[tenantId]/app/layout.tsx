@@ -1,9 +1,12 @@
-// src/app/(tenant)/[tenantId]/layout.tsx (o el TenantAppLayout que uses)
+// src/app/(tenant)/[tenantId]/layout.tsx
 import 'bootstrap/dist/css/bootstrap.min.css';
 import BootstrapClient from '@/app/(tenant)/[tenantId]/components/BootstrapClient';
 import { TenantProvider } from '@/lib/tenant/context';
 import Providers from '@/app/providers';
-import { NewCartProvider } from '@/lib/newcart/context'; // 👈 aquí
+import { NewCartProvider } from '@/lib/newcart/context';
+
+// ⬇️ NUEVO
+import RefreshRoleBootstrap from '@/app/(tenant)/[tenantId]/components/RefreshRoleBootstrap';
 
 export default function TenantAppLayout({
   children,
@@ -16,7 +19,9 @@ export default function TenantAppLayout({
     <Providers>
       <BootstrapClient />
       <TenantProvider>
-        <NewCartProvider> {/* 👈 ahora todo el portal (menu, cart, etc.) tiene carrito */}
+        {/* ⬇️ NUEVO: asegura cookies de rol (appRole/isOp) para el tenant actual */}
+        <RefreshRoleBootstrap />
+        <NewCartProvider>
           {children}
         </NewCartProvider>
       </TenantProvider>
