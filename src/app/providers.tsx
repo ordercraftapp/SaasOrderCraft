@@ -70,7 +70,7 @@ const AuthContext = createContext<Ctx>({
 // --- Helpers para cookie de rol leída por el middleware ---
 async function syncRoleCookie(idToken: string) {
   try {
-    await fetch("/api/auth/refresh-role", {
+    await fetch("/${tenantId}/app/api/auth/refresh-role", {
       method: "POST",
       headers: { Authorization: `Bearer ${idToken}` },
     });
@@ -174,14 +174,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     (async () => {
       try {
         // Asegura que el doc customers/{uid} exista y tenga email/displayName
-        await fetch("/api/customers/me", {
+        await fetch("/${tenantId}/app/api/customers/me", {
           method: "GET",
           headers: { Authorization: `Bearer ${idToken}` },
           cache: "no-store",
         });
 
         // Dispara el welcome (en server es idempotente; solo envía una vez por usuario)
-        await fetch("/api/tx/welcome", {
+        await fetch("/${tenantId}/app/api/tx/welcome", {
           method: "POST",
           headers: {
             Authorization: `Bearer ${idToken}`,
