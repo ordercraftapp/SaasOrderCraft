@@ -4,23 +4,37 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   getFirestore,
-  doc,
-  getDoc,
-  collection,
   onSnapshot,
   query,
   where,
   Timestamp,
+  getDoc,
+  doc,
 } from "firebase/firestore";
+import { useTenantId } from "@/lib/tenant/context";
+import { tCol } from "@/lib/db";
 
-type FirestoreTS = Timestamp | { seconds: number; nanoseconds?: number } | Date | null | undefined;
+type FirestoreTS =
+  | Timestamp
+  | { seconds: number; nanoseconds?: number }
+  | Date
+  | null
+  | undefined;
 
 type OrderDoc = {
   id: string;
   createdAt?: FirestoreTS;
   updatedAt?: FirestoreTS;
-  orderInfo?: { type?: "dine-in" | "delivery" | "pickup"; table?: string | number | null };
-  status?: "placed" | "kitchen_in_progress" | "kitchen_done" | "ready_to_close" | "closed";
+  orderInfo?: {
+    type?: "dine-in" | "delivery" | "pickup";
+    table?: string | number | null;
+  };
+  status?:
+    | "placed"
+    | "kitchen_in_progress"
+    | "kitchen_done"
+    | "ready_to_close"
+    | "closed";
 };
 
 const OPEN_STATUSES: NonNullable<OrderDoc["status"]>[] = [
@@ -33,10 +47,10 @@ const OPEN_STATUSES: NonNullable<OrderDoc["status"]>[] = [
 function tsToDate(ts: FirestoreTS): Date | null {
   if (!ts) return null;
   if (ts instanceof Date) return ts;
+  if (ts instanceof Timestamp) return ts.toDate();
   if (typeof (ts as any)?.seconds === "number") {
     return new Date(((ts as any).seconds as number) * 1000);
   }
-  if (ts instanceof Timestamp) return ts.toDate();
   return null;
 }
 
@@ -46,59 +60,77 @@ function updatedOrCreatedAt(d?: OrderDoc) {
 
 export function useAvailableTables() {
   const db = useMemo(() => getFirestore(), []);
+  const tenantId = useTenantId(); // ⬅️ clave para namespacing
   const [numTables, setNumTables] = useState<number>(12);
   const [occupied, setOccupied] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // Lee tenants/{tenantId}/settings/waiter
   useEffect(() => {
+    if (!tenantId) return; // espera a tener tenant
     let mounted = true;
+
     (async () => {
       try {
-        const snap = await getDoc(doc(db, "settings", "waiter"));
+        const waiterRef = doc(tCol("settings", tenantId), "waiter");
+        const snap = await getDoc(waiterRef);
         if (snap.exists()) {
           const n = Number((snap.data() as any)?.numTables ?? 12);
-          if (mounted) setNumTables(Math.min(200, Math.max(1, Number.isFinite(n) ? n : 12)));
+          if (mounted)
+            setNumTables(
+              Math.min(200, Math.max(1, Number.isFinite(n) ? n : 12))
+            );
         }
       } finally {
         if (mounted) setLoading(false);
       }
     })();
+
     return () => {
       mounted = false;
     };
-  }, [db]);
+  }, [db, tenantId]);
 
+  // Escucha tenants/{tenantId}/orders abiertas (dine-in)
   useEffect(() => {
-    // Escucha todas las órdenes abiertas de tipo dine-in y mapea mesas ocupadas
+    if (!tenantId) return; // espera a tener tenant
+
     const qRef = query(
-      collection(db, "orders"),
+      tCol("orders", tenantId),
       where("orderInfo.type", "==", "dine-in"),
-      where("status", "in", OPEN_STATUSES)
-      // sin orderBy: no es necesario para obtener ocupación
+      // Firestore requiere string[] en 'in'
+      where("status", "in", OPEN_STATUSES as unknown as string[])
     );
 
-    const unsub = onSnapshot(qRef, (snap) => {
-      // Por mesa, nos quedamos con la orden más “reciente”
-      const latestByTable = new Map<string, OrderDoc>();
-      for (const d of snap.docs) {
-        const data = { id: d.id, ...(d.data() as any) } as OrderDoc;
-        const tRaw = data?.orderInfo?.table;
-        if (tRaw == null) continue;
-        const t = String(tRaw);
-        const prev = latestByTable.get(t);
-        if (!prev) {
-          latestByTable.set(t, data);
-        } else {
-          const prevT = updatedOrCreatedAt(prev)!;
-          const curT = updatedOrCreatedAt(data)!;
-          if (curT >= prevT) latestByTable.set(t, data);
+    const unsub = onSnapshot(
+      qRef,
+      (snap) => {
+        // Por mesa, nos quedamos con la orden más “reciente”
+        const latestByTable = new Map<string, OrderDoc>();
+        for (const d of snap.docs) {
+          const data = { id: d.id, ...(d.data() as any) } as OrderDoc;
+          const tRaw = data?.orderInfo?.table;
+          if (tRaw == null) continue;
+          const t = String(tRaw);
+          const prev = latestByTable.get(t);
+          if (!prev) {
+            latestByTable.set(t, data);
+          } else {
+            const prevT = updatedOrCreatedAt(prev)!;
+            const curT = updatedOrCreatedAt(data)!;
+            if (curT >= prevT) latestByTable.set(t, data);
+          }
         }
+        setOccupied(Array.from(latestByTable.keys()));
+      },
+      // Si hay error de permisos, no reventamos la UI
+      () => {
+        setOccupied([]);
       }
-      setOccupied(Array.from(latestByTable.keys()));
-    });
+    );
 
     return () => unsub();
-  }, [db]);
+  }, [db, tenantId]);
 
   const allTables = useMemo(
     () => Array.from({ length: numTables }, (_, i) => String(i + 1)),
