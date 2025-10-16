@@ -107,8 +107,8 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
               </li>
               <li className="nav-item">
                 <Link
-                  className={`nav-link ${isActive('/app/tracking') ? 'active' : ''}`}
-                  href={withTenant('/app/tracking')}
+                  className={`nav-link ${isActive('/app/app/tracking') ? 'active' : ''}`}
+                  href={withTenant('/app/app/tracking')}
                 >
                   {tt('client.nav.tracking', 'Tracking')}
                 </Link>
