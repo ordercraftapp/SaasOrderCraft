@@ -70,12 +70,11 @@ const AuthContext = createContext<Ctx>({
 // --- Helpers para cookie de rol leída por el middleware ---
 async function syncRoleCookie(idToken: string) {
   try {
-    const tenantId = getTenantIdFromLocation();
-    const path = tenantId ? `/${tenantId}/app/api/auth/refresh-role` : `/app/api/auth/refresh-role`;
+    // ✅ En este proyecto TODOS los APIs están bajo /app/api
     const url =
       typeof window !== "undefined"
-        ? new URL(path, window.location.origin).toString()
-        : path;
+        ? new URL("/app/api/auth/refresh-role", window.location.origin).toString()
+        : "/app/api/auth/refresh-role";
 
     await fetch(url, {
       method: "POST",
@@ -100,11 +99,19 @@ function clearRoleCookies() {
 function getTenantIdFromLocation(): string | null {
   try {
     if (typeof window === "undefined") return null;
-    // Esperamos rutas tipo: /{tenantId}/app/...
+    // Estructura esperada:
+    // - Área cliente: /app/app/...
+    // - Área admin:   /app/admin/...
+    // - APIs:         /app/api/...
+    // En rutas multi-tenant (cuando apliquen) sería /{tenantId}/app/...
     const parts = (window.location.pathname || "/").split("/").filter(Boolean);
-    // parts[0] sería tenantId si estamos dentro del árbol /{tenantId}/...
-    if (parts.length >= 1) return parts[0] || null;
-    return null;
+    if (parts.length === 0) return null;
+    const first = parts[0];
+
+    // ⚠️ En este proyecto "app" y "api" son namespaces, no tenantId
+    if (first === "app" || first === "api") return null;
+
+    return first || null;
   } catch {
     return null;
   }
@@ -199,7 +206,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const tenantId = getTenantIdFromLocation();
 
         // Verifica membresía en este tenant sin bootstrap (GET debe devolver 200 si existe; 404 si no)
-        const me = await fetch("/api/customers/me", {
+        const me = await fetch("/app/api/customers/me", {
           method: "GET",
           headers: {
             Authorization: `Bearer ${idToken}`,
@@ -211,7 +218,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (me.status !== 200) return; // No hay membresía → no envíes welcome
 
         // Dispara el welcome (idempotente)
-        await fetch("/api/tx/welcome", {
+        await fetch("/app/api/tx/welcome", {
           method: "POST",
           headers: {
             Authorization: `Bearer ${idToken}`,
