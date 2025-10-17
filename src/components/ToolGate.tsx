@@ -6,19 +6,22 @@ import React from 'react';
 import { useFeature } from '@/lib/plans/client';
 import type { FeatureKey } from '@/lib/plans/types';
 
-export default function ToolGate({
-  feature,
-  children,
-  fallback,
-}: {
+type Props = {
   feature: FeatureKey;
   children: React.ReactNode;
   fallback?: React.ReactNode;
-}) {
-  const { allowed, loading } = useFeature(feature);
+};
 
-  if (loading) return <div className="text-muted">Loading…</div>;
-  if (!allowed) {
+export default function ToolGate({ feature, children, fallback }: Props) {
+  const feat = useFeature(feature) as { allowed: boolean; loading: boolean; tenantId?: string };
+
+  if (feat.loading) return <div className="text-muted">Loading…</div>;
+
+  if (!feat.allowed) {
+    if (process.env.NODE_ENV !== 'production') {
+      // 👇 Traza útil en dev para depurar por qué no aparece una tool
+      console.warn(`[ToolGate] feature "${String(feature)}" disabled for tenant ${feat.tenantId ?? '(unknown)'}`);
+    }
     return (
       fallback ?? (
         <div className="alert alert-warning">
@@ -31,5 +34,6 @@ export default function ToolGate({
       )
     );
   }
+
   return <>{children}</>;
 }

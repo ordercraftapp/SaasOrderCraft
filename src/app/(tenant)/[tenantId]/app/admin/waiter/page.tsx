@@ -1,11 +1,10 @@
-// src/app/(tenant)/[tenantId]/app/admin/waiter/page.tsx
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import Protected from "@/app/(tenant)/[tenantId]/components/Protected";
-import { RoleGate } from "@/app/(tenant)/[tenantId]/components/RoleGate";
 import ToolGate from "@/components/ToolGate";
+import { OnlyWaiter } from "@/app/(tenant)/[tenantId]/components/Only";
 import "@/lib/firebase/client";
 import { useAuth } from "@/app/providers";
 import {
@@ -404,9 +403,9 @@ export default function WaiterPage() {
 
   // =================== Render ===================
   return (
-    <Protected>
-      <ToolGate feature="waiter">
-        <RoleGate allow={['admin','waiter']}>
+    <ToolGate feature="waiter">
+      <Protected>
+        <OnlyWaiter>
           <main className="container-fluid py-3">
             {/* Top Controls */}
             <div className="container mb-3">
@@ -553,9 +552,9 @@ export default function WaiterPage() {
               />
             )}
           </main>
-        </RoleGate>
-      </ToolGate>
-    </Protected>
+        </OnlyWaiter>
+      </Protected>
+    </ToolGate>
   );
 }
 

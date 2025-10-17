@@ -1,4 +1,3 @@
-// src/components/Only.tsx
 "use client";
 import React from "react";
 import { RoleGate as _RoleGate } from "./RoleGate";
