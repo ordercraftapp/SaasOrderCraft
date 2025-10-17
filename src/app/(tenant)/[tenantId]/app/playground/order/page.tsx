@@ -3,7 +3,7 @@
 import "@/lib/firebase/client";
 import { useEffect, useMemo, useState } from "react";
 import { getAuth } from "firebase/auth";
-import { useAuth } from "@/app/providers";
+import { useAuth } from "@/app/(tenant)/[tenantId]/app/providers";
 import { useFmtQ } from "@/lib/settings/money";
 import { useParams } from "next/navigation";
 

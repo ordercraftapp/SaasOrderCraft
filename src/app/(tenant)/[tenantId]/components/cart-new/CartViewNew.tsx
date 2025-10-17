@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 import { useNewCart } from '@/lib/newcart/context';
 import type { NewCartItem } from '@/lib/newcart/types';
 import { useFmtQ } from '@/lib/settings/money';
-import { useAuth } from '@/app/providers';
+import { useAuth } from '@/app/(tenant)/[tenantId]/app/providers';
 import { tenantPath } from '@/lib/tenant/paths';
 
 // 🔤 i18n

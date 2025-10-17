@@ -1,7 +1,7 @@
 // src/app/(tenant)/[tenantId]/components/Protected.tsx
 "use client";
 
-import { useAuth } from "@/app/providers";
+import { useAuth } from "@/app/(tenant)/[tenantId]/app/providers";
 import Link from "next/link";
 import { Suspense, useEffect } from "react";
 import { usePathname, useRouter, useSearchParams, useParams } from "next/navigation";

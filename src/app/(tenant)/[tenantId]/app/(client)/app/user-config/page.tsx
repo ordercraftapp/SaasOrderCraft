@@ -3,7 +3,7 @@
 
 import React, { useEffect, useMemo, useState } from "react";
 import Protected from "@/app/(tenant)/[tenantId]/components/Protected";
-import { useAuth } from "@/app/providers";
+import { useAuth } from "@/app/(tenant)/[tenantId]/app/providers";
 
 // Firebase Auth (para cambiar contraseña)
 import "@/lib/firebase/client";

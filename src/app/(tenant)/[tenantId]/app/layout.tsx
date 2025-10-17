@@ -2,7 +2,7 @@
 import 'bootstrap/dist/css/bootstrap.min.css';
 import BootstrapClient from '@/app/(tenant)/[tenantId]/components/BootstrapClient';
 import { TenantProvider } from '@/lib/tenant/context';
-import Providers from '@/app/providers';
+import Providers from '@/app/(tenant)/[tenantId]/app/providers';
 import { NewCartProvider } from '@/lib/newcart/context';
 
 // ⬇️ NUEVO

@@ -4,7 +4,7 @@ import { FormEvent, useEffect, useRef, useState } from "react";
 import { createUserWithEmailAndPassword, updateProfile } from "firebase/auth";
 import { auth } from "@/lib/firebase/client";
 import { useRouter, useParams } from "next/navigation";
-import { useAuth } from "@/app/providers";
+import { useAuth } from "@/app/(tenant)/[tenantId]/app/providers";
 
 // 🔤 i18n
 import { t as translate } from "@/lib/i18n/t";

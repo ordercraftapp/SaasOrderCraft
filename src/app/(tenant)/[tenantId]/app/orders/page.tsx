@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useAuth } from '@/app/providers';
+import { useAuth } from '@/app/(tenant)/[tenantId]/app/providers';
 import { useFmtQ } from '@/lib/settings/money';
 
 /* ✅ Phase C: tenant en cliente */

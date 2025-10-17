@@ -6,7 +6,7 @@ import { useParams } from 'next/navigation';
 import Protected from '@/app/(tenant)/[tenantId]/components/Protected';
 import AdminOnly from '@/app/(tenant)/[tenantId]/components/AdminOnly';
 import ToolGate from '@/components/ToolGate';
-import { useAuth } from '@/app/providers';
+import { useAuth } from '@/app/(tenant)/[tenantId]/app/providers';
 
 // Mantén estos imports si ya añadiste el editor visual y uploads
 import '@/lib/firebase/client';

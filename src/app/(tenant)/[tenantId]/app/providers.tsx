@@ -1,4 +1,4 @@
-// src/app/(tenant)/[tenantId]/app/providers.tsx
+// src/app/providers.tsx
 "use client";
 
 import {
@@ -68,51 +68,79 @@ const AuthContext = createContext<Ctx>({
 });
 
 /* ============================
-   🔹 Helper: tenantId desde URL
-   Estructura: /{tenantId}/app/...
+   🔹 Helpers de URL tenant-aware
    ============================ */
+function inTenantTree(): boolean {
+  if (typeof window === "undefined") return false;
+  return /^\/[^/]+\/app(\/|$)/.test(window.location.pathname || "/");
+}
+
 function getTenantIdFromLocation(): string | null {
   try {
-    if (typeof window === "undefined") return null;
+    if (!inTenantTree()) return null;
     const parts = (window.location.pathname || "/").split("/").filter(Boolean);
-    // Esperamos algo como: ["<tenantId>", "app", ...]
-    if (parts.length >= 2 && parts[1] === "app") {
-      return parts[0] || null;
-    }
-    return null;
+    return parts[0] || null;
   } catch {
     return null;
   }
+}
+
+/** Construye paths aware del tenant.
+ *  Reglas:
+ *  - Si ya viene algo como "/{tenantId}/app/..." → se respeta tal cual.
+ *  - Si estamos en árbol tenant y el path empieza con "/api/..." → prefija "/{tenantId}/app".
+ *  - Si estamos en árbol tenant y el path empieza con "/app/..." → prefija "/{tenantId}".
+ *  - Fuera del árbol tenant → devuelve el rel sin inventar "/app".
+ */
+function tenantApiPath(p: string): string {
+  const rel = p.startsWith("/") ? p : `/${p}`;
+
+  // Ya scoped: /{tenantId}/app/...
+  if (/^\/[^/]+\/app(\/|$)/.test(rel)) return rel;
+
+  const tenantId = getTenantIdFromLocation();
+
+  if (tenantId) {
+    if (rel.startsWith("/api/")) return `/${tenantId}/app${rel}`;
+    if (rel.startsWith("/app/")) return `/${tenantId}${rel}`;
+    return `/${tenantId}${rel}`;
+  }
+
+  // Fuera del árbol tenant: no prefijar /app
+  return rel;
 }
 
 // --- Helpers para cookie de rol leída por el middleware ---
 async function syncRoleCookie(idToken: string) {
   try {
-    const tenantId = getTenantIdFromLocation();
-    // ✅ En tu proyecto los APIs están bajo /{tenantId}/app/api
-    const path = tenantId
-      ? `/${tenantId}/app/api/auth/refresh-role`
-      : `/app/api/auth/refresh-role`; // fallback defensivo
-
+    if (!inTenantTree()) return; // sólo aplica bajo /{tenant}/app
+    const path = tenantApiPath("/api/auth/refresh-role");
     const url =
       typeof window !== "undefined"
         ? new URL(path, window.location.origin).toString()
         : path;
-
     await fetch(url, {
-      method: "POST",
+      method: "GET", // tu route soporta GET y POST; GET evita 405 según tus logs
       headers: { Authorization: `Bearer ${idToken}` },
+      credentials: "same-origin",
+      cache: "no-store",
     });
   } catch {
-    // Silencioso
+    // Silencioso: si falla, el middleware tratará al usuario como customer.
   }
 }
 
 function clearRoleCookies() {
   try {
-    // Las cookies NO son httpOnly para que middleware pueda leerlas y también poder limpiarlas aquí
+    const t = getTenantIdFromLocation();
+    // paths globales por si acaso
     document.cookie = "appRole=; Max-Age=0; Path=/";
     document.cookie = "isOp=; Max-Age=0; Path=/";
+    // paths tenant-scoped (los que realmente se usan en refresh-role)
+    if (t) {
+      document.cookie = `appRole=; Max-Age=0; Path=/${t}/app/`;
+      document.cookie = `isOp=; Max-Age=0; Path=/${t}/app/`;
+    }
   } catch {}
 }
 
@@ -189,7 +217,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await hydrate(u, true);
   }, [hydrate]);
 
-  // ✅ Welcome email: solo si YA existe membresía en este tenant (GET 200).
+  // ⬇️ Welcome email (idempotente en server)
   useEffect(() => {
     if (loading) return;
     if (!user || !idToken) return;
@@ -202,36 +230,39 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     (async () => {
       try {
-        const tenantId = getTenantIdFromLocation();
+        // GET /{tenantId}/app/api/customers/me
+        {
+          const path = tenantApiPath("/api/customers/me");
+          const url =
+            typeof window !== "undefined"
+              ? new URL(path, window.location.origin).toString()
+              : path;
+          // Si 200 → existe membresía. No usamos el body; solo disparamos para validar.
+          await fetch(url, {
+            method: "GET",
+            headers: { Authorization: `Bearer ${idToken}` },
+            cache: "no-store",
+            credentials: "same-origin",
+          });
+        }
 
-        // Verifica membresía en este tenant (GET 200 si existe; 404 si no)
-        const mePath = tenantId
-          ? `/${tenantId}/app/api/customers/me`
-          : `/app/api/customers/me`; // fallback defensivo
-
-        const me = await fetch(mePath, {
-          method: "GET",
-          headers: {
-            Authorization: `Bearer ${idToken}`,
-            // Ya vamos tenant-scoped por path; no es necesario x-tenant-id
-          },
-          cache: "no-store",
-        });
-
-        if (me.status !== 200) return; // No hay membresía → no envíes welcome
-
-        // Dispara el welcome (idempotente)
-        const welcomePath = tenantId
-          ? `/${tenantId}/app/api/tx/welcome`
-          : `/app/api/tx/welcome`;
-
-        await fetch(welcomePath, {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${idToken}`,
-            "content-type": "application/json",
-          },
-        });
+        // POST /{tenantId}/app/api/tx/welcome  (idempotente)
+        {
+          const path = tenantApiPath("/api/tx/welcome");
+          const url =
+            typeof window !== "undefined"
+              ? new URL(path, window.location.origin).toString()
+              : path;
+          await fetch(url, {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${idToken}`,
+              "content-type": "application/json",
+            },
+            credentials: "same-origin",
+            cache: "no-store",
+          });
+        }
       } catch {
         // silencioso
       }

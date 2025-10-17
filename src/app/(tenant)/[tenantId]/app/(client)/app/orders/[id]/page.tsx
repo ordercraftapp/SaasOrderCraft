@@ -4,7 +4,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import Protected from "@/app/(tenant)/[tenantId]/components/Protected";
-import { useAuth } from "@/app/providers";
+import { useAuth } from "@/app/(tenant)/[tenantId]/app/providers";
 import "@/lib/firebase/client";
 import { getFirestore, onSnapshot } from "firebase/firestore";
 import { tDoc } from "@/lib/db"; // ✅ Web SDK tenant-aware

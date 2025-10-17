@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useTenantId } from "@/lib/tenant/context";
-import { useAuth } from "@/app/providers";
+import { useAuth } from "@/app/(tenant)/[tenantId]/app/providers";
 
 type ApiRefreshRoleResp =
   | { ok: true; tenantId: string; role: "admin" | "kitchen" | "cashier" | "waiter" | "delivery" | "customer" }

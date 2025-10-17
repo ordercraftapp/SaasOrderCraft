@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import Protected from "@/app/(tenant)/[tenantId]/components/Protected";
-import { useAuth } from "@/app/providers";
+import { useAuth } from "@/app/(tenant)/[tenantId]/app/providers";
 import { useFmtQ } from "@/lib/settings/money";
 
 // i18n

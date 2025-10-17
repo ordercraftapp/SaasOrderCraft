@@ -1,7 +1,7 @@
 "use client";
 
 import { ReactNode, useEffect, useMemo, useState } from "react";
-import { useAuth } from "@/app/providers";
+import { useAuth } from "@/app/(tenant)/[tenantId]/app/providers";
 import { useTenantId } from "@/lib/tenant/context";
 
 type Role = "admin" | "kitchen" | "waiter" | "delivery" | "cashier" | "customer";

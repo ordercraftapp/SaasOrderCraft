@@ -6,7 +6,7 @@ import Protected from "@/app/(tenant)/[tenantId]/components/Protected";
 import ToolGate from "@/components/ToolGate";
 import { OnlyWaiter } from "@/app/(tenant)/[tenantId]/components/Only";
 import "@/lib/firebase/client";
-import { useAuth } from "@/app/providers";
+import { useAuth } from "@/app/(tenant)/[tenantId]/app/providers";
 import {
   getFirestore,
   getDoc,
