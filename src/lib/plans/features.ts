@@ -86,9 +86,35 @@ export const DEFAULT_FEATURES: Record<PlanTier, FeatureMap> = {
   },
 };
 
+/** 🔹 Helpers mínimos para tolerar `features` como array o como mapa */
+const ALL_KEYS = Object.keys(DEFAULT_FEATURES.full) as FeatureKey[];
+
+function arrayToFeatureMap(arr: unknown): FeatureMap {
+  const out = {} as FeatureMap;
+  if (!Array.isArray(arr)) return out;
+  for (const k of arr) {
+    if (typeof k === 'string' && (ALL_KEYS as string[]).includes(k)) {
+      (out as any)[k] = true;
+    }
+  }
+  return out;
+}
+
+function sanitizeFeatureMap(obj: unknown): FeatureMap {
+  const out = {} as FeatureMap;
+  if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return out;
+  for (const k of Object.keys(obj as Record<string, unknown>)) {
+    if ((ALL_KEYS as string[]).includes(k) && (obj as Record<string, unknown>)[k] === true) {
+      (out as any)[k] = true;
+    }
+  }
+  return out;
+}
+
 /**
  * Fusiona el doc guardado con los defaults del tier.
  * - `features` puede venir vacío o parcial; se completa con defaults.
+ * - ACEPTA `features` como **array de strings** o **mapa { key: true/false }**.
  * - Ignora claves desconocidas (fuera de FeatureMap).
  * - Timestamps opcionales (no se incluyen si no existen).
  */
@@ -96,9 +122,18 @@ export function coercePlan(doc?: Partial<TenantPlanDoc>): TenantPlanDoc {
   const tier = (doc?.planTier ?? 'starter') as PlanTier;
   const base = DEFAULT_FEATURES[tier];
 
-  const raw = (doc?.features ?? {}) as Record<string, boolean>;
+  // ✅ Normaliza `features` desde array o mapa
+  const raw = doc?.features as unknown;
+  const overrides: FeatureMap = Array.isArray(raw)
+    ? arrayToFeatureMap(raw)
+    : sanitizeFeatureMap(raw);
+
+  // Mezcla: defaults del tier + overrides (true gana)
   const normalized = Object.fromEntries(
-    Object.keys(base).map((k) => [k, k in raw ? !!raw[k] : base[k as keyof FeatureMap]])
+    (Object.keys(base) as (keyof FeatureMap)[]).map((k) => [
+      k,
+      (overrides as any)[k] === true ? true : base[k],
+    ])
   ) as FeatureMap;
 
   return {

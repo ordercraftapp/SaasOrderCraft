@@ -1,5 +1,3 @@
-// src/lib/plans/types.ts
-
 /** Planes soportados en el área ADMIN (cliente siempre libre). */
 export type PlanTier = 'starter' | 'pro' | 'full';
 
@@ -47,8 +45,9 @@ export type TenantPlanDoc = {
   /**
    * Overrides opcionales por feature (true/false).
    * Si está vacío o parcial, se usan/completan con los defaults del tier.
+   * ⚠️ En la práctica, también toleraremos un array<string> desde Firestore.
    */
-  features: FeatureMap | Record<string, boolean>;
+  features: FeatureMap | Record<string, boolean> | string[];
 
   /** Timestamps opcionales (Opción A) */
   createdAt?: unknown; // Firestore Timestamp | Date

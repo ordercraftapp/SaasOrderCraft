@@ -1,4 +1,3 @@
-// src/components/ToolGate.tsx
 // Wrapper de UI para mostrar/ocultar tools según el plan (Client Component)
 
 'use client';
