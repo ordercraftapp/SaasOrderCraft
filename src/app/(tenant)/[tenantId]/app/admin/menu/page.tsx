@@ -32,6 +32,22 @@ async function getStorageMod() {
   return await import('firebase/storage');
 }
 
+/* ============================
+   🔹 Helpers tenant-aware (solo para construir URLs)
+   Esperamos rutas tipo: /{tenantId}/app/...
+   ============================ */
+function getTenantIdFromLocation(): string | null {
+  if (typeof window === 'undefined') return null;
+  const parts = (window.location.pathname || '/').split('/').filter(Boolean);
+  // ["<tenantId>", "app", ...]
+  return parts.length >= 2 && parts[1] === 'app' ? (parts[0] || null) : null;
+}
+function tenantApi(path: string): string {
+  const p = path.startsWith('/') ? path : `/${path}`;
+  const tenantId = getTenantIdFromLocation();
+  return tenantId ? `/${tenantId}/app${p}` : p;
+}
+
 /* =========================================================================
    Auth (solo para reflejar isAdmin como tenías antes)  ⬅️ ACTUALIZADO
    ========================================================================= */
@@ -82,7 +98,8 @@ function useAuthClaims(tenantId?: string) {
         if (!tenantId || !user) return;
         setLoadingRole(true);
         const idToken = await user.getIdToken(true);
-        const resp = await fetch(`/${tenantId}/app/api/auth/refresh-role`, {
+        // ⬇️ FIX: usar helper tenantApi para evitar "/app/app/..."
+        const resp = await fetch(tenantApi('/api/auth/refresh-role'), {
           method: 'POST',
           headers: { Authorization: `Bearer ${idToken}` },
           cache: 'no-store',
