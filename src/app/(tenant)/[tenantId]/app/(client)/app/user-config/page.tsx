@@ -88,8 +88,8 @@ function useApiUrl() {
 
 function useCustomer() {
   const { idToken } = useAuth();
-  const apiBase = useTenantApiBase(); // 👈 prefijo tenant-aware
-  const makeUrl = useApiUrl();        // 👈 URLs absolutas same-origin
+  const apiBase = useTenantApiBase(); // prefijo "/{tenantId}/app" o "/app"
+  const makeUrl = useApiUrl();        // URLs absolutas same-origin
 
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
@@ -118,7 +118,7 @@ function useCustomer() {
       setErr(null);
       setLoading(true);
       const res = await fetchWithRetryAuth(
-        makeUrl("/${tenantId}/app//api/customers/me"), // 👈 antes: `${apiBase}/api/customers/me`
+        makeUrl("/api/customers/me"), // ✅ FIX: antes "/${tenantId}/app//api/customers/me"
         { headers, cache: "no-store" },
         getFreshToken
       );
@@ -135,7 +135,7 @@ function useCustomer() {
 
   const saveProfile = async (payload: { displayName?: string; phone?: string }) => {
     const res = await fetchWithRetryAuth(
-      makeUrl("/${tenantId}/app//api/customers/me"), // 👈 antes: `${apiBase}/api/customers/me`
+      makeUrl("/api/customers/me"), // ✅ FIX: antes "/${tenantId}/app//api/customers/me"
       {
         method: "PUT",
         headers,
@@ -151,7 +151,7 @@ function useCustomer() {
 
   const saveAddresses = async (addresses: { home?: Partial<Addr>; office?: Partial<Addr> }) => {
     const res = await fetchWithRetryAuth(
-      makeUrl("/${tenantId}/app/api/customers/me"), // 👈 antes: `${apiBase}/api/customers/me`
+      makeUrl("/api/customers/me"), // ✅ FIX: antes "/${tenantId}/app/api/customers/me"
       {
         method: "PUT",
         headers,
@@ -167,7 +167,7 @@ function useCustomer() {
 
   const saveBilling = async (billing: { name?: string; taxId?: string }) => {
     const res = await fetchWithRetryAuth(
-      makeUrl("/${tenantId}/app/api/customers/me"), // 👈 antes: `${apiBase}/api/customers/me`
+      makeUrl("/api/customers/me"), // ✅ FIX: antes "/${tenantId}/app/api/customers/me"
       {
         method: "PUT",
         headers,
@@ -185,10 +185,11 @@ function useCustomer() {
     if (!idToken) return;
     refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [idToken, apiBase]); // 👈 si cambia tenant en la URL, refresca
+  }, [idToken, apiBase]); // refresca si cambia tenant
 
   return { loading, err, cust, refresh, saveProfile, saveAddresses, saveBilling } as const;
 }
+
 
 function UserConfigInner() {
   const { user } = useAuth();
