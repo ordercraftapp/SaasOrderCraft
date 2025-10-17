@@ -67,21 +67,44 @@ const AuthContext = createContext<Ctx>({
   refreshRoles: async () => {},
 });
 
+/* ============================
+   🔹 Helper: tenantId desde URL
+   Estructura: /{tenantId}/app/...
+   ============================ */
+function getTenantIdFromLocation(): string | null {
+  try {
+    if (typeof window === "undefined") return null;
+    const parts = (window.location.pathname || "/").split("/").filter(Boolean);
+    // Esperamos algo como: ["<tenantId>", "app", ...]
+    if (parts.length >= 2 && parts[1] === "app") {
+      return parts[0] || null;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 // --- Helpers para cookie de rol leída por el middleware ---
 async function syncRoleCookie(idToken: string) {
   try {
-    // ✅ En este proyecto TODOS los APIs están bajo /app/api
+    const tenantId = getTenantIdFromLocation();
+    // ✅ En tu proyecto los APIs están bajo /{tenantId}/app/api
+    const path = tenantId
+      ? `/${tenantId}/app/api/auth/refresh-role`
+      : `/app/api/auth/refresh-role`; // fallback defensivo
+
     const url =
       typeof window !== "undefined"
-        ? new URL("/app/api/auth/refresh-role", window.location.origin).toString()
-        : "/app/api/auth/refresh-role";
+        ? new URL(path, window.location.origin).toString()
+        : path;
 
     await fetch(url, {
       method: "POST",
       headers: { Authorization: `Bearer ${idToken}` },
     });
   } catch {
-    // Silencioso: si falla, el middleware tratará al usuario como customer.
+    // Silencioso
   }
 }
 
@@ -91,30 +114,6 @@ function clearRoleCookies() {
     document.cookie = "appRole=; Max-Age=0; Path=/";
     document.cookie = "isOp=; Max-Age=0; Path=/";
   } catch {}
-}
-
-/* ============================
-   🔹 Helper: tenantId desde URL
-   ============================ */
-function getTenantIdFromLocation(): string | null {
-  try {
-    if (typeof window === "undefined") return null;
-    // Estructura esperada:
-    // - Área cliente: /app/app/...
-    // - Área admin:   /app/admin/...
-    // - APIs:         /app/api/...
-    // En rutas multi-tenant (cuando apliquen) sería /{tenantId}/app/...
-    const parts = (window.location.pathname || "/").split("/").filter(Boolean);
-    if (parts.length === 0) return null;
-    const first = parts[0];
-
-    // ⚠️ En este proyecto "app" y "api" son namespaces, no tenantId
-    if (first === "app" || first === "api") return null;
-
-    return first || null;
-  } catch {
-    return null;
-  }
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -205,12 +204,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       try {
         const tenantId = getTenantIdFromLocation();
 
-        // Verifica membresía en este tenant sin bootstrap (GET debe devolver 200 si existe; 404 si no)
-        const me = await fetch("/app/api/customers/me", {
+        // Verifica membresía en este tenant (GET 200 si existe; 404 si no)
+        const mePath = tenantId
+          ? `/${tenantId}/app/api/customers/me`
+          : `/app/api/customers/me`; // fallback defensivo
+
+        const me = await fetch(mePath, {
           method: "GET",
           headers: {
             Authorization: `Bearer ${idToken}`,
-            ...(tenantId ? { "x-tenant-id": tenantId } : {}), // ⬅️ header unificado
+            // Ya vamos tenant-scoped por path; no es necesario x-tenant-id
           },
           cache: "no-store",
         });
@@ -218,12 +221,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (me.status !== 200) return; // No hay membresía → no envíes welcome
 
         // Dispara el welcome (idempotente)
-        await fetch("/app/api/tx/welcome", {
+        const welcomePath = tenantId
+          ? `/${tenantId}/app/api/tx/welcome`
+          : `/app/api/tx/welcome`;
+
+        await fetch(welcomePath, {
           method: "POST",
           headers: {
             Authorization: `Bearer ${idToken}`,
             "content-type": "application/json",
-            ...(tenantId ? { "x-tenant-id": tenantId } : {}), // ⬅️ header unificado
           },
         });
       } catch {
