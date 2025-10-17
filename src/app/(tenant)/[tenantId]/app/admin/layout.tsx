@@ -50,17 +50,28 @@ async function getIdTokenSafe(forceRefresh = false): Promise<string | null> {
 }
 
 /* ============================
-   🔹 Tenant helpers (mínimos)
+   🔹 Tenant helpers
+   Estructura esperada: /{tenantId}/app/...
    ============================ */
 function getTenantIdFromLocation(): string | null {
-  if (typeof window === 'undefined') return null;
-  const parts = (window.location.pathname || '/').split('/').filter(Boolean);
-  return parts.length >= 1 ? parts[0] || null : null;
+  try {
+    if (typeof window === 'undefined') return null;
+    const parts = (window.location.pathname || '/').split('/').filter(Boolean);
+    // Esperamos algo como: ["<tenantId>", "app", ...]
+    if (parts.length >= 2 && parts[1] === 'app') {
+      return parts[0] || null;
+    }
+    return null;
+  } catch {
+    return null;
+  }
 }
 
+/** Devuelve una URL absoluta same-origin corrigiendo a /{tenantId}/app/... */
 function makeTenantUrl(path: string): string {
   const tenantId = getTenantIdFromLocation();
   const rel = path.startsWith('/') ? path : `/${path}`;
+
   // Si ya viene con /{tenantId}/..., respétalo
   if (tenantId && (rel === `/${tenantId}` || rel.startsWith(`/${tenantId}/`))) {
     return new URL(rel, window.location.origin).toString();
@@ -81,6 +92,16 @@ function makeTenantUrl(path: string): string {
   return new URL(rel, window.location.origin).toString();
 }
 
+/** Para <Link/> dentro del layout */
+function tenantHref(path: string): string {
+  const tenantId = getTenantIdFromLocation();
+  const rel = path.startsWith('/') ? path : `/${path}`;
+  if (tenantId && rel.startsWith('/app/')) return `/${tenantId}${rel}`;
+  if (tenantId && rel.startsWith('/api/')) return `/${tenantId}/app${rel}`;
+  if (tenantId && !rel.startsWith(`/${tenantId}/`)) return `/${tenantId}${rel}`;
+  return rel;
+}
+
 async function apiFetch(path: string, init?: RequestInit) {
   let token = await getIdTokenSafe(false);
   let headers: HeadersInit = { ...(init?.headers || {}) };
@@ -88,12 +109,12 @@ async function apiFetch(path: string, init?: RequestInit) {
 
   const url = typeof window !== 'undefined' ? makeTenantUrl(path) : path;
 
-  let res = await fetch(url, { ...init, headers });
+  let res = await fetch(url, { ...init, headers, cache: 'no-store' });
   if (res.status === 401) {
     token = await getIdTokenSafe(true);
     headers = { ...(init?.headers || {}) };
     if (token) (headers as any)['Authorization'] = `Bearer ${token}`;
-    res = await fetch(url, { ...init, headers });
+    res = await fetch(url, { ...init, headers, cache: 'no-store' });
   }
   return res;
 }
@@ -112,7 +133,7 @@ function useNavCounts(pollMs = 15000) {
 
   const load = async () => {
     try {
-      // ⬇️ NUEVO: si todavía no hay idToken (usuario no hidratado), salimos sin error
+      // Si no hay idToken aún (usuario no hidratado), salimos sin error
       const maybeToken = await getIdTokenSafe(false);
       if (!maybeToken) {
         setLoading(false);
@@ -121,8 +142,8 @@ function useNavCounts(pollMs = 15000) {
 
       setErr(null);
       setLoading(true);
-      // ⬇️ Mismo path lógico; apiFetch lo vuelve tenant-aware y same-origin
-      const res = await apiFetch('app/api/admin/nav-counts', { cache: 'no-store' });
+      // ✅ usa prefijo /api, apiFetch lo vuelve /{tenantId}/app/api/...
+      const res = await apiFetch('/api/admin/nav-counts');
       const data = await res.json().catch(() => ({} as any));
       if (!res.ok || data?.ok === false) throw new Error(data?.error || `HTTP ${res.status}`);
       setCounts({
@@ -151,7 +172,7 @@ function useNavCounts(pollMs = 15000) {
   return { counts, err, loading, reload: load } as const;
 }
 
-/* ======= NUEVO: hook para contar mesas activas (dine-in con estado abierto) ======= */
+/* ======= (Opcional) Mesas activas: si tus órdenes están en raíz, déjalo; si están en tenant, ajústalo ======= */
 function useActiveTablesCount(pollMs = 15000) {
   const [count, setCount] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
@@ -164,8 +185,15 @@ function useActiveTablesCount(pollMs = 15000) {
       const { getFirestore, collection, query, where, getDocs, limit } = await import('firebase/firestore');
       const db = getFirestore();
 
-      // ⚠️ Nota: si tus órdenes ahora viven en tenants/{tenantId}/orders,
-      // este collection('orders') debería ajustarse. Lo dejo igual ya que pediste no cambiar lógica.
+      // ⚠️ Si tus órdenes viven en tenants/{tenantId}/orders, reemplaza por:
+      // const tenantId = getTenantIdFromLocation();
+      // const qRef = query(
+      //   collection(db, 'tenants', tenantId!, 'orders'),
+      //   where('orderInfo.type', '==', 'dine-in'),
+      //   where('status', 'in', OPEN_STATUSES as unknown as string[]),
+      //   limit(1000)
+      // );
+
       const qRef = query(
         collection(db, 'orders'),
         where('orderInfo.type', '==', 'dine-in'),
@@ -206,11 +234,19 @@ function useActiveTablesCount(pollMs = 15000) {
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
-  const isActive = (href: string) => pathname?.startsWith(href);
+  const tenantId = (() => {
+    try {
+      const parts = (pathname || '/').split('/').filter(Boolean);
+      return parts.length >= 2 && parts[1] === 'app' ? parts[0] : null;
+    } catch { return null; }
+  })();
+
+  const isActive = (href: string) => {
+    const full = tenantHref(href);
+    return pathname?.startsWith(full);
+  };
 
   const { counts, loading } = useNavCounts(15000);
-
-  // ===== NUEVO: mesas activas =====
   const { count: activeTables, loading: loadingTables } = useActiveTablesCount(15000);
 
   const kitch = counts?.kitchenPending ?? 0;
@@ -243,7 +279,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     <>
       <nav className="navbar navbar-expand-md navbar-light bg-white border-bottom shadow-sm">
         <div className="container">
-          <Link className="navbar-brand fw-semibold" href="/app/admin">{tt('admin.nav.brand', 'Admin Portal')}</Link>
+          <Link className="navbar-brand fw-semibold" href={tenantHref('/app/admin')}>
+            {tt('admin.nav.brand', 'Admin Portal')}
+          </Link>
 
           <button
             className="navbar-toggler"
@@ -260,7 +298,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
               {kitchenAllowed && (
                 <li className="nav-item">
-                  <Link className={`nav-link d-flex align-items-center gap-2 ${isActive('/app/admin/kitchen') ? 'active' : ''}`} href="/app/admin/kitchen">
+                  <Link
+                    className={`nav-link d-flex align-items-center gap-2 ${isActive('/app/admin/kitchen') ? 'active' : ''}`}
+                    href={tenantHref('/app/admin/kitchen')}
+                  >
                     <span>{tt('admin.nav.kitchen', 'Kitchen')}</span>
                     <span className="badge rounded-pill text-bg-primary">
                       {loading && counts == null ? '…' : kitch}
@@ -271,7 +312,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
               {cashierAllowed && (
                 <li className="nav-item">
-                  <Link className={`nav-link d-flex align-items-center gap-2 ${isActive('/app/admin/cashier') ? 'active' : ''}`} href="/app/admin/cashier">
+                  <Link
+                    className={`nav-link d-flex align-items-center gap-2 ${isActive('/app/admin/cashier') ? 'active' : ''}`}
+                    href={tenantHref('/app/admin/cashier')}
+                  >
                     <span>{tt('admin.nav.cashier', 'Cashier')}</span>
                     <span className="badge rounded-pill text-bg-success">
                       {loading && counts == null ? '…' : cashq}
@@ -282,7 +326,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
               {deliveryAllowed && (
                 <li className="nav-item">
-                  <Link className={`nav-link d-flex align-items-center gap-2 ${isActive('/app/admin/delivery') ? 'active' : ''}`} href="/app/admin/delivery">
+                  <Link
+                    className={`nav-link d-flex align-items-center gap-2 ${isActive('/app/admin/delivery') ? 'active' : ''}`}
+                    href={tenantHref('/app/admin/delivery')}
+                  >
                     <span>{tt('admin.nav.delivery', 'Delivery')}</span>
                     <span className="badge rounded-pill text-bg-warning">
                       {loading && counts == null ? '…' : deliv}
@@ -293,9 +340,11 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
               {waiterAllowed && (
                 <li className="nav-item">
-                  <Link className={`nav-link d-flex align-items-center gap-2 ${isActive('/app/admin/waiter') ? 'active' : ''}`} href="/app/admin/waiter">
+                  <Link
+                    className={`nav-link d-flex align-items-center gap-2 ${isActive('/app/admin/waiter') ? 'active' : ''}`}
+                    href={tenantHref('/app/admin/waiter')}
+                  >
                     <span>{tt('admin.nav.tables', 'Tables')}</span>
-                    {/* ===== NUEVO: badge de mesas activas ===== */}
                     <span className="badge rounded-pill text-bg-secondary">
                       {loadingTables && activeTables == null ? '…' : (activeTables ?? 0)}
                     </span>
@@ -306,7 +355,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             </ul>
 
             <div className="d-flex align-items-center gap-2">
-              <Link className="btn btn-outline-primary btn-sm" href="/logout">{tt('admin.nav.logout', 'Logout')}</Link>
+              {/* Si tu logout es tenant-scoped, usa tenantHref('/app/logout') */}
+              <Link className="btn btn-outline-primary btn-sm" href="/logout">
+                {tt('admin.nav.logout', 'Logout')}
+              </Link>
             </div>
           </div>
         </div>
