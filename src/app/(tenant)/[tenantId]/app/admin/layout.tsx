@@ -50,17 +50,38 @@ async function getIdTokenSafe(forceRefresh = false): Promise<string | null> {
 }
 
 /* ============================
-   🔹 Tenant helpers
-   Estructura esperada: /{tenantId}/app/...
+   🔹 Tenant helpers (path o subdominio)
+   Soporta:
+   - /{tenantId}/app/...
+   - /_t/{tenantId}/app/...
+   - subdominio: {tenantId}.datacraftcoders.cloud con /app/...
    ============================ */
 function getTenantIdFromLocation(): string | null {
   try {
     if (typeof window === 'undefined') return null;
-    const parts = (window.location.pathname || '/').split('/').filter(Boolean);
-    // Esperamos algo como: ["<tenantId>", "app", ...]
+
+    const pathname = window.location.pathname || '/';
+    const parts = pathname.split('/').filter(Boolean);
+
+    // 1) /{tenantId}/app/...
     if (parts.length >= 2 && parts[1] === 'app') {
       return parts[0] || null;
     }
+    // 2) /_t/{tenantId}/app/...
+    if (parts.length >= 3 && parts[0] === '_t' && parts[2] === 'app') {
+      return parts[1] || null;
+    }
+
+    // 3) Subdominio: {tenantId}.example.com -> /app/...
+    const host = window.location.hostname || '';
+    // Evita 'www'
+    const labels = host.split('.').filter(Boolean);
+    if (labels.length >= 3) {
+      // p.ej. javi.datacraftcoders.cloud => ['javi','datacraftcoders','cloud']
+      const sub = labels[0];
+      if (sub && sub !== 'www') return sub;
+    }
+
     return null;
   } catch {
     return null;
@@ -76,18 +97,22 @@ function makeTenantUrl(path: string): string {
   if (tenantId && (rel === `/${tenantId}` || rel.startsWith(`/${tenantId}/`))) {
     return new URL(rel, window.location.origin).toString();
   }
+
   // API vive bajo "/{tenantId}/app/api/..."
   if (tenantId && rel.startsWith('/api/')) {
     return new URL(`/${tenantId}/app${rel}`, window.location.origin).toString();
   }
+
   // Rutas bajo "/app/..." deben llevar "/{tenantId}" delante
   if (tenantId && rel.startsWith('/app/')) {
     return new URL(`/${tenantId}${rel}`, window.location.origin).toString();
   }
+
   // Fallback: si hay tenant, préfixalo
   if (tenantId) {
     return new URL(`/${tenantId}${rel}`, window.location.origin).toString();
   }
+
   // Sin tenant (entornos donde no aplique)
   return new URL(rel, window.location.origin).toString();
 }
@@ -142,7 +167,7 @@ function useNavCounts(pollMs = 15000) {
 
       setErr(null);
       setLoading(true);
-      // ✅ usa prefijo /api, apiFetch lo vuelve /{tenantId}/app/api/...
+      // ✅ usa prefijo /api; apiFetch lo vuelve /{tenantId}/app/api/...
       const res = await apiFetch('/api/admin/nav-counts');
       const data = await res.json().catch(() => ({} as any));
       if (!res.ok || data?.ok === false) throw new Error(data?.error || `HTTP ${res.status}`);
@@ -172,7 +197,7 @@ function useNavCounts(pollMs = 15000) {
   return { counts, err, loading, reload: load } as const;
 }
 
-/* ======= (Opcional) Mesas activas: si tus órdenes están en raíz, déjalo; si están en tenant, ajústalo ======= */
+/* ======= Mesas activas (tenant-aware si hay tenantId) ======= */
 function useActiveTablesCount(pollMs = 15000) {
   const [count, setCount] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
@@ -185,21 +210,23 @@ function useActiveTablesCount(pollMs = 15000) {
       const { getFirestore, collection, query, where, getDocs, limit } = await import('firebase/firestore');
       const db = getFirestore();
 
-      // ⚠️ Si tus órdenes viven en tenants/{tenantId}/orders, reemplaza por:
-      // const tenantId = getTenantIdFromLocation();
-      // const qRef = query(
-      //   collection(db, 'tenants', tenantId!, 'orders'),
-      //   where('orderInfo.type', '==', 'dine-in'),
-      //   where('status', 'in', OPEN_STATUSES as unknown as string[]),
-      //   limit(1000)
-      // );
+      const tenantId = getTenantIdFromLocation();
 
-      const qRef = query(
-        collection(db, 'orders'),
-        where('orderInfo.type', '==', 'dine-in'),
-        where('status', 'in', OPEN_STATUSES as unknown as string[]),
-        limit(1000)
-      );
+      const qRef = tenantId
+        ? query(
+            collection(db, 'tenants', tenantId, 'orders'),
+            where('orderInfo.type', '==', 'dine-in'),
+            // Firestore limita 'in' a 10 elementos; aquí son 4 (ok)
+            where('status', 'in', OPEN_STATUSES as unknown as string[]),
+            limit(1000)
+          )
+        : query(
+            // Fallback no-tenant (solo si mantienes una colección global)
+            collection(db, 'orders'),
+            where('orderInfo.type', '==', 'dine-in'),
+            where('status', 'in', OPEN_STATUSES as unknown as string[]),
+            limit(1000)
+          );
 
       const snap = await getDocs(qRef);
       const tables = new Set<string>();
@@ -234,10 +261,21 @@ function useActiveTablesCount(pollMs = 15000) {
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
+
   const tenantId = (() => {
     try {
       const parts = (pathname || '/').split('/').filter(Boolean);
-      return parts.length >= 2 && parts[1] === 'app' ? parts[0] : null;
+      // /{tenantId}/app/...
+      if (parts.length >= 2 && parts[1] === 'app') return parts[0];
+      // /_t/{tenantId}/app/...
+      if (parts.length >= 3 && parts[0] === '_t' && parts[2] === 'app') return parts[1];
+      // subdominio
+      if (typeof window !== 'undefined') {
+        const host = window.location.hostname || '';
+        const labels = host.split('.').filter(Boolean);
+        if (labels.length >= 3 && labels[0] !== 'www') return labels[0];
+      }
+      return null;
     } catch { return null; }
   })();
 
