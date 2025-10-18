@@ -3,7 +3,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import Protected from "@/app/(tenant)/[tenantId]/components/Protected";
-import ToolGate from "@/components/ToolGate"; // 👈 se mantiene tu import
+import ToolGate from "@/components/ToolGate";
 import { OnlyWaiter } from "@/app/(tenant)/[tenantId]/components/Only";
 import "@/lib/firebase/client";
 import { useAuth } from "@/app/(tenant)/[tenantId]/app/providers";
@@ -230,11 +230,11 @@ const IN_FILTER_MAX = 30;
 // 👉 URL base a donde quieres mandar al mesero al “Pick”
 const PICK_TARGET_BASE = "/checkout-cards?type=dine-in&table=";
 
-// =================== Page ===================
-export default function WaiterPage() {
+// =================== Page (INNER) ===================
+function WaiterPage_Inner() {
   const tenantId = useTenantId() as string; // tenant requerido en esta vista
   const db = useMemo(() => getFirestore(), []);
-  const { user, flags } = useAuth(); // 🔒 antes: solo user — ahora usamos flags
+  const { user, flags } = useAuth(); // usamos flags para rol efectivo
   const [numTables, setNumTables] = useState<number>(12);
   const [loadingSettings, setLoadingSettings] = useState(true);
 
@@ -263,7 +263,7 @@ export default function WaiterPage() {
   };
 
   // 🔒 Habilitación real de efectos (sesión + tenant + rol waiter/admin)
-  const enabled = !!user && !!tenantId && (flags?.isWaiter || flags?.isAdmin); // 🔒
+  const enabled = !!user && !!tenantId && (flags?.isWaiter || flags?.isAdmin);
 
   // ------------- Load & Save Settings -------------
   useEffect(() => {
@@ -405,157 +405,162 @@ export default function WaiterPage() {
 
   const selectedOrder: OrderDoc | undefined = selectedTable ? activeByTable[selectedTable] : undefined;
 
-  // =================== Render ===================
+  // =================== Render INNER ===================
+  return (
+    <main className="container-fluid py-3">
+      {/* Top Controls */}
+      <div className="container mb-3">
+        <div className="d-flex flex-wrap align-items-end gap-3">
+          <div>
+            <label className="form-label mb-1">{tt("admin.waiter.controls.tables", "Tables")}</label>
+            <input
+              type="number"
+              min={1}
+              max={200}
+              className="form-control"
+              value={numTables}
+              onChange={(e) => setNumTables(Math.min(200, Math.max(1, Number(e.target.value) || 1)))}
+              style={{ width: 140 }}
+            />
+          </div>
+          <button className="btn btn-primary" onClick={saveNumTables}>
+            {tt("admin.waiter.controls.save", "Save")}
+          </button>
+        </div>
+      </div>
+
+      {/* Floor (Desktop grid) */}
+      <div
+        className="container"
+        style={{
+          display: "grid",
+          gap: "12px",
+          gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))",
+        }}
+      >
+        {tables.map((t) => {
+          const occupied = tableOccupied(t);
+          const bg = occupied ? "#e8f5e9" : "#f2f2f2";
+          const border = occupied ? "1px solid #2e7d32" : "1px solid #bdbdbd";
+          const text = occupied ? "#1b5e20" : "#616161";
+          const order = activeByTable[t];
+          const total = computeGrandTotal(order);
+
+          return (
+            <button
+              key={t}
+              className="card shadow-sm text-start"
+              style={{
+                background: bg,
+                border,
+                color: text,
+                borderRadius: 16,
+                cursor: "pointer",
+              }}
+              onClick={() => openTablePanel(t)}
+            >
+              <div className="card-body d-flex flex-column justify-content-between" style={{ minHeight: 140 }}>
+                <div className="d-flex align-items-center justify-content-between">
+                  <div className="d-flex align-items-center">
+                    <span
+                      className="me-2"
+                      style={{
+                        display: "inline-block",
+                        width: 12,
+                        height: 12,
+                        borderRadius: "50%",
+                        background: occupied ? "#2e7d32" : "#9e9e9e",
+                      }}
+                    />
+                    <span className="fw-bold" style={{ fontSize: 22 }}>
+                      {tt("admin.waiter.floor.table", `Table ${t}`, { n: t })}
+                    </span>
+                  </div>
+                  {statusBadgeFor(t)}
+                </div>
+
+                <div className="mt-3 d-flex align-items-center justify-content-between">
+                  {occupied ? (
+                    <>
+                      <div>
+                        <div className="small text-muted">{tt("admin.waiter.floor.openOrder", "Open order")}</div>
+                        <div className="fw-semibold">{fmtQ(total)}</div>
+                      </div>
+                      <div />
+                    </>
+                  ) : (
+                    <>
+                      <div className="text-muted">{tt("admin.waiter.floor.emptyTable", "Empty table")}</div>
+                      <Link
+                        href={`${PICK_TARGET_BASE}${encodeURIComponent(t)}`}
+                        className="btn btn-sm btn-primary"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {tt("admin.waiter.floor.pick", "Pick")}
+                      </Link>
+                    </>
+                  )}
+                </div>
+              </div>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Drawer / Panel */}
+      <div
+        className={`offcanvas offcanvas-end ${selectedTable ? "show" : ""}`}
+        style={{
+          visibility: selectedTable ? "visible" : "hidden",
+          transition: "visibility 0.2s",
+          width: "min(720px, 100vw)",
+        }}
+        tabIndex={-1}
+        aria-labelledby="tableDetailTitle"
+      >
+        <div className="offcanvas-header">
+          <h5 id="tableDetailTitle" className="offcanvas-title">
+            {selectedTable
+              ? tt("admin.waiter.drawer.title", `Table ${selectedTable}`, { n: selectedTable })
+              : tt("admin.waiter.floor.tableShort", "Table")}
+          </h5>
+        </div>
+        <div className="offcanvas-body">
+          {!selectedTable ? null : !selectedOrder ? (
+            <div className="d-flex align-items-center justify-content-between">
+              <div className="text-muted">{tt("admin.waiter.drawer.empty", "Empty table. No open order.")}</div>
+              <Link
+                href={`${PICK_TARGET_BASE}${encodeURIComponent(selectedTable)}`}
+                className="btn btn-primary btn-sm"
+              >
+                {tt("admin.waiter.drawer.pick", "Pick")}
+              </Link>
+            </div>
+          ) : (
+            <OrderDetailCard order={selectedOrder} onClose={closePanel} />
+          )}
+        </div>
+      </div>
+
+      {/* Backdrop for offcanvas */}
+      {selectedTable && (
+        <div
+          className="offcanvas-backdrop fade show"
+          onClick={closePanel}
+          style={{ cursor: "pointer" }}
+        />
+      )}
+    </main>
+  );
+}
+
+// =================== Wrapper con gates (igual que Kitchen) ===================
+export default function WaiterPage() {
   return (
     <ToolGate feature="waiter">
       <Protected>
         <OnlyWaiter>
-          <main className="container-fluid py-3">
-            {/* Top Controls */}
-            <div className="container mb-3">
-              <div className="d-flex flex-wrap align-items-end gap-3">
-                <div>
-                  <label className="form-label mb-1">{tt("admin.waiter.controls.tables", "Tables")}</label>
-                  <input
-                    type="number"
-                    min={1}
-                    max={200}
-                    className="form-control"
-                    value={numTables}
-                    onChange={(e) => setNumTables(Math.min(200, Math.max(1, Number(e.target.value) || 1)))}
-                    style={{ width: 140 }}
-                  />
-                </div>
-                <button className="btn btn-primary" onClick={saveNumTables}>
-                  {tt("admin.waiter.controls.save", "Save")}
-                </button>
-              </div>
-            </div>
-
-            {/* Floor (Desktop grid) */}
-            <div
-              className="container"
-              style={{
-                display: "grid",
-                gap: "12px",
-                gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))",
-              }}
-            >
-              {tables.map((t) => {
-                const occupied = tableOccupied(t);
-                const bg = occupied ? "#e8f5e9" : "#f2f2f2";
-                const border = occupied ? "1px solid #2e7d32" : "1px solid #bdbdbd";
-                const text = occupied ? "#1b5e20" : "#616161";
-                const order = activeByTable[t];
-                const total = computeGrandTotal(order);
-
-                return (
-                  <button
-                    key={t}
-                    className="card shadow-sm text-start"
-                    style={{
-                      background: bg,
-                      border,
-                      color: text,
-                      borderRadius: 16,
-                      cursor: "pointer",
-                    }}
-                    onClick={() => openTablePanel(t)}
-                  >
-                    <div className="card-body d-flex flex-column justify-content-between" style={{ minHeight: 140 }}>
-                      <div className="d-flex align-items-center justify-content-between">
-                        <div className="d-flex align-items-center">
-                          <span
-                            className="me-2"
-                            style={{
-                              display: "inline-block",
-                              width: 12,
-                              height: 12,
-                              borderRadius: "50%",
-                              background: occupied ? "#2e7d32" : "#9e9e9e",
-                            }}
-                          />
-                          <span className="fw-bold" style={{ fontSize: 22 }}>
-                            {tt("admin.waiter.floor.table", `Table ${t}`, { n: t })}
-                          </span>
-                        </div>
-                        {statusBadgeFor(t)}
-                      </div>
-
-                      <div className="mt-3 d-flex align-items-center justify-content-between">
-                        {occupied ? (
-                          <>
-                            <div>
-                              <div className="small text-muted">{tt("admin.waiter.floor.openOrder", "Open order")}</div>
-                              <div className="fw-semibold">
-                                {fmtQ(total)}
-                              </div>
-                            </div>
-                            <div />
-                          </>
-                        ) : (
-                          <>
-                            <div className="text-muted">{tt("admin.waiter.floor.emptyTable", "Empty table")}</div>
-                            <Link
-                              href={`${PICK_TARGET_BASE}${encodeURIComponent(t)}`}
-                              className="btn btn-sm btn-primary"
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              {tt("admin.waiter.floor.pick", "Pick")}
-                            </Link>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* Drawer / Panel */}
-            <div
-              className={`offcanvas offcanvas-end ${selectedTable ? "show" : ""}`}
-              style={{
-                visibility: selectedTable ? "visible" : "hidden",
-                transition: "visibility 0.2s",
-                width: "min(720px, 100vw)",
-              }}
-              tabIndex={-1}
-              aria-labelledby="tableDetailTitle"
-            >
-              <div className="offcanvas-header">
-                <h5 id="tableDetailTitle" className="offcanvas-title">
-                  {selectedTable
-                    ? tt("admin.waiter.drawer.title", `Table ${selectedTable}`, { n: selectedTable })
-                    : tt("admin.waiter.floor.tableShort", "Table")}
-                </h5>
-              </div>
-              <div className="offcanvas-body">
-                {!selectedTable ? null : !selectedOrder ? (
-                  <div className="d-flex align-items-center justify-content-between">
-                    <div className="text-muted">{tt("admin.waiter.drawer.empty", "Empty table. No open order.")}</div>
-                    <Link
-                      href={`${PICK_TARGET_BASE}${encodeURIComponent(selectedTable)}`}
-                      className="btn btn-primary btn-sm"
-                    >
-                      {tt("admin.waiter.drawer.pick", "Pick")}
-                    </Link>
-                  </div>
-                ) : (
-                  <OrderDetailCard order={selectedOrder} onClose={closePanel} />
-                )}
-              </div>
-            </div>
-
-            {/* Backdrop for offcanvas */}
-            {selectedTable && (
-              <div
-                className="offcanvas-backdrop fade show"
-                onClick={closePanel}
-                style={{ cursor: "pointer" }}
-              />
-            )}
-          </main>
+          <WaiterPage_Inner />
         </OnlyWaiter>
       </Protected>
     </ToolGate>
