@@ -3,7 +3,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import Protected from "@/app/(tenant)/[tenantId]/components/Protected";
-import ToolGate from "@/components/ToolGate";
+import ToolGate from "@/components/ToolGate"; // 👈 se mantiene tu import
 import { OnlyWaiter } from "@/app/(tenant)/[tenantId]/components/Only";
 import "@/lib/firebase/client";
 import { useAuth } from "@/app/(tenant)/[tenantId]/app/providers";
@@ -234,7 +234,7 @@ const PICK_TARGET_BASE = "/checkout-cards?type=dine-in&table=";
 export default function WaiterPage() {
   const tenantId = useTenantId() as string; // tenant requerido en esta vista
   const db = useMemo(() => getFirestore(), []);
-  const { user } = useAuth();
+  const { user, flags } = useAuth(); // 🔒 antes: solo user — ahora usamos flags
   const [numTables, setNumTables] = useState<number>(12);
   const [loadingSettings, setLoadingSettings] = useState(true);
 
@@ -262,9 +262,12 @@ export default function WaiterPage() {
     return s === key ? fallback : s;
   };
 
+  // 🔒 Habilitación real de efectos (sesión + tenant + rol waiter/admin)
+  const enabled = !!user && !!tenantId && (flags?.isWaiter || flags?.isAdmin); // 🔒
+
   // ------------- Load & Save Settings -------------
   useEffect(() => {
-    if (!tenantId) return; // requiere tenant
+    if (!tenantId || !enabled) return; // 🔒 no cargar nada si no está habilitado
     let mounted = true;
     (async () => {
       try {
@@ -282,10 +285,10 @@ export default function WaiterPage() {
     return () => {
       mounted = false;
     };
-  }, [db, tenantId]);
+  }, [db, tenantId, enabled]); // 🔒 dep: enabled
 
   async function saveNumTables() {
-    if (!tenantId) return;
+    if (!tenantId || !enabled) return; // 🔒
     const safe = Math.min(200, Math.max(1, Number(numTables) || 1));
     await setDoc(
       tDoc("settings", tenantId, "waiter"),
@@ -303,7 +306,8 @@ export default function WaiterPage() {
 
   // ------------- Live Orders per Table -------------
   useEffect(() => {
-    if (!tenantId) return;
+    // 🔒 si no está habilitado o aún no cargan settings, no montar listeners
+    if (!tenantId || !enabled) return;
     if (!loadingSettings) {
       armOrderListeners(numTables);
     }
@@ -312,7 +316,7 @@ export default function WaiterPage() {
       unsubRef.current = [];
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loadingSettings, tenantId]);
+  }, [loadingSettings, tenantId, enabled]); // 🔒 dep: enabled
 
   function armOrderListeners(count: number) {
     unsubRef.current.forEach((u) => u && u());
