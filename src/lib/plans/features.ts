@@ -111,15 +111,23 @@ function sanitizeFeatureMap(obj: unknown): FeatureMap {
   return out;
 }
 
+// 🔹 Normaliza el tier para tolerar mayúsculas/espacios/valores raros
+function normTier(v: unknown): PlanTier {
+  const s = String(v || '').toLowerCase().trim();
+  return (s === 'pro' || s === 'full') ? (s as PlanTier) : 'starter';
+}
+
 /**
  * Fusiona el doc guardado con los defaults del tier.
  * - `features` puede venir vacío o parcial; se completa con defaults.
  * - ACEPTA `features` como **array de strings** o **mapa { key: true/false }**.
  * - Ignora claves desconocidas (fuera de FeatureMap).
  * - Timestamps opcionales (no se incluyen si no existen).
+ * - ✅ Acepta `planTier` o `plan` como fuente del tier.
  */
 export function coercePlan(doc?: Partial<TenantPlanDoc>): TenantPlanDoc {
-  const tier = (doc?.planTier ?? 'starter') as PlanTier;
+  // acepta planTier o plan (fallback)
+  const tier = normTier((doc as any)?.planTier ?? (doc as any)?.plan);
   const base = DEFAULT_FEATURES[tier];
 
   // ✅ Normaliza `features` desde array o mapa
@@ -139,7 +147,7 @@ export function coercePlan(doc?: Partial<TenantPlanDoc>): TenantPlanDoc {
   return {
     planTier: tier,
     features: normalized,
-    tenantId: doc?.tenantId,
+    tenantId: (doc as any)?.tenantId,
     ...(doc?.createdAt ? { createdAt: doc.createdAt } : {}),
     ...(doc?.updatedAt ? { updatedAt: doc.updatedAt } : {}),
   };

@@ -12,7 +12,7 @@ import { useTenantId } from '@/lib/tenant/context';
 /**
  * Lee el plan del tenant en tiempo real desde Firestore (client).
  * - Preferencia: tenants/{tenantId}/system_flags/plan
- * - Fallback:    tenants/{tenantId} (campo "features" como array o mapa)
+ * - Fallback:    tenants/{tenantId} (campo "features" como array o mapa + planTier/plan)
  */
 export function useTenantPlan(): {
   plan: TenantPlanDoc | null;
@@ -52,9 +52,16 @@ export function useTenantPlan(): {
       (snap) => {
         if (gotPrimaryOnce) return; // si ya obtuvimos primary válido, ignoramos fallback
         const data = snap.exists() ? (snap.data() as any) : undefined;
-        // Solo intentamos coerce si hay "features" o "planTier" en el root
-        if (data && (data.features || data.planTier)) {
-          setPlan(coercePlan({ planTier: data.planTier, features: data.features, createdAt: data.createdAt, updatedAt: data.updatedAt, tenantId }));
+        // Solo intentamos coerce si hay "features" o tier (planTier o plan) en el root
+        if (data && (data.features || data.planTier || data.plan)) {
+          setPlan(
+            coercePlan({
+              ...data,
+              // 👇 acepta planTier o plan
+              planTier: data.planTier ?? data.plan,
+              tenantId,
+            })
+          );
           setLoading(false);
         }
       },
@@ -66,14 +73,19 @@ export function useTenantPlan(): {
       }
     );
 
-    // Primary (preferido)
+    // Primary (preferido) — FIX: solo marcar gotPrimaryOnce y setear plan si el doc EXISTE
     unsubPrimary = onSnapshot(
       refPlan,
       (snap) => {
-        gotPrimaryOnce = true;
-        const data = snap.exists() ? (snap.data() as Partial<TenantPlanDoc>) : undefined;
-        setPlan(coercePlan(data));
-        setLoading(false);
+        if (snap.exists()) {
+          gotPrimaryOnce = true; // ✅ solo si existe el doc
+          const data = snap.data() as Partial<TenantPlanDoc>;
+          setPlan(coercePlan(data));
+          setLoading(false);
+        } else {
+          // ❗ No marques gotPrimaryOnce y no pises el fallback.
+          // Deja que el fallback siga activo si ya proveyó datos.
+        }
       },
       (e) => {
         // Si falla primary pero fallback ya dio algo, mantenemos lo del fallback
