@@ -7,6 +7,7 @@ import type { DineInInfo, DeliveryInfo } from '@/lib/newcart/types';
 import { useRouter, useSearchParams } from 'next/navigation';
 import '@/lib/firebase/client';
 
+
 import {
   getFirestore,
   addDoc,
@@ -70,28 +71,48 @@ function useLangTT() {
 
 /* --------------------------------------------
    🔧 /paymentProfile/default (por tenant)
+   >>> CAMBIADO: ahora refresca claims con refresh-role antes de leer el doc
 --------------------------------------------- */
 function usePaymentProfile() {
   const tenantId = useTenantId();
-  const [flags, setFlags] = useState<{ cash: boolean; paypal: boolean } | null>(null);
+  const [flags, setFlags] = useState<{ cash: boolean; paypal: boolean }>({ cash: true, paypal: false });
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (!tenantId) return;
 
-    const auth = getAuth();
     let cancelled = false;
 
-    const unsub = auth.onIdTokenChanged(async (u) => {
+    (async () => {
       try {
+        const auth = getAuth();
+        const u = auth.currentUser;
+
         if (!u) {
           if (!cancelled) { setFlags({ cash: true, paypal: false }); setLoading(false); }
           return;
         }
 
-        // 🔁 Fuerza refresh para traer custom claims actualizados (tenantId / tenants[tenantId])
-        await u.getIdToken(true);
+        // 1) token fresco
+        let idToken = await u.getIdToken(/*forceRefresh*/ true);
 
+        // 2) refresca rol/claims por tenant
+        const resp = await fetch(`/${tenantId}/app/api/auth/refresh-role`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${idToken}` },
+          cache: 'no-store',
+          credentials: 'same-origin',
+        }).catch(() => null);
+
+        if (resp && resp.ok) {
+          const data = await resp.json().catch(() => ({} as any));
+          if (data?.claimsUpdated) {
+            // si el server tocó customClaims, fuerza refresh local
+            await u.getIdToken(true);
+          }
+        }
+
+        // 3) leer paymentProfile con claims correctos
         const db = getFirestore();
         const ref = doc(tCol('paymentProfile', tenantId), 'default');
         const snap = await getDoc(ref);
@@ -101,9 +122,7 @@ function usePaymentProfile() {
         if (snap.exists()) {
           const data: any = snap.data() || {};
           const src = (data && typeof data === 'object') ? (data.payments || data) : {};
-          const cash = !!src.cash;
-          const paypal = !!src.paypal;
-          setFlags({ cash, paypal });
+          setFlags({ cash: !!src.cash, paypal: !!src.paypal });
         } else {
           setFlags({ cash: true, paypal: false });
         }
@@ -113,12 +132,12 @@ function usePaymentProfile() {
       } finally {
         if (!cancelled) setLoading(false);
       }
-    });
+    })();
 
-    return () => { cancelled = true; unsub(); };
+    return () => { cancelled = true; };
   }, [tenantId]);
 
-  return { flags: flags ?? { cash: true, paypal: false }, loading };
+  return { flags, loading };
 }
 
 
