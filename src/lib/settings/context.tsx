@@ -25,19 +25,26 @@ export const SettingsContext = createContext<SettingsContextValue>({
 
 export function SettingsProvider({ children }: { children: React.ReactNode }) {
   const tenantId = useTenantId();
-  const { readGeneralSettings } = makeSettingsIO(tenantId);
+
+  // ⚠️ ANTES (causaba loop):
+  // const { readGeneralSettings } = makeSettingsIO(tenantId);
+
+  // ✅ AHORA: memoiza el IO por tenantId
+  const io = useMemo(() => {
+    console.log("[settings] makeSettingsIO tenantId:", tenantId); // 🧪 DEBUG
+    return makeSettingsIO(tenantId);
+  }, [tenantId]);
 
   const [settings, setSettings] = useState<TenantGeneralSettings | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setErr] = useState<string | null>(null);
 
-  // 🧪 DEBUG (quitar luego): ver el tenantId que llega al provider
+  // 🧪 DEBUG
   console.log("[settings] SettingsProvider mount. tenantId:", tenantId);
 
   const load = useCallback(async () => {
     if (!tenantId) {
-      // 🧪 DEBUG (quitar luego)
-      console.log("[settings] load skipped: tenantId is null/undefined");
+      console.log("[settings] load skipped: tenantId is null/undefined"); // 🧪 DEBUG
       setSettings(null);
       setLoading(false);
       setErr(null);
@@ -48,24 +55,17 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     setErr(null);
 
     try {
-      // 🧪 DEBUG (quitar luego)
-      console.log("[settings] loading for tenantId:", tenantId);
-
-      const s = await readGeneralSettings();
-
-      // 🧪 DEBUG (quitar luego)
-      console.log("[settings] loaded:", s);
-
+      console.log("[settings] loading for tenantId:", tenantId); // 🧪 DEBUG
+      const s = await io.readGeneralSettings(); // ✅ usa el IO memoizado
+      console.log("[settings] loaded:", s); // 🧪 DEBUG
       setSettings(s);
     } catch (e: any) {
-      // 🧪 DEBUG (quitar luego)
-      console.error("[settings] load error:", e);
-
+      console.error("[settings] load error:", e); // 🧪 DEBUG
       setErr(e?.message || "Error loading settings");
     } finally {
       setLoading(false);
     }
-  }, [tenantId, readGeneralSettings]);
+  }, [tenantId, io]); // ✅ estable porque `io` está memoizado por tenantId
 
   useEffect(() => {
     void load();
