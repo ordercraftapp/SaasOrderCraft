@@ -1,4 +1,3 @@
-// src/app/(site)/api/tenant-order/route.ts
 export const runtime = 'nodejs';
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -11,7 +10,7 @@ import { sendTransactionalEmail } from '@/lib/email/brevoTx';
 type PlanId = 'starter' | 'pro' | 'full';
 
 type CreateOrderBody = {
-  plan: PlanId;
+  plan: PlanId; // entrada sigue llamándose 'plan' en el payload
   companyName: string;
   adminName: string;
   adminEmail: string;
@@ -237,7 +236,7 @@ export async function POST(req: NextRequest) {
       // Crear tenant (draft) — ahora con owner.uid
       trx.set(tRef, {
         tenantId: desired,
-        planTier: plan,        // ← renombrado (antes: plan)
+        planTier: plan, // ← renombrado (antes: plan)
         status: 'draft',
         features: [], // se aplicarán en /provision-tenant
         owner: { name: adminName, email: adminEmail, uid: ownerUid },
@@ -263,7 +262,7 @@ export async function POST(req: NextRequest) {
       const orderRef = ordersCol.doc();
       trx.set(orderRef, {
         orderId: orderRef.id,
-        planTier: plan,        // ← renombrado (antes: plan)
+        planTier: plan, // ← renombrado (antes: plan)
         desiredSubdomain: desired,
         customer: { name: adminName, email: adminEmail },
         address: {
@@ -329,14 +328,24 @@ export async function GET(req: NextRequest) {
     const [tSnap, oSnap] = await Promise.all([tRef.get(), oRef.get()]);
     if (!tSnap.exists || !oSnap.exists) return json({ error: 'Not found.' }, 404);
 
-    const tData = tSnap.data()!;
-    const oData = oSnap.data()!;
+    const tData = tSnap.data() as any;
+    const oData = oSnap.data() as any;
+
+    // ---------- Normalización defensiva de plan ----------
+    // Toma planTier del tenant; si no, intenta con plan (legado); si no, usa el de la orden; valida.
+    const allowed: PlanId[] = ['starter', 'pro', 'full'];
+    const candidate =
+      (tData?.planTier as PlanId | undefined) ??
+      (tData?.plan as PlanId | undefined) ??
+      (oData?.planTier as PlanId | undefined) ??
+      (oData?.plan as PlanId | undefined);
+
+    const planTier: PlanId = allowed.includes((candidate as any)) ? (candidate as PlanId) : 'starter';
 
     const summary = {
       tenantId,
       orderId,
-      // mantenemos la respuesta con clave 'plan' para no romper clientes:
-      plan: tData.planTier,     // ← lee planTier
+      planTier, // ← API ahora expone planTier
       status: tData.status,
       desiredSubdomain: oData.desiredSubdomain,
       customer: oData.customer,

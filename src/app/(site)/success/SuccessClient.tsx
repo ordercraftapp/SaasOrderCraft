@@ -6,7 +6,7 @@ import Link from 'next/link';
 type Summary = {
   tenantId: string;
   orderId: string;
-  plan: 'starter' | 'pro' | 'full';
+  planTier: 'starter' | 'pro' | 'full'; // ← ahora planTier
   status: 'draft' | 'active' | 'suspended';
   desiredSubdomain: string;
   customer: { name: string; email: string };
@@ -115,7 +115,7 @@ export default function SuccessClient({ tenantId, orderId }: { tenantId: string;
 
                   <div className="mb-2">
                     <div className="small text-muted">Plan</div>
-                    <div className="text-capitalize">{summary.plan}</div>
+                    <div className="text-capitalize">{summary.planTier}</div> {/* ← actualizado */}
                   </div>
 
                   <div className="mb-2">
