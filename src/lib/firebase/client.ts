@@ -89,3 +89,4 @@ export async function ensureLocalPersistence() {
     }
   }
 }
+if (typeof window !== 'undefined') (window as any).__auth = auth;
