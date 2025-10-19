@@ -1,3 +1,4 @@
+// src/lib/settings/context.tsx
 "use client";
 
 import React, { createContext, useCallback, useEffect, useMemo, useState } from "react";
@@ -30,9 +31,13 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [error, setErr] = useState<string | null>(null);
 
+  // 🧪 DEBUG (quitar luego): ver el tenantId que llega al provider
+  console.debug("[settings] SettingsProvider mount. tenantId:", tenantId);
+
   const load = useCallback(async () => {
-    // Si aún no hay tenantId (primer render), marcamos sin cargar
     if (!tenantId) {
+      // 🧪 DEBUG (quitar luego)
+      console.debug("[settings] load skipped: tenantId is null/undefined");
       setSettings(null);
       setLoading(false);
       setErr(null);
@@ -41,10 +46,21 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
 
     setLoading(true);
     setErr(null);
+
     try {
+      // 🧪 DEBUG (quitar luego)
+      console.debug("[settings] loading for tenantId:", tenantId);
+
       const s = await readGeneralSettings();
+
+      // 🧪 DEBUG (quitar luego)
+      console.debug("[settings] loaded:", s);
+
       setSettings(s);
     } catch (e: any) {
+      // 🧪 DEBUG (quitar luego)
+      console.error("[settings] load error:", e);
+
       setErr(e?.message || "Error loading settings");
     } finally {
       setLoading(false);

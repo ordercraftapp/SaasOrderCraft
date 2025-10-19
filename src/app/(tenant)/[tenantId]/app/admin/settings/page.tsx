@@ -62,6 +62,9 @@ export default function AdminSettingsPage() {
   const { settings, loading, error, fmtCurrency, reload } = useTenantSettings();
   const writeGeneralSettings = useWriteGeneralSettings();
 
+  // 🧪 DEBUG (quitar luego): confirma tenantId del contexto
+  console.debug("[page] tenantId (context):", tenantId);
+
   const lang = useMemo(() => {
     try {
       if (typeof window !== "undefined") {
@@ -90,13 +93,17 @@ export default function AdminSettingsPage() {
   const [paymentsSaving, setPaymentsSaving] = useState<boolean>(false);
   const [paymentsSaved, setPaymentsSaved] = useState<null | "ok" | "err">(null);
 
-  // 🔁 **NUEVO**: asegura token/claims frescos antes de tocar Firestore del tenant
+  // 🔁 Asegura token/claims frescos antes de tocar Firestore del tenant
   useEffect(() => {
     let cancelled = false;
     (async () => {
       if (!tenantId) return;
       const auth = getAuth();
       const u = auth.currentUser;
+
+      // 🧪 DEBUG (quitar luego): usuario autenticado
+      console.debug("[page] auth user:", { uid: u?.uid, email: u?.email });
+
       if (!u) return;
       try {
         const idToken = await u.getIdToken(true);
@@ -117,18 +124,27 @@ export default function AdminSettingsPage() {
         // no-op; simplemente garantiza que, al siguiente efecto, los claims ya estén OK
       }
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [tenantId]);
 
   // Cargar paymentProfile desde tenants/{tenantId}/paymentProfile/default
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
-      if (!tenantId) { setPaymentsLoading(false); return; }
+      if (!tenantId) {
+        setPaymentsLoading(false);
+        return;
+      }
       setPaymentsLoading(true);
       setPaymentsSaved(null);
       try {
         const ref = doc(db, `tenants/${tenantId}/paymentProfile/default`);
+
+        // 🧪 DEBUG (quitar luego): path de lectura
+        console.debug("[page] GET paymentProfile path:", ref.path, "tenantId:", tenantId);
+
         const snap = await getDoc(ref);
         if (cancelled) return;
         if (snap.exists()) {
@@ -151,7 +167,9 @@ export default function AdminSettingsPage() {
       }
     };
     load();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [db, tenantId]);
 
   // Guardar paymentProfile en tenants/{tenantId}/paymentProfile/default
@@ -162,6 +180,15 @@ export default function AdminSettingsPage() {
     setPaymentsSaved(null);
     try {
       const ref = doc(db, `tenants/${tenantId}/paymentProfile/default`);
+
+      // 🧪 DEBUG (quitar luego): path de escritura y payload
+      console.debug("[page] SET paymentProfile path:", ref.path, "payload:", {
+        tenantId,
+        cash: !!payments.cash,
+        card: !!payments.card,
+        paypal: !!payments.paypal,
+      });
+
       await setDoc(
         ref,
         {
@@ -239,7 +266,7 @@ export default function AdminSettingsPage() {
           <main className="container py-4">
             <h1 className="mb-3">{tt("admin.settings.title", "⚙️ General Settings")}</h1>
             <p className="text-muted mb-4">
-              {tt("admin.settings.subtitle","Adjust the currency, locale and customer-facing language.")}
+              {tt("admin.settings.subtitle", "Adjust the currency, locale and customer-facing language.")}
             </p>
 
             {loading && <div className="alert alert-info">{tt("admin.settings.loading", "Loading settings…")}</div>}
@@ -254,7 +281,11 @@ export default function AdminSettingsPage() {
                     <div className="col-12 col-md-4">
                       <label className="form-label fw-semibold">{tt("admin.settings.currency.label", "Currency (ISO)")}</label>
                       <select className="form-select" value={currency} onChange={(e) => setCurrency(e.target.value)}>
-                        {CURRENCIES.map((c) => (<option key={c.code} value={c.code}>{c.label}</option>))}
+                        {CURRENCIES.map((c) => (
+                          <option key={c.code} value={c.code}>
+                            {c.label}
+                          </option>
+                        ))}
                       </select>
                       <div className="form-text">
                         {tt("admin.settings.currency.help", "Affects symbol and money rules. Ex.:")} {fmtCurrency(1500)}
@@ -264,21 +295,33 @@ export default function AdminSettingsPage() {
                     <div className="col-12 col-md-4">
                       <label className="form-label fw-semibold">{tt("admin.settings.locale.label", "Locale")}</label>
                       <select className="form-select" value={locale} onChange={(e) => setLocale(e.target.value)}>
-                        {LOCALES.map((l) => (<option key={l.code} value={l.code}>{l.label}</option>))}
+                        {LOCALES.map((l) => (
+                          <option key={l.code} value={l.code}>
+                            {l.label}
+                          </option>
+                        ))}
                       </select>
                       <div className="form-text">
-                        {tt("admin.settings.locale.help.prefix","Affects separators, order and format. Ex.:")}{" "}
+                        {tt("admin.settings.locale.help.prefix", "Affects separators, order and format. Ex.:")}{" "}
                         {new Intl.NumberFormat(locale, { style: "currency", currency }).format(1500)}
                       </div>
                     </div>
 
                     <div className="col-12 col-md-4">
-                      <label className="form-label fw-semibold">{tt("admin.settings.language.label","Language (customer area)")}</label>
-                      <select className="form-select" value={uiLanguage} onChange={(e) => setUiLanguage(normalizeLanguageCode(e.target.value))}>
-                        {LANGUAGES.map((l) => (<option key={l.code} value={l.code}>{l.label}</option>))}
+                      <label className="form-label fw-semibold">{tt("admin.settings.language.label", "Language (customer area)")}</label>
+                      <select
+                        className="form-select"
+                        value={uiLanguage}
+                        onChange={(e) => setUiLanguage(normalizeLanguageCode(e.target.value))}
+                      >
+                        {LANGUAGES.map((l) => (
+                          <option key={l.code} value={l.code}>
+                            {l.label}
+                          </option>
+                        ))}
                       </select>
                       <div className="form-text">
-                        {tt("admin.settings.language.help","Defines the interface language customers will see.")}
+                        {tt("admin.settings.language.help", "Defines the interface language customers will see.")}
                       </div>
                     </div>
                   </div>
@@ -287,15 +330,15 @@ export default function AdminSettingsPage() {
 
                   <div className="d-flex align-items-center gap-3">
                     <button className="btn btn-primary" disabled={saving}>
-                      {saving ? tt("admin.settings.btn.saving","Saving…") : tt("admin.settings.btn.save","Save changes")}
+                      {saving ? tt("admin.settings.btn.saving", "Saving…") : tt("admin.settings.btn.save", "Save changes")}
                     </button>
-                    {saved === "ok" && <span className="text-success">{tt("admin.settings.saved.ok","✅ Saved")}</span>}
-                    {saved === "err" && <span className="text-danger">{tt("admin.settings.saved.err","❌ Error saving")}</span>}
+                    {saved === "ok" && <span className="text-success">{tt("admin.settings.saved.ok", "✅ Saved")}</span>}
+                    {saved === "err" && <span className="text-danger">{tt("admin.settings.saved.err", "❌ Error saving")}</span>}
                   </div>
 
                   <div className="mt-4">
                     <span className="badge text-bg-light">
-                      {tt("admin.settings.preview.currency","Currency preview:")} <strong>{example}</strong>
+                      {tt("admin.settings.preview.currency", "Currency preview:")} <strong>{example}</strong>
                     </span>
                   </div>
                 </form>
@@ -369,7 +412,7 @@ export default function AdminSettingsPage() {
 
                     <div className="d-flex align-items-center gap-3">
                       <button className="btn btn-outline-primary" type="submit">
-                        {paymentsSaving ? tt("admin.settings.btn.saving","Saving…") : tt("admin.settings.payments.save","Save payments")}
+                        {paymentsSaving ? tt("admin.settings.btn.saving", "Saving…") : tt("admin.settings.payments.save", "Save payments")}
                       </button>
                       {paymentsSaved === "ok" && <span className="text-success">{tt("admin.settings.saved.ok", "✅ Saved")}</span>}
                       {paymentsSaved === "err" && <span className="text-danger">{tt("admin.settings.saved.err", "❌ Error saving")}</span>}
