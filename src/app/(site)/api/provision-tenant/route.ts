@@ -35,8 +35,8 @@ export async function POST(req: NextRequest) {
     const [tSnap, oSnap] = await Promise.all([tRef.get(), oRef.get()]);
     if (!tSnap.exists || !oSnap.exists) return json({ error: 'Not found.' }, 404);
 
-    const tenant = tSnap.data()!;
-    const order = oSnap.data()!;
+    const tenant = tSnap.data() as any;
+    const order = oSnap.data() as any;
 
     // Idempotencia: si ya está provisionado, responde success de una vez.
     if (order.orderStatus === 'provisioned' && tenant.status === 'active') {
@@ -48,17 +48,24 @@ export async function POST(req: NextRequest) {
       return json({ error: 'Order is not in a creatable state.' }, 409);
     }
 
-    const plan = (tenant.plan || order.plan) as PlanId;
-    if (!['starter', 'pro', 'full'].includes(plan)) {
-      return json({ error: 'Invalid plan on tenant/order.' }, 400);
-    }
+    // --- Normalización de plan a planTier (con compatibilidad legado) ---
+    const allowed: PlanId[] = ['starter', 'pro', 'full'];
+    const planTierCandidate =
+      (tenant?.planTier as PlanId | undefined) ??
+      (tenant?.plan as PlanId | undefined) ??
+      (order?.planTier as PlanId | undefined) ??
+      (order?.plan as PlanId | undefined);
 
-    // ✅ Usa el mapa centralizado
-    const features: FeatureKey[] = PLAN_FEATURES[plan];
+    const planTier: PlanId = allowed.includes(planTierCandidate as any)
+      ? (planTierCandidate as PlanId)
+      : 'starter'; // fallback seguro para evitar errores en provisiones viejas
+
+    // ✅ Usa el mapa centralizado con planTier normalizado
+    const features: FeatureKey[] = PLAN_FEATURES[planTier];
 
     // 2) (Opcional) Crear/obtener usuario owner en Firebase Auth
-    let ownerUid: string | undefined = tenant.owner?.uid;
-    if (CREATE_OWNER_USER && tenant.owner?.email) {
+    let ownerUid: string | undefined = tenant?.owner?.uid;
+    if (CREATE_OWNER_USER && tenant?.owner?.email) {
       const auth = getAuth();
       const ownerEmail = String(tenant.owner.email).trim().toLowerCase();
       const ownerName = String(tenant.owner?.name || 'Owner').trim();
@@ -87,8 +94,8 @@ export async function POST(req: NextRequest) {
       const t = await trx.get(tRef);
       const o = await trx.get(oRef);
       if (!t.exists || !o.exists) throw new Error('Not found.');
-      const curT = t.data()!;
-      const curO = o.data()!;
+      const curT = t.data() as any;
+      const curO = o.data() as any;
 
       // Re-validación de estados por seguridad
       if (curO.orderStatus !== 'created') {
@@ -101,7 +108,7 @@ export async function POST(req: NextRequest) {
         status: 'active',
         updatedAt: now,
       };
-      const ownerFromTenant = (curT as any)?.owner || {};
+      const ownerFromTenant = (curT?.owner || {}) as any;
       const ownerUidFromTenant = ownerUid || ownerFromTenant?.uid;
       if (ownerUidFromTenant) {
         updateTenant.owner = { ...(ownerFromTenant || {}), uid: ownerUidFromTenant };
@@ -123,7 +130,7 @@ export async function POST(req: NextRequest) {
           cRef,
           {
             uid: effectiveOwnerUid,
-            tenantId,            // 🔐 refuerzo de scope
+            tenantId, // 🔐 refuerzo de scope
             email,
             displayName,
             phone: null,
