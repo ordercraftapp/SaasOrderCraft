@@ -1,8 +1,8 @@
-// src/lib/settings/context.tsx
 "use client";
 
 import React, { createContext, useCallback, useEffect, useMemo, useState } from "react";
-import { readGeneralSettings, type TenantGeneralSettings } from "./storage";
+import { makeSettingsIO, type TenantGeneralSettings } from "./storage";
+import { useTenantId } from "@/lib/tenant/context";
 
 export type SettingsContextValue = {
   settings: TenantGeneralSettings | null;
@@ -23,11 +23,22 @@ export const SettingsContext = createContext<SettingsContextValue>({
 });
 
 export function SettingsProvider({ children }: { children: React.ReactNode }) {
+  const tenantId = useTenantId();
+  const { readGeneralSettings } = makeSettingsIO(tenantId);
+
   const [settings, setSettings] = useState<TenantGeneralSettings | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setErr] = useState<string | null>(null);
 
   const load = useCallback(async () => {
+    // Si aún no hay tenantId (primer render), marcamos sin cargar
+    if (!tenantId) {
+      setSettings(null);
+      setLoading(false);
+      setErr(null);
+      return;
+    }
+
     setLoading(true);
     setErr(null);
     try {
@@ -38,7 +49,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [tenantId, readGeneralSettings]);
 
   useEffect(() => {
     void load();

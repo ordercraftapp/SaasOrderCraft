@@ -6,8 +6,7 @@ import Protected from "@/app/(tenant)/[tenantId]/components/Protected";
 import AdminOnly from "@/app/(tenant)/[tenantId]/components/AdminOnly";
 import ToolGate from "@/components/ToolGate";
 import "@/lib/firebase/client";
-import { useTenantSettings } from "@/lib/settings/hooks";
-import { writeGeneralSettings } from "@/lib/settings/storage";
+import { useTenantSettings, useWriteGeneralSettings } from "@/lib/settings/hooks";
 import { useTenantId } from "@/lib/tenant/context";
 
 // 👉 Pagos
@@ -61,6 +60,7 @@ function normalizeLanguageCode(value?: string): "es" | "en" | "pt" | "fr" {
 export default function AdminSettingsPage() {
   const tenantId = useTenantId();
   const { settings, loading, error, fmtCurrency, reload } = useTenantSettings();
+  const writeGeneralSettings = useWriteGeneralSettings();
 
   const lang = useMemo(() => {
     try {
@@ -218,7 +218,7 @@ export default function AdminSettingsPage() {
         currency,
         currencyLocale: locale,
         language: uiLanguage,
-      } as any);
+      });
 
       if (typeof window !== "undefined") localStorage.setItem("tenant.language", uiLanguage);
 
@@ -316,9 +316,13 @@ export default function AdminSettingsPage() {
                     <div className="row gy-2">
                       <div className="col-12 col-md-4">
                         <div className="form-check form-switch">
-                          <input id="pay-cash" className="form-check-input" type="checkbox"
-                                 checked={!!payments.cash}
-                                 onChange={(e) => setPayments((p) => ({ ...p, cash: e.target.checked }))} />
+                          <input
+                            id="pay-cash"
+                            className="form-check-input"
+                            type="checkbox"
+                            checked={!!payments.cash}
+                            onChange={(e) => setPayments((p) => ({ ...p, cash: e.target.checked }))}
+                          />
                           <label className="form-check-label" htmlFor="pay-cash">
                             {tt("admin.settings.payments.cash", "Cash")}
                           </label>
@@ -327,9 +331,13 @@ export default function AdminSettingsPage() {
 
                       <div className="col-12 col-md-4">
                         <div className="form-check form-switch">
-                          <input id="pay-card" className="form-check-input" type="checkbox"
-                                 checked={!!payments.card}
-                                 onChange={(e) => setPayments((p) => ({ ...p, card: e.target.checked }))} />
+                          <input
+                            id="pay-card"
+                            className="form-check-input"
+                            type="checkbox"
+                            checked={!!payments.card}
+                            onChange={(e) => setPayments((p) => ({ ...p, card: e.target.checked }))}
+                          />
                           <label className="form-check-label" htmlFor="pay-card">
                             {tt("admin.settings.payments.card", "Credit/Debit Card")}
                           </label>
@@ -338,9 +346,13 @@ export default function AdminSettingsPage() {
 
                       <div className="col-12 col-md-4">
                         <div className="form-check form-switch">
-                          <input id="pay-paypal" className="form-check-input" type="checkbox"
-                                 checked={!!payments.paypal}
-                                 onChange={(e) => setPayments((p) => ({ ...p, paypal: e.target.checked }))} />
+                          <input
+                            id="pay-paypal"
+                            className="form-check-input"
+                            type="checkbox"
+                            checked={!!payments.paypal}
+                            onChange={(e) => setPayments((p) => ({ ...p, paypal: e.target.checked }))}
+                          />
                           <label className="form-check-label" htmlFor="pay-paypal">
                             {tt("admin.settings.payments.paypal", "PayPal")}
                           </label>
@@ -349,7 +361,10 @@ export default function AdminSettingsPage() {
                     </div>
 
                     <div className="form-text mt-2 mb-3">
-                      {tt("admin.settings.payments.help","Toggle which payment methods are shown at checkout. Saved in tenants/{tenantId}/paymentProfile/default.")}
+                      {tt(
+                        "admin.settings.payments.help",
+                        "Toggle which payment methods are shown at checkout. Saved in tenants/{tenantId}/paymentProfile/default."
+                      )}
                     </div>
 
                     <div className="d-flex align-items-center gap-3">
