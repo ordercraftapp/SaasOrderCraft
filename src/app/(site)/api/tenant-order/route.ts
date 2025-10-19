@@ -237,7 +237,7 @@ export async function POST(req: NextRequest) {
       // Crear tenant (draft) — ahora con owner.uid
       trx.set(tRef, {
         tenantId: desired,
-        plan,
+        planTier: plan,        // ← renombrado (antes: plan)
         status: 'draft',
         features: [], // se aplicarán en /provision-tenant
         owner: { name: adminName, email: adminEmail, uid: ownerUid },
@@ -263,7 +263,7 @@ export async function POST(req: NextRequest) {
       const orderRef = ordersCol.doc();
       trx.set(orderRef, {
         orderId: orderRef.id,
-        plan,
+        planTier: plan,        // ← renombrado (antes: plan)
         desiredSubdomain: desired,
         customer: { name: adminName, email: adminEmail },
         address: {
@@ -335,7 +335,8 @@ export async function GET(req: NextRequest) {
     const summary = {
       tenantId,
       orderId,
-      plan: tData.plan,
+      // mantenemos la respuesta con clave 'plan' para no romper clientes:
+      plan: tData.planTier,     // ← lee planTier
       status: tData.status,
       desiredSubdomain: oData.desiredSubdomain,
       customer: oData.customer,
