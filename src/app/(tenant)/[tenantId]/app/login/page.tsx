@@ -66,7 +66,12 @@ export default function LoginPage() {
 }
 
 type ApiRefreshRoleResp =
-  | { ok: true; tenantId: string; role: 'admin' | 'kitchen' | 'cashier' | 'waiter' | 'delivery' | 'customer' }
+  | {
+      ok: true;
+      tenantId: string;
+      role: 'admin' | 'kitchen' | 'cashier' | 'waiter' | 'delivery' | 'customer';
+      claimsUpdated?: boolean;
+    }
   | { ok: false; error?: string };
 
 function LoginInner() {
@@ -122,23 +127,27 @@ function LoginInner() {
 
   const afterSignIn = useCallback(
     async (idToken: string) => {
-      // 1) Pide al server resolver rol por tenant y setear cookie appRole
       const resp = await fetch(`/${tenantId}/app/api/auth/refresh-role`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${idToken}` },
       });
-
       const data = (await resp.json().catch(() => ({}))) as ApiRefreshRoleResp;
 
       if (!resp.ok || data.ok !== true) {
-        const errorMsg = (!data.ok && 'error' in data && data.error) ? data.error : 'Could not validate your role.';
+        const errorMsg = (!data.ok && 'error' in data && data.error)
+          ? data.error
+          : 'Could not validate your role.';
         throw new Error(errorMsg);
       }
 
-      // 2) Marca cookie de sesión scopiada al tenant para tu middleware
+      // +++ NUEVO: si el server actualizó claims, fuerza un refresh local del token
+      if (data.claimsUpdated) {
+        const u = auth.currentUser;
+        if (u) { await u.getIdToken(true); }
+      }
+
       setCookie('session', '1', `/${tenantId}`);
 
-      // 3) Redirige según rol: admin → /app/admin; cliente/staff → /app/app
       const role = data.role;
       const target = role === 'admin' ? '/app/admin' : (search.get('next') || '/app/app');
       router.replace(withTenantPrefix(tenantId!, target));
@@ -199,7 +208,6 @@ function LoginInner() {
             disabled={busy}
           />
         </div>
-
         <button className="btn btn-primary w-100" disabled={busy}>
           {busy ? 'Signing in…' : 'Login'}
         </button>

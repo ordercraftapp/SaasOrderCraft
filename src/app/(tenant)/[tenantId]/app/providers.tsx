@@ -1,4 +1,3 @@
-// src/app/providers.tsx
 "use client";
 
 import {
@@ -16,56 +15,6 @@ import {
   useCallback,
 } from "react";
 import { CartProvider } from "@/lib/cart/context";
-
-// ----------------------
-// Auth Context
-// ----------------------
-type Claims = {
-  admin?: boolean;
-  kitchen?: boolean;
-  waiter?: boolean;
-  delivery?: boolean;
-  cashier?: boolean;
-  role?: string;
-  [k: string]: any;
-};
-
-type RoleFlags = {
-  isAdmin: boolean;
-  isKitchen: boolean;
-  isWaiter: boolean;
-  isDelivery: boolean;
-  isCashier: boolean;
-  isCustomer: boolean;
-};
-
-type Ctx = {
-  user: User | null;
-  loading: boolean;
-  idToken: string | null;
-  claims: Claims | null;
-  flags: RoleFlags;
-  /** Fuerza refresh del ID token y claims (útil tras cambiar roles) */
-  refreshRoles: () => Promise<void>;
-};
-
-const defaultFlags: RoleFlags = {
-  isAdmin: false,
-  isKitchen: false,
-  isWaiter: false,
-  isDelivery: false,
-  isCashier: false,
-  isCustomer: true,
-};
-
-const AuthContext = createContext<Ctx>({
-  user: null,
-  loading: true,
-  idToken: null,
-  claims: null,
-  flags: defaultFlags,
-  refreshRoles: async () => {},
-});
 
 /* ============================
    🔹 Helpers de URL tenant-aware
@@ -120,13 +69,13 @@ async function syncRoleCookie(idToken: string) {
         ? new URL(path, window.location.origin).toString()
         : path;
     await fetch(url, {
-      method: "GET", // tu route soporta GET y POST; GET evita 405 según tus logs
+      method: "GET",
       headers: { Authorization: `Bearer ${idToken}` },
       credentials: "same-origin",
       cache: "no-store",
     });
   } catch {
-    // Silencioso: si falla, el middleware tratará al usuario como customer.
+    // Silencioso
   }
 }
 
@@ -144,6 +93,63 @@ function clearRoleCookies() {
   } catch {}
 }
 
+// ----------------------
+// Auth Context
+// ----------------------
+type Claims = {
+  admin?: boolean;
+  kitchen?: boolean;
+  waiter?: boolean;
+  delivery?: boolean;
+  cashier?: boolean;
+  role?: string;
+  tenants?: Record<string, any>; // 👈 importante para per-tenant
+  tenantId?: string;             // opcional si usas claim simple
+  [k: string]: any;
+};
+
+type RoleFlags = {
+  isAdmin: boolean;
+  isKitchen: boolean;
+  isWaiter: boolean;
+  isDelivery: boolean;
+  isCashier: boolean;
+  isCustomer: boolean;
+};
+
+type Ctx = {
+  user: User | null;
+  loading: boolean;
+  idToken: string | null;
+  claims: Claims | null;
+  flags: RoleFlags;
+  /** Fuerza refresh del ID token y claims (útil tras cambiar roles) */
+  refreshRoles: () => Promise<void>;
+};
+
+const defaultFlags: RoleFlags = {
+  isAdmin: false,
+  isKitchen: false,
+  isWaiter: false,
+  isDelivery: false,
+  isCashier: false,
+  isCustomer: true,
+};
+
+const AuthContext = createContext<Ctx>({
+  user: null,
+  loading: true,
+  idToken: null,
+  claims: null,
+  flags: defaultFlags,
+  refreshRoles: async () => {},
+});
+
+export const useAuth = () => useContext(AuthContext);
+
+/* ============================
+   🔹 AuthProvider
+   ============================ */
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [idToken, setIdToken] = useState<string | null>(null);
@@ -277,7 +283,40 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
-export const useAuth = () => useContext(AuthContext);
+/* ============================
+   🔹 Refresher de claims por tenant (se monta global)
+   ============================ */
+function TenantClaimsRefresher() {
+  const { user, claims, refreshRoles } = useAuth();
+
+  useEffect(() => {
+    // Si no estamos bajo /{tenant}/app, no hacemos nada
+    if (!inTenantTree()) return;
+    if (!user) return;
+
+    const tenantId = getTenantIdFromLocation();
+    if (!tenantId) return;
+
+    // Si el token aún no tiene tenants[tenantId], forzamos un refresh 1 vez
+    const hasTenant =
+      !!claims?.tenants && Object.prototype.hasOwnProperty.call(claims.tenants, tenantId);
+
+    if (!hasTenant) {
+      // Evita loops: usa un flag por tenant en sessionStorage
+      const key = `claims-refreshed:${tenantId}:${user.uid}`;
+      try {
+        if (!sessionStorage.getItem(key)) {
+          sessionStorage.setItem(key, "1");
+          refreshRoles().catch(() => {});
+        }
+      } catch {
+        refreshRoles().catch(() => {});
+      }
+    }
+  }, [user, claims, refreshRoles]);
+
+  return null;
+}
 
 // ----------------------
 // Root Providers Wrapper
@@ -285,6 +324,8 @@ export const useAuth = () => useContext(AuthContext);
 export default function Providers({ children }: { children: React.ReactNode }) {
   return (
     <AuthProvider>
+      {/* 👇 Se asegura de refrescar el token si faltan claims por tenant */}
+      <TenantClaimsRefresher />
       <CartProvider>{children}</CartProvider>
     </AuthProvider>
   );

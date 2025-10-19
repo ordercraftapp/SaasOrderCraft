@@ -1,5 +1,4 @@
 // src/app/(tenant)/[tenantId]/app/api/auth/refresh-role/route.ts
-
 export const runtime = 'nodejs';
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -25,6 +24,32 @@ function pickTenantRoleFromClaims(claims: any, tenantId: string): OpRole | 'cust
     }
   } catch { /* ignore */ }
   return 'customer';
+}
+
+// +++ NUEVO: asegura que el usuario tenga customClaims por tenant
+async function ensureTenantClaims(uid: string, tenantId: string, resolvedRole: string) {
+  const user = await adminAuth.getUser(uid);
+  const current = (user.customClaims || {}) as any;
+
+  const tenants = { ...(current.tenants || {}) };
+  const currentRoles = { ...((tenants[tenantId]?.roles) || {}) };
+
+  // Siempre marcar "customer" en el tenant; si es staff/admin, también su rol
+  const nextRoles: Record<string, boolean> = { ...currentRoles, customer: true };
+  if (['admin','kitchen','cashier','waiter','delivery'].includes(resolvedRole)) {
+    nextRoles[resolvedRole] = true;
+  }
+
+  tenants[tenantId] = { ...(tenants[tenantId] || {}), roles: nextRoles };
+
+  // Opcional: claim simple para tu helper inTenant()
+  const nextClaims = { ...current, tenantId, tenants };
+
+  const changed = JSON.stringify(current) !== JSON.stringify(nextClaims);
+  if (changed) {
+    await adminAuth.setCustomUserClaims(uid, nextClaims);
+  }
+  return changed;
 }
 
 async function handleRefresh(req: NextRequest, params: { tenantId: string }) {
@@ -98,8 +123,11 @@ async function handleRefresh(req: NextRequest, params: { tenantId: string }) {
     role = fromClaims || 'customer';
   }
 
+  // +++ NUEVO: asegurar customClaims por tenant
+  const claimsUpdated = await ensureTenantClaims(uid, tenantId, role);
+
   // 🍪 Cookies legibles por middleware (no httpOnly) — scopiadas al TENANT
-  const res = json({ ok: true, tenantId, role });
+  const res = json({ ok: true, tenantId, role, claimsUpdated });
 
   res.cookies.set('appRole', role, {
     httpOnly: false,

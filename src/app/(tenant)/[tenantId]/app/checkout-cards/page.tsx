@@ -78,12 +78,24 @@ function usePaymentProfile() {
 
   useEffect(() => {
     if (!tenantId) return;
+
+    const auth = getAuth();
     let cancelled = false;
-    (async () => {
+
+    const unsub = auth.onIdTokenChanged(async (u) => {
       try {
+        if (!u) {
+          if (!cancelled) { setFlags({ cash: true, paypal: false }); setLoading(false); }
+          return;
+        }
+
+        // 🔁 Fuerza refresh para traer custom claims actualizados (tenantId / tenants[tenantId])
+        await u.getIdToken(true);
+
         const db = getFirestore();
         const ref = doc(tCol('paymentProfile', tenantId), 'default');
         const snap = await getDoc(ref);
+
         if (cancelled) return;
 
         if (snap.exists()) {
@@ -97,16 +109,18 @@ function usePaymentProfile() {
         }
       } catch (e) {
         console.warn('paymentProfile read failed:', e);
-        setFlags({ cash: true, paypal: false });
+        if (!cancelled) setFlags({ cash: true, paypal: false });
       } finally {
         if (!cancelled) setLoading(false);
       }
-    })();
-    return () => { cancelled = true; };
+    });
+
+    return () => { cancelled = true; unsub(); };
   }, [tenantId]);
 
   return { flags: flags ?? { cash: true, paypal: false }, loading };
 }
+
 
 /** Convierte undefined -> null (para orderInfo) */
 function undefToNullDeep<T>(value: T): T {
