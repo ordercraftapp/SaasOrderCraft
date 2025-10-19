@@ -557,13 +557,14 @@ function WaiterPage_Inner() {
 // =================== Wrapper con gates (igual que Kitchen) ===================
 export default function WaiterPage() {
   return (
-    <ToolGate feature="waiter">
-      <Protected>
+    <Protected>
         <OnlyWaiter>
-          <WaiterPage_Inner />
+          <ToolGate feature="waiter">
+            <WaiterPage_Inner />
+          </ToolGate>
         </OnlyWaiter>
       </Protected>
-    </ToolGate>
+    
   );
 }
 

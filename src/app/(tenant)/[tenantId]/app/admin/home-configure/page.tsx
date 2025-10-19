@@ -595,24 +595,26 @@ export default function AdminHomeConfigurePage() {
 
   if (loading) {
     return (
-      <ToolGate feature="homeConfigure">
-        <Protected>
-          <OnlyAdmin>
+
+      <Protected>
+        <OnlyAdmin>
+          <ToolGate feature="homeConfigure">     
             <div className="container py-5 text-center">
               <div className="spinner-border" role="status" />
               <div className="mt-2">{tt('common.loading', 'Loading…')}</div>
             </div>
-          </OnlyAdmin>
-        </Protected>
-      </ToolGate>
+          </ToolGate>
+        </OnlyAdmin>
+      </Protected>
+      
     );
   }
 
   return (
-    <ToolGate feature="homeConfigure">
-      <Protected>
-        <OnlyAdmin>
-          <div className="container py-4">
+    <Protected>
+      <OnlyAdmin>
+        <ToolGate feature="homeConfigure">
+            <div className="container py-4">
             <div className="d-flex align-items-center justify-content-between mb-3">
               <h1 className="h4 m-0">{tt('admin.home.title', 'Home Configure')}</h1>
               <div className="d-flex gap-2">
@@ -1718,8 +1720,9 @@ export default function AdminHomeConfigurePage() {
               </div>
             )}
           </div>
-        </OnlyAdmin>
-      </Protected>
-    </ToolGate>
+        </ToolGate>
+      </OnlyAdmin>
+    </Protected>
+    
   );
 }

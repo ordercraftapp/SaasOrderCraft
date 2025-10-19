@@ -964,12 +964,13 @@ function KitchenBoardPage_Inner() {
 
 export default function KitchenBoardPage() {
   return (
-    <ToolGate feature="kitchen">
-      <Protected>
-        <OnlyKitchen>
+    <Protected>
+      <OnlyKitchen>
+        <ToolGate feature="kitchen">      
           <KitchenBoardPage_Inner />
-        </OnlyKitchen>
-      </Protected>
-    </ToolGate>
+        </ToolGate>
+      </OnlyKitchen>
+    </Protected>
+    
   );
 }

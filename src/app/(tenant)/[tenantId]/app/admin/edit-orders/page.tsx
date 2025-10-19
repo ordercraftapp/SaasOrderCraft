@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from 'react';
 
 /* 🔐 NOTA: Agregado para seguridad */
 import Protected from '@/app/(tenant)/[tenantId]/components/Protected';
-import { RoleGate } from '@/app/(tenant)/[tenantId]/components/RoleGate'; // allow={['admin','waiter']}
+import { OnlyAdmin } from '@/app/(tenant)/[tenantId]/components/Only';
 import { useFmtQ } from '@/lib/settings/money'; // ✅ usar formateador global
 import ToolGate from '@/components/ToolGate'; // ✅ gate por feature edit_orders
 
@@ -175,11 +175,11 @@ export default function EditOrdersListPage() {
     });
   },[orders,q]);
 
-  /* 🔐 NOTA: Envolver TODO el contenido visible con ToolGate + Protected + RoleGate */
+  /* 🔐 NOTA: Envolver TODO con Protected → OnlyAdmin → ToolGate */
   return (
-    <ToolGate feature="editOrders">
-      <Protected>
-        <RoleGate allow={['admin','waiter']}>
+    <Protected>
+      <OnlyAdmin>
+        <ToolGate feature="editOrders">
           <div className="container py-4">
             <div className="d-flex align-items-center justify-content-between mb-3">
               <h1 className="h4 m-0">{tt('admin.editorders.title','Edit orders')}</h1>
@@ -290,8 +290,8 @@ export default function EditOrdersListPage() {
               </ul>
             )}
           </div>
-        </RoleGate>
-      </Protected>
-    </ToolGate>
+        </ToolGate>
+      </OnlyAdmin>
+    </Protected>
   );
 }

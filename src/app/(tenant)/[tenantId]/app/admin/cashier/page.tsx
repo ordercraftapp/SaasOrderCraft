@@ -1,8 +1,8 @@
 // src/app/(tenant)/[tenant]/app/admin/cashier/page.tsx
 'use client';
 
-import { OnlyCashier } from "@/app/(tenant)/[tenantId]/components/Only";
-
+import { OnlyCashier } from "@/app/(tenant)/[tenantId]/components/Only"; // 🔁 was OnlyCashier → CashierOnly
+import Protected from "@/app/(tenant)/[tenantId]/components/Protected";
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { getActiveTaxProfile } from '@/lib/tax/profile'; // ✅ NUEVO
 import { useFmtQ } from '@/lib/settings/money'; // ✅ usar formateador global (sin fmtCents)
@@ -1008,10 +1008,11 @@ function CashierPage_Inner() {
   const delivery = orders.filter(o => {
     const t = (o.orderInfo?.type?.toLowerCase?.() === 'delivery') ? 'delivery' : (o.type || (o.deliveryAddress ? 'delivery' : 'dine_in'));
     return t === 'delivery';
-  }).slice().sort((a, b) => (toDate(b.createdAt).getTime() - toDate(a.createdAt).getTime()));
+  }).slice().sort((a, b) => (toDate(b.createdAt).getTime()) - toDate(a.createdAt).getTime()).reverse();
 
+  // ⬇️ Cambio mínimo: quitar ToolGate interno para que el gating viva en el wrapper externo
   return (
-    <ToolGate feature="cashier">
+    <>
       <div className="container py-3">
         <div className="d-flex align-items-center justify-content-between gap-3 mb-3 sticky-top bg-white py-2" style={{ top: 0, zIndex: 5, borderBottom: '1px solid #eee' }}>
           <div className="d-flex align-items-center gap-3">
@@ -1127,15 +1128,20 @@ function CashierPage_Inner() {
           </div>
         )}
       </div>
-    </ToolGate>
+    </>
   );
 }
 
 
 export default function CashierPage() {
+  // ⬇️ Envolvemos como pediste: Protected → CashierOnly → ToolGate("cashier")
   return (
-    <OnlyCashier>
-      <CashierPage_Inner />
-    </OnlyCashier>
+    <Protected>
+      <OnlyCashier>
+        <ToolGate feature="cashier">
+          <CashierPage_Inner />
+        </ToolGate>
+      </OnlyCashier>
+    </Protected>
   );
 }

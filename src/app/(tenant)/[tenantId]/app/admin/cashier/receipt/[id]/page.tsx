@@ -2,7 +2,7 @@
 'use client';
 
 import { OnlyCashier } from "@/app/(tenant)/[tenantId]/components/Only";
-
+import Protected from "@/app/(tenant)/[tenantId]/components/Protected";
 import React, { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { useFmtQ } from '@/lib/settings/money'; // ✅ usar formateador global
@@ -569,221 +569,249 @@ function ReceiptPage_Inner() {
   };
 
   return (
-    <ToolGate feature="cashier">
-      <>
-        <style>{`
-          * { box-sizing: border-box; }
-          @media print { .noprint { display: none !important; } }
-          .wrap { max-width: 360px; margin: 0 auto; padding: 12px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Courier New", monospace; }
-          h1 { font-size: 14px; margin: 0 0 6px; text-transform: uppercase; }
-          .muted { color: #666; font-size: 11px; }
-          .row { display: flex; justify-content: space-between; font-size: 12px; }
-          .hr { border-top: 1px dashed #999; margin: 8px 0; }
-          .item { margin: 6px 0; }
-          .item .name { font-weight: 600; }
-          .addon { margin-left: 10px; color: #555; font-size: 11px; }
-          .tot { font-weight: 700; }
-          .center { text-align: center; }
-          .btn { display: inline-block; border: 1px solid #ccc; padding: 6px 10px; border-radius: 6px; background: #f7f7f7; cursor: pointer; }
-        `}</style>
+    <>
+      <style>{`
+        * { box-sizing: border-box; }
+        @media print { .noprint { display: none !important; } }
+        .wrap { max-width: 360px; margin: 0 auto; padding: 12px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Courier New", monospace; }
+        h1 { font-size: 14px; margin: 0 0 6px; text-transform: uppercase; }
+        .muted { color: #666; font-size: 11px; }
+        .row { display: flex; justify-content: space-between; font-size: 12px; }
+        .hr { border-top: 1px dashed #999; margin: 8px 0; }
+        .item { margin: 6px 0; }
+        .item .name { font-weight: 600; }
+        .addon { margin-left: 10px; color: #555; font-size: 11px; }
+        .tot { font-weight: 700; }
+        .center { text-align: center; }
+        .btn { display: inline-block; border: 1px solid #ccc; padding: 6px 10px; border-radius: 6px; background: #f7f7f7; cursor: pointer; }
+      `}</style>
 
-        <div className="wrap">
-          <div className="noprint" style={{ marginBottom: 8 }}>
-            <button className="btn" onClick={() => window.print()}>{tt('common.print', 'Print')}</button>
-            <button className="btn" onClick={() => window.close?.()} style={{ marginLeft: 8 }}>{tt('common.close', 'Close')}</button>
-          </div>
+      <div className="wrap">
+        <div className="noprint" style={{ marginBottom: 8 }}>
+          <button className="btn" onClick={() => window.print()}>{tt('common.print', 'Print')}</button>
+          <button className="btn" onClick={() => window.close?.()} style={{ marginLeft: 8 }}>{tt('common.close', 'Close')}</button>
+        </div>
 
-          {!order && !error && <div className="muted">{tt('common.loading', 'Loading...')}</div>}
-          {error && <div className="muted">{tt('common.error', 'Error')}: {error}</div>}
+        {!order && !error && <div className="muted">{tt('common.loading', 'Loading...')}</div>}
+        {error && <div className="muted">{tt('common.error', 'Error')}: {error}</div>}
 
-          {order && totals && (
-            <>
-              <h1>{type === 'delivery' ? tt('common.delivery', 'Delivery') : tt('admin.kitchen.dinein', 'Dine-in')}</h1>
-              {rawType === 'pickup' && (
-                <div className="muted" style={{ marginTop: 2 }}>
-                  <span className="badge bg-dark-subtle text-dark">{tt('admin.kitchen.pickup', 'Pickup')}</span>
-                </div>
-              )}
+        {order && totals && (
+          <>
+            <h1>{rawType === 'delivery' ? tt('common.delivery', 'Delivery') : tt('admin.kitchen.dinein', 'Dine-in')}</h1>
+            {rawType === 'pickup' && (
+              <div className="muted" style={{ marginTop: 2 }}>
+                <span className="badge bg-dark-subtle text-dark">{tt('admin.kitchen.pickup', 'Pickup')}</span>
+              </div>
+            )}
 
-              <div className="muted">#{order.orderNumber || order.id} · {toDate(order.createdAt ?? new Date()).toLocaleString()}</div>
+            <div className="muted">#{order.orderNumber || order.id} · {toDate(order.createdAt ?? new Date()).toLocaleString()}</div>
 
-              {(order as any)?.invoiceNumber && (
-                <div className="muted">{tt('admin.receipt.invoice', 'Invoice')}: {(order as any).invoiceNumber}</div>
-              )}
-              {(order?.customer?.name ?? order?.customer?.names ?? billingName)
-                ? <div className="muted">{tt('admin.receipt.invoiceTo', 'Invoice to')}: {order?.customer?.name ?? order?.customer?.names ?? billingName}</div>
-                : null}
-              {(order?.customer?.taxId ?? billingTaxId)
-                ? <div className="muted">{tt('admin.receipt.nit', 'NIT')}: {order?.customer?.taxId ?? billingTaxId}</div>
-                : null}
+            {(order as any)?.invoiceNumber && (
+              <div className="muted">{tt('admin.receipt.invoice', 'Invoice')}: {(order as any).invoiceNumber}</div>
+            )}
+            {(order?.customer?.name ?? order?.customer?.names ?? billingName)
+              ? <div className="muted">{tt('admin.receipt.invoiceTo', 'Invoice to')}: {order?.customer?.name ?? order?.customer?.names ?? billingName}</div>
+              : null}
+            {(order?.customer?.taxId ?? billingTaxId)
+              ? <div className="muted">{tt('admin.receipt.nit', 'NIT')}: {order?.customer?.taxId ?? billingTaxId}</div>
+              : null}
 
-              {displayClientName ? (
+            {(() => {
+              const displayClientName =
+                order?.customer?.name ??
+                order?.customer?.names ??
+                order?.orderInfo?.customerName ??
+                billingName ??
+                null;
+              return displayClientName ? (
                 <div className="muted">
                   {tt('admin.receipt.client', 'Client')}: {displayClientName}
                 </div>
-              ) : null}
+              ) : null;
+            })()}
 
-              {table ? <div className="muted">{tt('common.table', 'Table')}: {table}</div> : null}
+            {(() => {
+              const table = order?.orderInfo?.table || order?.tableNumber || null;
+              return table ? <div className="muted">{tt('common.table', 'Table')}: {table}</div> : null;
+            })()}
 
-              {customerName ? <div className="muted">{tt('admin.receipt.client', 'Client')}: {customerName}</div> : null}
-              {fullAddress ? (
-                <div className="muted">{tt('admin.receipt.deliveryAddr', 'Delivery')}: {fullAddress}</div>
-              ) : (address ? <div className="muted">{tt('admin.receipt.deliveryAddr', 'Delivery')}: {address}</div> : null)}
-              {phone ? <div className="muted">{tt('admin.cashier.phone', 'Phone')}: {phone}</div> : null}
+            {(() => {
+              const customerName = order?.orderInfo?.customerName || null;
+              return customerName ? <div className="muted">{tt('admin.receipt.client', 'Client')}: {customerName}</div> : null;
+            })()}
 
-              {notes ? <div className="muted">{tt('admin.cashier.note', 'Note')}: {notes}</div> : null}
+            {(() => {
+              const fullAddr = fullAddressFrom(order);
+              const addr = order?.orderInfo?.address || order?.deliveryAddress || null;
+              if (fullAddr) return <div className="muted">{tt('admin.receipt.deliveryAddr', 'Delivery')}: {fullAddr}</div>;
+              if (addr) return <div className="muted">{tt('admin.receipt.deliveryAddr', 'Delivery')}: {addr}</div>;
+              return null;
+            })()}
 
-              <div className="hr"></div>
+            {(() => {
+              const phone = order?.orderInfo?.phone || null;
+              return phone ? <div className="muted">{tt('admin.cashier.phone', 'Phone')}: {phone}</div> : null;
+            })()}
 
-              {lines.map((l, idx) => {
-                const { baseUnit, addonsUnit, lineTotal, qty } = safeLineTotalsQ(l);
-                const name = getLineName(l);
+            {(() => {
+              const notes = order?.orderInfo?.notes || order?.notes || null;
+              return notes ? <div className="muted">{tt('admin.cashier.note', 'Note')}: {notes}</div> : null;
+            })()}
 
-                const groupsHtml: React.ReactNode[] = [];
+            <div className="hr"></div>
 
-                if (Array.isArray(l?.optionGroups)) {
-                  for (const g of l.optionGroups) {
-                    const its = Array.isArray(g?.items) ? g.items : [];
-                    if (!its.length) continue;
-                    const rows = its.map((it: any, i:number) => {
-                      const nm = it?.name ?? '';
-                      const pr = extractDeltaQ(it);
-                      return <span key={i}>{nm}{pr ? ` (${fmtQ(pr)})` : ''}{i < its.length - 1 ? ', ' : ''}</span>;
-                    });
-                    groupsHtml.push(
-                      <div className="addon" key={`g${groupsHtml.length}`}>
-                        • <b>{translateGroupLabel(g?.groupName ?? 'Options')}:</b> {rows}
-                      </div>
-                    );
-                  }
-                }
+            {preferredLines(order).map((l, idx) => {
+              const { baseUnit, addonsUnit, lineTotal, qty } = safeLineTotalsQ(l);
+              const name = getLineName(l);
 
-                if (Array.isArray(l?.options)) {
-                  for (const g of l.options) {
-                    const sels = Array.isArray(g?.selected) ? g.selected : [];
-                    if (!sels.length) continue;
-                    const rows = sels.map((s: any, i:number) => {
-                      const nm = s?.name ?? '';
-                      const pr = extractDeltaQ(s);
-                      return <span key={i}>{nm}{pr ? ` (${fmtQ(pr)})` : ''}{i < sels.length - 1 ? ', ' : ''}</span>;
-                    });
-                    groupsHtml.push(
-                      <div className="addon" key={`g${groupsHtml.length}`}>
-                        • <b>{translateGroupLabel(g?.groupName ?? 'Options')}:</b> {rows}
-                      </div>
-                    );
-                  }
-                }
+              const groupsHtml: React.ReactNode[] = [];
 
-                for (const key of ['addons', 'extras', 'modifiers'] as const) {
-                  const arr = (l as any)[key];
-                  if (Array.isArray(arr) && arr.length) {
-                    const rows = arr.map((x: any, i:number) => {
-                      if (typeof x === 'string') return <span key={i}>{x}{i < arr.length - 1 ? ', ' : ''}</span>;
-                      const nm = x?.name ?? '';
-                      const pr = extractDeltaQ(x);
-                      return <span key={i}>{nm}{pr ? ` (${fmtQ(pr)})` : ''}{i < arr.length - 1 ? ', ' : ''}</span>;
-                    });
-                    groupsHtml.push(
-                      <div className="addon" key={`b${groupsHtml.length}`}>
-                        • <b>{translateGroupLabel(key)}:</b> {rows}
-                      </div>
-                    );
-                  }
-                }
-
-                return (
-                  <div className="item" key={idx}>
-                    <div className="row">
-                      <div className="name">{qty} × {name}</div>
-                      <div>{fmtQ(baseUnit)}</div>
+              if (Array.isArray(l?.optionGroups)) {
+                for (const g of l.optionGroups) {
+                  const its = Array.isArray(g?.items) ? g.items : [];
+                  if (!its.length) continue;
+                  const rows = its.map((it: any, i:number) => {
+                    const nm = it?.name ?? '';
+                    const pr = extractDeltaQ(it);
+                    return <span key={i}>{nm}{pr ? ` (${fmtQ(pr)})` : ''}{i < its.length - 1 ? ', ' : ''}</span>;
+                  });
+                  groupsHtml.push(
+                    <div className="addon" key={`g${groupsHtml.length}`}>
+                      • <b>{translateGroupLabel(g?.groupName ?? 'Options')}:</b> {rows}
                     </div>
-                    {groupsHtml}
-                    {lineTotal > 0 && (
-                      <div className="row">
-                        <div className="muted">{tt('admin.cashier.lineSubtotal', 'Subtotal line')}</div>
-                        <div className="muted">{fmtQ(lineTotal)}</div>
-                      </div>
-                    )}
+                  );
+                }
+              }
+
+              if (Array.isArray(l?.options)) {
+                for (const g of l.options) {
+                  const sels = Array.isArray(g?.selected) ? g.selected : [];
+                  if (!sels.length) continue;
+                  const rows = sels.map((s: any, i:number) => {
+                    const nm = s?.name ?? '';
+                    const pr = extractDeltaQ(s);
+                    return <span key={i}>{nm}{pr ? ` (${fmtQ(pr)})` : ''}{i < sels.length - 1 ? ', ' : ''}</span>;
+                  });
+                  groupsHtml.push(
+                    <div className="addon" key={`g${groupsHtml.length}`}>
+                      • <b>{translateGroupLabel(g?.groupName ?? 'Options')}:</b> {rows}
+                    </div>
+                  );
+                }
+              }
+
+              for (const key of ['addons', 'extras', 'modifiers'] as const) {
+                const arr = (l as any)[key];
+                if (Array.isArray(arr) && arr.length) {
+                  const rows = arr.map((x: any, i:number) => {
+                    if (typeof x === 'string') return <span key={i}>{x}{i < arr.length - 1 ? ', ' : ''}</span>;
+                    const nm = x?.name ?? '';
+                    const pr = extractDeltaQ(x);
+                    return <span key={i}>{nm}{pr ? ` (${fmtQ(pr)})` : ''}{i < arr.length - 1 ? ', ' : ''}</span>;
+                  });
+                  groupsHtml.push(
+                    <div className="addon" key={`b${groupsHtml.length}`}>
+                      • <b>{translateGroupLabel(key)}:</b> {rows}
+                    </div>
+                  );
+                }
+              }
+
+              return (
+                <div className="item" key={idx}>
+                  <div className="row">
+                    <div className="name">{qty} × {name}</div>
+                    <div>{fmtQ(baseUnit)}</div>
                   </div>
-                );
-              })}
-
-              <div className="hr"></div>
-              <div className="row"><div>{tt('common.subtotal', 'Subtotal')}</div><div>{fmtQ(totals.subtotal)}</div></div>
-
-              {type === 'delivery' && (
-                <div className="row">
-                  <div>
-                    {tt('common.delivery', 'Delivery')}
-                    { order?.orderInfo?.deliveryOption?.title ? ` — ${order.orderInfo.deliveryOption.title}` : '' }
-                  </div>
-                  <div>{fmtQ(deliveryFeeShown)}</div>
-                </div>
-              )}
-
-              {Number(totals.discount || 0) > 0 && (
-                <div className="row">
-                  <div>{tt('common.discount', 'Discount')}{promoLabel ? ` (${promoLabel})` : ''}</div>
-                  <div>-{fmtQ(totals.discount)}</div>
-                </div>
-              )}
-
-              {totals.tax ? <div className="row"><div>{tt('common.tax', 'Tax')}</div><div>{fmtQ(totals.tax)}</div></div> : null}
-              {totals.serviceFee ? <div className="row"><div>{tt('common.serviceCharge', 'Service')}</div><div>{fmtQ(totals.serviceFee)}</div></div> : null}
-
-              {Number(totals.tip || 0) > 0 && <div className="row"><div>{tt('common.tip', 'Tip')}</div><div>{fmtQ(totals.tip)}</div></div>}
-
-              <div className="row tot"><div>{tt('common.grandTotal', 'Grand total')}</div><div>{fmtQ(grandTotalShown)}</div></div>
-
-              {(() => {
-                const s = (order as any)?.taxSnapshot as TaxSnapshot;
-                return s && (
-                  <>
-                    <div className="hr"></div>
-                    <div className="muted">{tt('admin.receipt.taxBreakdown', 'Tax breakdown')}</div>
+                  {groupsHtml}
+                  {lineTotal > 0 && (
                     <div className="row">
-                      <div>{tt('common.subtotal', 'Subtotal')}</div>
-                      <div>{fmtQ(s.totals.subTotalCents / 100)}</div>
+                      <div className="muted">{tt('admin.cashier.lineSubtotal', 'Subtotal line')}</div>
+                      <div className="muted">{fmtQ(lineTotal)}</div>
                     </div>
-                    {Array.isArray(s.summaryByRate) && s.summaryByRate.map((r, i) => (
-                      <div className="row" key={r?.code || i}>
-                        <div>{tt('common.tax', 'Tax')} {(r.rateBps/100).toFixed(2)}%</div>
-                        <div>{fmtQ(r.taxCents / 100)}</div>
-                      </div>
-                    ))}
-                    {Array.isArray(s.surcharges) && s.surcharges.map((x, i) => (
-                      <div className="row" key={i}>
-                        <div>{tt('common.serviceCharge', 'Service charge')}</div>
-                        <div>
-                          {fmtQ(x.baseCents / 100)}
-                          {x.taxCents>0 && ` (${tt('common.tax', 'Tax')} ${fmtQ(x.taxCents / 100)})`}
-                        </div>
-                      </div>
-                    ))}
-                    <div className="row tot">
-                      <div>{tt('common.total', 'Total')}</div>
-                      <div>{fmtQ(s.totals.grandTotalCents / 100)}</div>
-                    </div>
-                    {s.customer?.taxId && <div className="muted">{tt('admin.cashier.customerTaxId', 'Customer Tax ID')}: {s.customer.taxId}</div>}
-                  </>
-                );
-              })()}
+                  )}
+                </div>
+              );
+            })}
 
-              <div className="hr"></div>
-              <div className="center muted">{tt('admin.receipt.thanks', 'Thank you for your purchase!')}</div>
-            </>
-          )}
-        </div>
-      </>
-    </ToolGate>
+            <div className="hr"></div>
+            <div className="row"><div>{tt('common.subtotal', 'Subtotal')}</div><div>{fmtQ(totals.subtotal)}</div></div>
+
+            {type === 'delivery' && (
+              <div className="row">
+                <div>
+                  {tt('common.delivery', 'Delivery')}
+                  { order?.orderInfo?.deliveryOption?.title ? ` — ${order.orderInfo.deliveryOption.title}` : '' }
+                </div>
+                <div>{fmtQ(deliveryFeeShown)}</div>
+              </div>
+            )}
+
+            {Number(totals.discount || 0) > 0 && (
+              <div className="row">
+                <div>{tt('common.discount', 'Discount')}{promoLabel ? ` (${promoLabel})` : ''}</div>
+                <div>-{fmtQ(totals.discount)}</div>
+              </div>
+            )}
+
+            {totals.tax ? <div className="row"><div>{tt('common.tax', 'Tax')}</div><div>{fmtQ(totals.tax)}</div></div> : null}
+            {totals.serviceFee ? <div className="row"><div>{tt('common.serviceCharge', 'Service')}</div><div>{fmtQ(totals.serviceFee)}</div></div> : null}
+
+            {Number(totals.tip || 0) > 0 && <div className="row"><div>{tt('common.tip', 'Tip')}</div><div>{fmtQ(totals.tip)}</div></div>}
+
+            <div className="row tot"><div>{tt('common.grandTotal', 'Grand total')}</div><div>{fmtQ(grandTotalShown)}</div></div>
+
+            {(() => {
+              const s = (order as any)?.taxSnapshot as TaxSnapshot;
+              return s && (
+                <>
+                  <div className="hr"></div>
+                  <div className="muted">{tt('admin.receipt.taxBreakdown', 'Tax breakdown')}</div>
+                  <div className="row">
+                    <div>{tt('common.subtotal', 'Subtotal')}</div>
+                    <div>{fmtQ(s.totals.subTotalCents / 100)}</div>
+                  </div>
+                  {Array.isArray(s.summaryByRate) && s.summaryByRate.map((r, i) => (
+                    <div className="row" key={r?.code || i}>
+                      <div>{tt('common.tax', 'Tax')} {(r.rateBps/100).toFixed(2)}%</div>
+                      <div>{fmtQ(r.taxCents / 100)}</div>
+                    </div>
+                  ))}
+                  {Array.isArray(s.surcharges) && s.surcharges.map((x, i) => (
+                    <div className="row" key={i}>
+                      <div>{tt('common.serviceCharge', 'Service charge')}</div>
+                      <div>
+                        {fmtQ(x.baseCents / 100)}
+                        {x.taxCents>0 && ` (${tt('common.tax', 'Tax')} ${fmtQ(x.taxCents / 100)})`}
+                      </div>
+                    </div>
+                  ))}
+                  <div className="row tot">
+                    <div>{tt('common.total', 'Total')}</div>
+                    <div>{fmtQ(s.totals.grandTotalCents / 100)}</div>
+                  </div>
+                  {s.customer?.taxId && <div className="muted">{tt('admin.cashier.customerTaxId', 'Customer Tax ID')}: {s.customer.taxId}</div>}
+                </>
+              );
+            })()}
+
+            <div className="hr"></div>
+            <div className="center muted">{tt('admin.receipt.thanks', 'Thank you for your purchase!')}</div>
+          </>
+        )}
+      </div>
+    </>
   );
 }
 
 export default function ReceiptPage() {
   return (
-    <OnlyCashier>
-      <ReceiptPage_Inner />
-    </OnlyCashier>
+    <Protected>
+      <OnlyCashier>
+        <ToolGate feature="cashier">
+          <ReceiptPage_Inner />
+        </ToolGate>
+      </OnlyCashier>
+    </Protected>
   );
 }

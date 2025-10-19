@@ -12,6 +12,9 @@ import { useTenantSettings } from '@/lib/settings/hooks';
 /* 🗝️ Plan features (visibilidad de tools) */
 import { useFeature } from '@/lib/plans/client';
 
+/* ✅ Tenant context (Checklist #1) */
+import { TenantProvider } from '@/lib/tenant/context';
+
 /* ===== Autenticación para fetch con idToken (igual que en otras páginas) ===== */
 function getFirebaseClientConfig() {
   return {
@@ -314,7 +317,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const { allowed: waiterAllowed }   = useFeature('waiter');
 
   return (
-    <>
+    <TenantProvider>
       <nav className="navbar navbar-expand-md navbar-light bg-white border-bottom shadow-sm">
         <div className="container">
           <Link className="navbar-brand fw-semibold" href={tenantHref('/app/admin')}>
@@ -403,6 +406,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       </nav>
 
       <main className="container py-4">{children}</main>
-    </>
+    </TenantProvider>
   );
 }
