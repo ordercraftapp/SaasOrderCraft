@@ -63,7 +63,7 @@ export default function AdminSettingsPage() {
   const writeGeneralSettings = useWriteGeneralSettings();
 
   // 🧪 DEBUG (quitar luego): confirma tenantId del contexto
-  console.debug("[page] tenantId (context):", tenantId);
+  console.log("[page] tenantId (context):", tenantId);
 
   const lang = useMemo(() => {
     try {
@@ -102,7 +102,7 @@ export default function AdminSettingsPage() {
       const u = auth.currentUser;
 
       // 🧪 DEBUG (quitar luego): usuario autenticado
-      console.debug("[page] auth user:", { uid: u?.uid, email: u?.email });
+      console.log("[page] auth user:", { uid: u?.uid, email: u?.email });
 
       if (!u) return;
       try {
@@ -143,7 +143,7 @@ export default function AdminSettingsPage() {
         const ref = doc(db, `tenants/${tenantId}/paymentProfile/default`);
 
         // 🧪 DEBUG (quitar luego): path de lectura
-        console.debug("[page] GET paymentProfile path:", ref.path, "tenantId:", tenantId);
+        console.log("[page] GET paymentProfile path:", ref.path, "tenantId:", tenantId);
 
         const snap = await getDoc(ref);
         if (cancelled) return;
@@ -182,7 +182,7 @@ export default function AdminSettingsPage() {
       const ref = doc(db, `tenants/${tenantId}/paymentProfile/default`);
 
       // 🧪 DEBUG (quitar luego): path de escritura y payload
-      console.debug("[page] SET paymentProfile path:", ref.path, "payload:", {
+      console.log("[page] SET paymentProfile path:", ref.path, "payload:", {
         tenantId,
         cash: !!payments.cash,
         card: !!payments.card,

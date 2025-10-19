@@ -15,6 +15,9 @@ import { useFeature } from '@/lib/plans/client';
 /* ✅ Tenant context (Checklist #1) */
 import { TenantProvider } from '@/lib/tenant/context';
 
+/* ✅ Settings provider (envuelve el layout) */
+import { SettingsProvider } from '@/lib/settings/context';
+
 /* ===== Autenticación para fetch con idToken (igual que en otras páginas) ===== */
 function getFirebaseClientConfig() {
   return {
@@ -318,94 +321,96 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   return (
     <TenantProvider>
-      <nav className="navbar navbar-expand-md navbar-light bg-white border-bottom shadow-sm">
-        <div className="container">
-          <Link className="navbar-brand fw-semibold" href={tenantHref('/app/admin')}>
-            {tt('admin.nav.brand', 'Admin Portal')}
-          </Link>
+      <SettingsProvider>
+        <nav className="navbar navbar-expand-md navbar-light bg-white border-bottom shadow-sm">
+          <div className="container">
+            <Link className="navbar-brand fw-semibold" href={tenantHref('/app/admin')}>
+              {tt('admin.nav.brand', 'Admin Portal')}
+            </Link>
 
-          <button
-            className="navbar-toggler"
-            type="button"
-            aria-label={tt('admin.nav.toggle', 'Toggle navigation')}
-            aria-expanded={open ? 'true' : 'false'}
-            onClick={() => setOpen((v) => !v)}
-          >
-            <span className="navbar-toggler-icon"></span>
-          </button>
+            <button
+              className="navbar-toggler"
+              type="button"
+              aria-label={tt('admin.nav.toggle', 'Toggle navigation')}
+              aria-expanded={open ? 'true' : 'false'}
+              onClick={() => setOpen((v) => !v)}
+            >
+              <span className="navbar-toggler-icon"></span>
+            </button>
 
-          <div className={`collapse navbar-collapse${open ? ' show' : ''}`}>
-            <ul className="navbar-nav me-auto mb-2 mb-md-0">
+            <div className={`collapse navbar-collapse${open ? ' show' : ''}`}>
+              <ul className="navbar-nav me-auto mb-2 mb-md-0">
 
-              {kitchenAllowed && (
-                <li className="nav-item">
-                  <Link
-                    className={`nav-link d-flex align-items-center gap-2 ${isActive('/app/admin/kitchen') ? 'active' : ''}`}
-                    href={tenantHref('/app/admin/kitchen')}
-                  >
-                    <span>{tt('admin.nav.kitchen', 'Kitchen')}</span>
-                    <span className="badge rounded-pill text-bg-primary">
-                      {loading && counts == null ? '…' : kitch}
-                    </span>
-                  </Link>
-                </li>
-              )}
+                {kitchenAllowed && (
+                  <li className="nav-item">
+                    <Link
+                      className={`nav-link d-flex align-items-center gap-2 ${isActive('/app/admin/kitchen') ? 'active' : ''}`}
+                      href={tenantHref('/app/admin/kitchen')}
+                    >
+                      <span>{tt('admin.nav.kitchen', 'Kitchen')}</span>
+                      <span className="badge rounded-pill text-bg-primary">
+                        {loading && counts == null ? '…' : kitch}
+                      </span>
+                    </Link>
+                  </li>
+                )}
 
-              {cashierAllowed && (
-                <li className="nav-item">
-                  <Link
-                    className={`nav-link d-flex align-items-center gap-2 ${isActive('/app/admin/cashier') ? 'active' : ''}`}
-                    href={tenantHref('/app/admin/cashier')}
-                  >
-                    <span>{tt('admin.nav.cashier', 'Cashier')}</span>
-                    <span className="badge rounded-pill text-bg-success">
-                      {loading && counts == null ? '…' : cashq}
-                    </span>
-                  </Link>
-                </li>
-              )}
+                {cashierAllowed && (
+                  <li className="nav-item">
+                    <Link
+                      className={`nav-link d-flex align-items-center gap-2 ${isActive('/app/admin/cashier') ? 'active' : ''}`}
+                      href={tenantHref('/app/admin/cashier')}
+                    >
+                      <span>{tt('admin.nav.cashier', 'Cashier')}</span>
+                      <span className="badge rounded-pill text-bg-success">
+                        {loading && counts == null ? '…' : cashq}
+                      </span>
+                    </Link>
+                  </li>
+                )}
 
-              {deliveryAllowed && (
-                <li className="nav-item">
-                  <Link
-                    className={`nav-link d-flex align-items-center gap-2 ${isActive('/app/admin/delivery') ? 'active' : ''}`}
-                    href={tenantHref('/app/admin/delivery')}
-                  >
-                    <span>{tt('admin.nav.delivery', 'Delivery')}</span>
-                    <span className="badge rounded-pill text-bg-warning">
-                      {loading && counts == null ? '…' : deliv}
-                    </span>
-                  </Link>
-                </li>
-              )}
+                {deliveryAllowed && (
+                  <li className="nav-item">
+                    <Link
+                      className={`nav-link d-flex align-items-center gap-2 ${isActive('/app/admin/delivery') ? 'active' : ''}`}
+                      href={tenantHref('/app/admin/delivery')}
+                    >
+                      <span>{tt('admin.nav.delivery', 'Delivery')}</span>
+                      <span className="badge rounded-pill text-bg-warning">
+                        {loading && counts == null ? '…' : deliv}
+                      </span>
+                    </Link>
+                  </li>
+                )}
 
-              {waiterAllowed && (
-                <li className="nav-item">
-                  <Link
-                    className={`nav-link d-flex align-items-center gap-2 ${isActive('/app/admin/waiter') ? 'active' : ''}`}
-                    href={tenantHref('/app/admin/waiter')}
-                  >
-                    <span>{tt('admin.nav.tables', 'Tables')}</span>
-                    <span className="badge rounded-pill text-bg-secondary">
-                      {loadingTables && activeTables == null ? '…' : (activeTables ?? 0)}
-                    </span>
-                  </Link>
-                </li>
-              )}
+                {waiterAllowed && (
+                  <li className="nav-item">
+                    <Link
+                      className={`nav-link d-flex align-items-center gap-2 ${isActive('/app/admin/waiter') ? 'active' : ''}`}
+                      href={tenantHref('/app/admin/waiter')}
+                    >
+                      <span>{tt('admin.nav.tables', 'Tables')}</span>
+                      <span className="badge rounded-pill text-bg-secondary">
+                        {loadingTables && activeTables == null ? '…' : (activeTables ?? 0)}
+                      </span>
+                    </Link>
+                  </li>
+                )}
 
-            </ul>
+              </ul>
 
-            <div className="d-flex align-items-center gap-2">
-              {/* Si tu logout es tenant-scoped, usa tenantHref('/app/logout') */}
-              <Link className="btn btn-outline-primary btn-sm" href="/logout">
-                {tt('admin.nav.logout', 'Logout')}
-              </Link>
+              <div className="d-flex align-items-center gap-2">
+                {/* Si tu logout es tenant-scoped, usa tenantHref('/app/logout') */}
+                <Link className="btn btn-outline-primary btn-sm" href="/logout">
+                  {tt('admin.nav.logout', 'Logout')}
+                </Link>
+              </div>
             </div>
           </div>
-        </div>
-      </nav>
+        </nav>
 
-      <main className="container py-4">{children}</main>
+        <main className="container py-4">{children}</main>
+      </SettingsProvider>
     </TenantProvider>
   );
 }

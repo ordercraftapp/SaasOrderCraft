@@ -32,12 +32,12 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
   const [error, setErr] = useState<string | null>(null);
 
   // 🧪 DEBUG (quitar luego): ver el tenantId que llega al provider
-  console.debug("[settings] SettingsProvider mount. tenantId:", tenantId);
+  console.log("[settings] SettingsProvider mount. tenantId:", tenantId);
 
   const load = useCallback(async () => {
     if (!tenantId) {
       // 🧪 DEBUG (quitar luego)
-      console.debug("[settings] load skipped: tenantId is null/undefined");
+      console.log("[settings] load skipped: tenantId is null/undefined");
       setSettings(null);
       setLoading(false);
       setErr(null);
@@ -49,12 +49,12 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
 
     try {
       // 🧪 DEBUG (quitar luego)
-      console.debug("[settings] loading for tenantId:", tenantId);
+      console.log("[settings] loading for tenantId:", tenantId);
 
       const s = await readGeneralSettings();
 
       // 🧪 DEBUG (quitar luego)
-      console.debug("[settings] loaded:", s);
+      console.log("[settings] loaded:", s);
 
       setSettings(s);
     } catch (e: any) {
