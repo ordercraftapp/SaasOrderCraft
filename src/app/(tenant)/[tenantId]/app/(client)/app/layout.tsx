@@ -1,87 +1,67 @@
-// src/app/(tenant)/[tenant]/app/(client)/app/layout.tsx
+// src/app/(tenant)/[tenantId]/app/cart-new/layout.tsx
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import Link from 'next/link';
-import { usePathname, useParams } from 'next/navigation';
-// 🔧 Corrige la ruta del import para el mismo segmento [tenant]
+import { usePathname } from 'next/navigation';
 import CartBadge from '@/app/(tenant)/[tenantId]/components/CartBadge';
-
-// i18n
-import { t, getLang } from '@/lib/i18n/t';
 import { useTenantSettings } from '@/lib/settings/hooks';
+import { t as translate } from '@/lib/i18n/t';
+import { useTenantId } from '@/lib/tenant/context';
+import { NewCartProvider } from '@/lib/newcart/context'; // 👈
 
-function useSafeTenantId() {
-  const p = useParams() as Record<string, string | string[] | undefined>;
-  let v =
-    (typeof p?.tenantId === 'string' ? p.tenantId : Array.isArray(p?.tenantId) ? p.tenantId[0] : undefined) ||
-    (typeof p?.tenant === 'string' ? p.tenant : Array.isArray(p?.tenant) ? p.tenant[0] : undefined) ||
-    '';
-  v = (v || '').trim();
-  if (!v && typeof window !== 'undefined') {
-    const first = (window.location.pathname || '/').split('/').filter(Boolean)[0] || '';
-    v = first.trim();
-  }
-  return v;
-}
-
-function useTenantAppBase() {
-  const tenant = useSafeTenantId();
-  return `/${tenant}/app`; // base del árbol “app”
-}
-
-export default function ClientLayout(
-  props: { children: React.ReactNode } & { serverLang?: string }
-) {
-  const { children } = props;
-  const serverLang = (props as any)?.serverLang as string | undefined;
-
+export default function ClientLayout({ children }: { children: React.ReactNode }) {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
-  const appBase = useTenantAppBase(); // 👉 "/{tenant}/app"
+  const tenantIdCtx = useTenantId();
 
-  // idioma actual desde settings / localStorage
+  const tenantFromPath = useMemo(() => {
+    const segs = (pathname || '').split('/').filter(Boolean);
+    return segs[0] || undefined;
+  }, [pathname]);
+
+  const tenantId = tenantIdCtx || tenantFromPath;
+
+  const withTenant = (p: string) => {
+    const norm = p.startsWith('/') ? p : `/${p}`;
+    if (!tenantId) return norm;
+    if (norm.startsWith(`/${tenantId}/`)) return norm;
+    return `/${tenantId}${norm}`;
+  };
+
+  const isActive = (href: string) => {
+    const full = withTenant(href);
+    return pathname?.startsWith(full);
+  };
+
   const { settings } = useTenantSettings();
-  const rawLang =
-    (settings as any)?.language ??
-    (typeof window !== 'undefined' ? localStorage.getItem('tenant.language') || undefined : undefined);
-
-  // 1) Primer render con serverLang para evitar hydration mismatch
-  const [lang, setLang] = useState<string>(serverLang ? getLang(serverLang) : getLang(rawLang));
-
-  // 2) Tras el mount, aplicar override del cliente si cambió
-  useEffect(() => {
-    const next = getLang(
-      (settings as any)?.language ??
-        (typeof window !== 'undefined' ? localStorage.getItem('tenant.language') || undefined : undefined)
-    );
-    if (next !== lang) setLang(next);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  const lang = useMemo(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        const ls = localStorage.getItem('tenant.language');
+        if (ls) return ls;
+      }
+    } catch {}
+    return (settings as any)?.language;
   }, [settings]);
-
-  const isActive = (href: string) => pathname?.startsWith(href);
-
-  // Rutas tenant-aware
-  const tenantSlug = useSafeTenantId();
-  const hrefHome = `${appBase}/app`; // ✅ home del área cliente
-  const hrefMenu = `${appBase}/app/menu`;
-  const hrefCart = `${appBase}/cart-new`;
-  const hrefOrders = `${appBase}/app/orders`;
-  const hrefTracking = `${appBase}/app/tracking`;
-  const hrefLogout = `/${tenantSlug}/logout`;
+  const tt = (key: string, fallback: string, vars?: Record<string, unknown>) => {
+    const s = translate(lang, key, vars);
+    return s === key ? fallback : s;
+  };
 
   return (
-    <>
+    // 👇 Proveedor al nivel del layout, para que NAV + página compartan **el mismo** estado
+    <NewCartProvider key={tenantId || 'no-tenant'}>
       <nav className="navbar navbar-expand-md navbar-light bg-light border-bottom">
         <div className="container">
-          <Link className="navbar-brand fw-semibold" href={hrefHome}>
-            {t(lang, 'nav.brand')}
+          <Link className="navbar-brand fw-semibold" href={withTenant('/app')}>
+            {tt('client.app.nav.brand', 'Customer Portal')}
           </Link>
 
           <button
             className="navbar-toggler"
             type="button"
-            aria-label={t(lang, 'nav.toggle')}
+            aria-label={tt('client.app.nav.toggle', 'Toggle navigation')}
             aria-expanded={open ? 'true' : 'false'}
             onClick={() => setOpen((v) => !v)}
           >
@@ -91,31 +71,31 @@ export default function ClientLayout(
           <div className={`collapse navbar-collapse${open ? ' show' : ''}`}>
             <ul className="navbar-nav me-auto mb-2 mb-md-0">
               <li className="nav-item">
-                <Link className={`nav-link ${isActive(hrefMenu) ? 'active' : ''}`} href={hrefMenu}>
-                  {t(lang, 'nav.menu')}
+                <Link className={`nav-link ${isActive('/app/menu') ? 'active' : ''}`} href={withTenant('/app/menu')}>
+                  {tt('client.app.nav.menu', 'Menu')}
                 </Link>
               </li>
               <li className="nav-item">
-                <Link className={`nav-link ${isActive(hrefCart) ? 'active' : ''}`} href={hrefCart}>
-                  {t(lang, 'nav.cart')}
+                <Link className={`nav-link ${isActive('/app/cart-new') ? 'active' : ''}`} href={withTenant('/app/cart-new')}>
+                  {tt('client.app.nav.cart', 'Cart')}
                 </Link>
               </li>
               <li className="nav-item">
-                <Link className={`nav-link ${isActive(hrefOrders) ? 'active' : ''}`} href={hrefOrders}>
-                  {t(lang, 'nav.orders')}
+                <Link className={`nav-link ${isActive('/app/app/orders') ? 'active' : ''}`} href={withTenant('/app/orders')}>
+                  {tt('client.app.nav.orders', 'Orders')}
                 </Link>
               </li>
               <li className="nav-item">
-                <Link className={`nav-link ${isActive(hrefTracking) ? 'active' : ''}`} href={hrefTracking}>
-                  {t(lang, 'nav.tracking')}
+                <Link className={`nav-link ${isActive('/app/app/tracking') ? 'active' : ''}`} href={withTenant('/app/app/tracking')}>
+                  {tt('client.app.nav.tracking', 'Tracking')}
                 </Link>
               </li>
             </ul>
 
             <div className="d-flex align-items-center gap-2">
-              <CartBadge href={hrefCart} />
-              <Link className="btn btn-outline-secondary btn-sm" href={hrefLogout}>
-                {t(lang, 'nav.logout')}
+              <CartBadge href={withTenant('/app/cart-new')} />
+              <Link className="btn btn-outline-secondary btn-sm" href={withTenant('/app/logout')}>
+                {tt('client.app.nav.logout', 'Logout')}
               </Link>
             </div>
           </div>
@@ -123,6 +103,6 @@ export default function ClientLayout(
       </nav>
 
       <main className="container py-4">{children}</main>
-    </>
+    </NewCartProvider>
   );
 }
