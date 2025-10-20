@@ -5,7 +5,10 @@ import { TenantProvider } from '@/lib/tenant/context';
 import Providers from '@/app/(tenant)/[tenantId]/app/providers';
 import { NewCartProvider } from '@/lib/newcart/context';
 
-// ⬇️ NUEVO
+// ⬇️ NUEVO: SettingsProvider (respeta currency/locale/language del tenant)
+import { SettingsProvider } from '@/lib/settings/context';
+
+// ⬇️ EXISTENTE
 import RefreshRoleBootstrap from '@/app/(tenant)/[tenantId]/components/RefreshRoleBootstrap';
 
 export default function TenantAppLayout({
@@ -19,13 +22,15 @@ export default function TenantAppLayout({
     <Providers>
       <BootstrapClient />
       <TenantProvider>
-        {/* ⬇️ NUEVO: asegura cookies de rol (appRole/isOp) para el tenant actual */}
-        <RefreshRoleBootstrap />
-        <NewCartProvider>
-          {children}
-        </NewCartProvider>
+        {/* Montamos SettingsProvider una sola vez para todo el árbol del tenant */}
+        <SettingsProvider key={params.tenantId}>
+          {/* Asegura cookies de rol (appRole/isOp) para el tenant actual */}
+          <RefreshRoleBootstrap />
+          <NewCartProvider>
+            {children}
+          </NewCartProvider>
+        </SettingsProvider>
       </TenantProvider>
     </Providers>
   );
 }
- 
