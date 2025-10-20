@@ -1251,7 +1251,52 @@ function CheckoutCoreNoStripe() {
   const enabledPaypal = corePayFlags.paypal && !pfLoading;
 
   // Efectivo (Firestore namespaced + navegación tenant)
-  const onSubmitCash = async () => {
+// Pon este helper en el archivo (arriba, donde definiste el otro helper)
+async function userHasTenantClaim(u: any, tenantId: string) {
+  const tok = await u.getIdTokenResult(true);
+  const t = (tok?.claims as any)?.tenants || {};
+  return !!t[tenantId];
+}
+
+// Reemplaza tu onSubmitCash completo por este:
+const onSubmitCash = async () => {
+  try {
+    actions.setSaving(true);
+
+    const auth = getAuth();
+    const u = auth.currentUser;
+
+    // 1) Debe estar logueado (no anónimo)
+    if (!u) {
+      alert('Inicia sesión para crear la orden.');
+      actions.setSaving(false);
+      return;
+    }
+
+    // 2) Refrescar claims en el server (tu endpoint)
+    try {
+      const idToken = await u.getIdToken(true);
+      const resp = await fetch(withTenant('/app/api/auth/refresh-role'), {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${idToken}` },
+        cache: 'no-store',
+        credentials: 'same-origin',
+      });
+      if (resp?.ok) await u.getIdToken(true);
+    } catch { /* no pasa nada */ }
+
+    // 3) Verificar claim del tenant ANTES de escribir
+    const hasClaim = await userHasTenantClaim(u, tenantId!);
+    if (!hasClaim) {
+      // Útil para diagnosticar rápidamente en tu consola
+      const tok = await u.getIdTokenResult();
+      console.warn('Sin claim del tenant', tenantId, tok?.claims);
+      alert('Tu sesión no tiene acceso a este local (tenant). Vuelve a entrar o cambia de cuenta.');
+      actions.setSaving(false);
+      return;
+    }
+
+    // 4) Construir payload y escribir
     const payload = await buildOrderPayload();
     (payload as any).payment = {
       provider: 'cash',
@@ -1260,31 +1305,31 @@ function CheckoutCoreNoStripe() {
       currency: (payload as any).totals?.currency || 'USD',
       createdAt: serverTimestamp(),
     };
-    try {
-      actions.setSaving(true);
-      // ✅ Guardar en tenants/{tenantId}/orders + incluir tenantId en el doc
-      const ref = await addDoc(tCol('orders', tenantId!), { ...payload, tenantId });
 
-      if (state.promo?.promoId) {
-        try {
-          await fetch(withTenant('/app/api/promotions/consume'), {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'x-tenant': tenantId || '' },
-            body: JSON.stringify({ promoId: state.promo.promoId, code: state.promo.code, orderId: ref.id }),
-          });
-        } catch {}
-      }
+    const ref = await addDoc(tCol('orders', tenantId!), { ...payload, tenantId });
 
-      cart.clear();
-      router.push(withTenant('/app/cart-new'));
-      alert(tt('checkout.alert.orderCreatedCash', 'Order created (cash)! ID: {id}', { id: ref.id }));
-    } catch (e) {
-      console.error(e);
-      alert(tt('checkout.alert.orderCreateError', 'The order could not be created.'));
-    } finally {
-      actions.setSaving(false);
+    // consume promo si aplica (tu código)
+    if (state.promo?.promoId) {
+      try {
+        await fetch(withTenant('/app/api/promotions/consume'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-tenant': tenantId || '' },
+          body: JSON.stringify({ promoId: state.promo.promoId, code: state.promo.code, orderId: ref.id }),
+        });
+      } catch {}
     }
-  };
+
+    helpers.cart.clear();
+    helpers.router.push(withTenant('/app/cart-new'));
+    alert('Order created (cash) ✓');
+  } catch (e: any) {
+    console.error(e);
+    alert('No se pudo crear la orden: ' + (e?.message || 'permiso denegado'));
+  } finally {
+    actions.setSaving(false);
+  }
+};
+
 
   // PayPal: carga SDK sólo si está habilitado
   const [paypalReady, setPaypalReady] = useState(false);
