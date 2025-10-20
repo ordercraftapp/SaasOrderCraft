@@ -16,41 +16,27 @@ import { t as translate } from '@/lib/i18n/t';
 // Phase C: tenant en cliente
 import { useTenantId } from '@/lib/tenant/context';
 
-function lineStableKey(ln: NewCartItem, fallbackIndex: number) {
-  // Firmas estables usando campos que sí existen en tu modelo
-  const groups = (ln.optionGroups ?? [])
+// 🔑 clave estable por línea (evita reciclos de React al eliminar/vaciar)
+function lineStableKey(ln: NewCartItem, idx: number) {
+  const groupsSig = (ln.optionGroups ?? [])
     .map((g, gi) => {
-      const itemsSig = (g.items ?? [])
-        .map((it, ii) => {
-          // it.id puede no existir -> usar it.name o el índice
-          const itId = (it as any).id ?? it.name ?? ii;
-          const delta = (it as any).priceDelta ?? 0;
-          return `${itId}:${delta}`;
-        })
-        .join(',');
-      // g.groupId existe en tu UI; si no, usa índice
       const gid = (g as any).groupId ?? gi;
+      const itemsSig = (g.items ?? [])
+        .map((it, ii) => `${(it as any).id ?? it.name ?? ii}:${(it as any).priceDelta ?? 0}`)
+        .join(',');
       return `${gid}[${itemsSig}]`;
     })
     .join('|');
 
-  const addons = (ln.addons ?? [])
-    .map((a, ai) => {
-      // a.id puede no existir -> usar a.name o índice
-      const aId = (a as any).id ?? a.name ?? ai;
-      const price = (a as any).price ?? 0;
-      return `${aId}:${price}`;
-    })
+  const addonsSig = (ln.addons ?? [])
+    .map((a, ai) => `${(a as any).id ?? a.name ?? ai}:${(a as any).price ?? 0}`)
     .join('|');
 
-  // menuItemId existe; si no, usa name o un literal
   const itemId = (ln as any).menuItemId ?? ln.menuItemName ?? 'item';
   const qty = ln.quantity ?? 1;
 
-  // No usamos ln.uid porque no está en tu tipo
-  return `${itemId}__q${qty}__g[${groups}]__a[${addons}]__i${fallbackIndex}`;
+  return `${itemId}__q${qty}__g[${groupsSig}]__a[${addonsSig}]__i${idx}`;
 }
-
 
 export default function CartViewNew() {
   const cart = useNewCart();
@@ -80,12 +66,12 @@ export default function CartViewNew() {
   const tt = (key: string, fallback: string, vars?: Record<string, unknown>) => {
     const s = translate(lang, key, vars);
     return s === key ? fallback : s;
-    // si quieres forzar siempre fallback en ausencia de traducción, queda así
   };
 
   const lines: NewCartItem[] = cart.items;
-  // ✅ recalcula solo cuando cambia el arreglo de líneas (evita depender del objeto cart)
-  const grand = useMemo(() => cart.computeGrandTotal(), [lines]);
+
+  // ✅ depende sólo de la lista (evita caché colgante si cambia identidad de `cart`)
+  const grand = useMemo(() => cart.computeGrandTotal(), [cart.items]);
 
   const handleGoToCheckout = () => {
     if (!lines.length) return;
@@ -117,10 +103,8 @@ export default function CartViewNew() {
         <div className="d-flex flex-column gap-3">
           {lines.map((ln, idx) => {
             const qty = ln.quantity ?? 1;
-            const addons = ln.addons ?? [];
-            const groups = ln.optionGroups ?? [];
-            const unitExtras =
-              cart.computeLineTotal({ ...ln, quantity: 1 }) - (ln.basePrice ?? 0);
+            const base = ln.basePrice ?? 0;
+            const unitExtras = cart.computeLineTotal({ ...ln, quantity: 1 }) - base;
             const lineSum = cart.computeLineTotal(ln);
             const key = lineStableKey(ln, idx);
 
@@ -132,19 +116,16 @@ export default function CartViewNew() {
                       {ln.menuItemName} <span className="text-muted">× {qty}</span>
                     </div>
                     <div className="text-muted small">
-                      {tt('cart.base', 'Base')}: {fmtQ(ln.basePrice)}{' '}
+                      {tt('cart.base', 'Base')}: {fmtQ(base)}{' '}
                       {unitExtras > 0
-                        ? `· ${tt('cart.extras', 'Extras')}: ${fmtQ(unitExtras)}/${tt(
-                            'cart.perUnitShort',
-                            'ea'
-                          )}`
+                        ? `· ${tt('cart.extras', 'Extras')}: ${fmtQ(unitExtras)}/${tt('cart.perUnitShort', 'ea')}`
                         : ''}
                     </div>
                   </div>
                   <div className="text-end">
                     <div className="fw-semibold">{fmtQ(lineSum)}</div>
                     <div className="text-muted small">
-                      ({fmtQ((ln.basePrice ?? 0) + unitExtras)} {tt('cart.perUnitShort', 'ea')})
+                      ({fmtQ(base + unitExtras)} {tt('cart.perUnitShort', 'ea')})
                     </div>
                   </div>
                 </div>
@@ -172,11 +153,12 @@ export default function CartViewNew() {
                   </button>
                 </div>
 
-                {(addons.length > 0 || groups.some(g => (g.items ?? []).length > 0)) && (
+                {(((ln.addons ?? []).length > 0) ||
+                  (ln.optionGroups ?? []).some(g => (g.items ?? []).length > 0)) && (
                   <div className="mt-3">
-                    {addons.length > 0 && (
+                    {(ln.addons ?? []).length > 0 && (
                       <div className="mb-1">
-                        {addons.map((ad, i) => (
+                        {(ln.addons ?? []).map((ad, i) => (
                           <div className="d-flex justify-content-between small" key={`ad-${key}-${i}`}>
                             <div>— ({tt('cart.addons', 'Add-ons')}) {ad.name}</div>
                             <div>{fmtQ(ad.price)}</div>
@@ -185,11 +167,14 @@ export default function CartViewNew() {
                       </div>
                     )}
 
-                    {groups.map(g =>
+                    {(ln.optionGroups ?? []).map(g =>
                       (g.items ?? []).length > 0 ? (
-                        <div className="mb-1" key={`g-${key}-${g.groupId}`}>
+                        <div className="mb-1" key={`g-${key}-${g.groupId ?? 'g'}`}>
                           {(g.items ?? []).map(it => (
-                            <div className="d-flex justify-content-between small" key={`gi-${key}-${g.groupId}-${it.id}`}>
+                            <div
+                              className="d-flex justify-content-between small"
+                              key={`gi-${key}-${g.groupId ?? 'g'}-${(it as any).id ?? it.name ?? 'i'}`}
+                            >
                               <div>— ({tt('cart.groupItems', 'Group items')}) {it.name}</div>
                               <div>{fmtQ(it.priceDelta)}</div>
                             </div>

@@ -5,20 +5,16 @@ import React, { useState, useMemo } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import CartBadge from '@/app/(tenant)/[tenantId]/components/CartBadge';
-
-// 🔤 i18n
 import { useTenantSettings } from '@/lib/settings/hooks';
 import { t as translate } from '@/lib/i18n/t';
-
-// Phase C: tenant en cliente
 import { useTenantId } from '@/lib/tenant/context';
+import { NewCartProvider } from '@/lib/newcart/context'; // 👈
 
 export default function ClientLayout({ children }: { children: React.ReactNode }) {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
   const tenantIdCtx = useTenantId();
 
-  // fallback de tenant desde la URL si el contexto aún no está listo
   const tenantFromPath = useMemo(() => {
     const segs = (pathname || '').split('/').filter(Boolean);
     return segs[0] || undefined;
@@ -38,7 +34,6 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
     return pathname?.startsWith(full);
   };
 
-  // idioma actual + helper (LS -> settings.language)
   const { settings } = useTenantSettings();
   const lang = useMemo(() => {
     try {
@@ -55,7 +50,8 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
   };
 
   return (
-    <>
+    // 👇 Proveedor al nivel del layout, para que NAV + página compartan **el mismo** estado
+    <NewCartProvider key={tenantId || 'no-tenant'}>
       <nav className="navbar navbar-expand-md navbar-light bg-light border-bottom">
         <div className="container">
           <Link className="navbar-brand fw-semibold" href={withTenant('/app')}>
@@ -75,34 +71,22 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
           <div className={`collapse navbar-collapse${open ? ' show' : ''}`}>
             <ul className="navbar-nav me-auto mb-2 mb-md-0">
               <li className="nav-item">
-                <Link
-                  className={`nav-link ${isActive('/app/menu') ? 'active' : ''}`}
-                  href={withTenant('/app/menu')}
-                >
+                <Link className={`nav-link ${isActive('/app/menu') ? 'active' : ''}`} href={withTenant('/app/menu')}>
                   {tt('client.app.nav.menu', 'Menu')}
                 </Link>
               </li>
               <li className="nav-item">
-                <Link
-                  className={`nav-link ${isActive('/app/cart-new') ? 'active' : ''}`}
-                  href={withTenant('/app/cart-new')}
-                >
+                <Link className={`nav-link ${isActive('/app/cart-new') ? 'active' : ''}`} href={withTenant('/app/cart-new')}>
                   {tt('client.app.nav.cart', 'Cart')}
                 </Link>
               </li>
               <li className="nav-item">
-                <Link
-                  className={`nav-link ${isActive('/app/app/orders') ? 'active' : ''}`}
-                  href={withTenant('/app/orders')}
-                >
+                <Link className={`nav-link ${isActive('/app/app/orders') ? 'active' : ''}`} href={withTenant('/app/orders')}>
                   {tt('client.app.nav.orders', 'Orders')}
                 </Link>
               </li>
               <li className="nav-item">
-                <Link
-                  className={`nav-link ${isActive('/app/app/tracking') ? 'active' : ''}`}
-                  href={withTenant('/app/app/tracking')}
-                >
+                <Link className={`nav-link ${isActive('/app/app/tracking') ? 'active' : ''}`} href={withTenant('/app/app/tracking')}>
                   {tt('client.app.nav.tracking', 'Tracking')}
                 </Link>
               </li>
@@ -119,6 +103,6 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
       </nav>
 
       <main className="container py-4">{children}</main>
-    </>
+    </NewCartProvider>
   );
 }
