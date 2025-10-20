@@ -53,20 +53,31 @@ type AppliedPromo = {
 --------------------------------------------- */
 function useLangTT() {
   const { settings } = useTenantSettings();
-  const lang = React.useMemo(() => {
+  const [lang, setLang] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    let l = (settings as any)?.language || 'en';
     try {
-      if (typeof window !== 'undefined') {
-        const ls = localStorage.getItem('tenant.language');
-        if (ls) return ls;
-      }
+      const ls = localStorage.getItem('tenant.language');
+      if (ls) l = ls;
     } catch {}
-    return (settings as any)?.language;
+    setLang(l);
   }, [settings]);
-  const tt = (key: string, fallback: string, vars?: Record<string, unknown>) => {
-    const s = translate(lang, key, vars);
-    return s === key ? fallback : s;
-  };
-  return { lang, tt } as const;
+
+  const tt = React.useCallback(
+    (key: string, fallback: string, vars?: Record<string, unknown>) =>
+      translate(lang || 'en', key, vars) ?? fallback,
+    [lang]
+  );
+
+  return { lang, tt, ready: lang != null } as const;
+}
+
+// --- helper: verifica claim por-tenant antes de leer Firestore
+async function userHasTenantClaim(u: any, tenantId: string) {
+  const tok = await u.getIdTokenResult(true);
+  const t = (tok?.claims as any)?.tenants || {};
+  return !!t[tenantId];
 }
 
 /* --------------------------------------------
@@ -80,7 +91,6 @@ function usePaymentProfile() {
 
   useEffect(() => {
     if (!tenantId) return;
-
     let cancelled = false;
 
     (async () => {
@@ -93,26 +103,30 @@ function usePaymentProfile() {
           return;
         }
 
-        // 1) token fresco
-        let idToken = await u.getIdToken(/*forceRefresh*/ true);
+        // 1) refrescar token
+        const idToken = await u.getIdToken(true);
 
-        // 2) refresca rol/claims por tenant
-        const resp = await fetch(`/${tenantId}/app/api/auth/refresh-role`, {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${idToken}` },
-          cache: 'no-store',
-          credentials: 'same-origin',
-        }).catch(() => null);
-
-        if (resp && resp.ok) {
-          const data = await resp.json().catch(() => ({} as any));
-          if (data?.claimsUpdated) {
-            // si el server tocó customClaims, fuerza refresh local
+        // 2) pedir refresco de claims por tenant (opcional; tu endpoint)
+        try {
+          const resp = await fetch(`/${tenantId}/app/api/auth/refresh-role`, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${idToken}` },
+            cache: 'no-store',
+            credentials: 'same-origin',
+          });
+          if (resp?.ok) {
+            // fuerza recarga local de claims
             await u.getIdToken(true);
           }
+        } catch {}
+
+        // 3) si aún no hay claim del tenant, NO intentes leer (evita permission-denied)
+        if (!(await userHasTenantClaim(u, tenantId))) {
+          if (!cancelled) { setFlags({ cash: true, paypal: false }); setLoading(false); }
+          return;
         }
 
-        // 3) leer paymentProfile con claims correctos
+        // 4) ahora sí, leer paymentProfile
         const db = getFirestore();
         const ref = doc(tCol('paymentProfile', tenantId), 'default');
         const snap = await getDoc(ref);
@@ -121,12 +135,12 @@ function usePaymentProfile() {
 
         if (snap.exists()) {
           const data: any = snap.data() || {};
-          const src = (data && typeof data === 'object') ? (data.payments || data) : {};
+          const src = (data?.payments ?? data) || {};
           setFlags({ cash: !!src.cash, paypal: !!src.paypal });
         } else {
           setFlags({ cash: true, paypal: false });
         }
-      } catch (e) {        
+      } catch (e) {
         console.warn('paymentProfile read failed:', e);
         if (!cancelled) setFlags({ cash: true, paypal: false });
       } finally {
@@ -798,6 +812,10 @@ function CheckoutUI(props: {
   paypalActiveHint?: string,
   cart: ReturnType<typeof useCheckoutState>['helpers']['cart'],
 }) {
+  // ⬇️ Gate de i18n para evitar hidratación inconsistente
+  const { tt, ready } = useLangTT();
+  if (!ready) return <div className="container py-4">Loading…</div>;
+
   const { state, actions, onSubmitCash, paypalActiveHint, cart } = props;
   const {
     mode, table, notes, address, phone, customerName,
@@ -813,7 +831,6 @@ function CheckoutUI(props: {
     onChangeAddressLabel, setPromoCode, applyPromo, clearPromo,
   } = actions;
 
-  const { tt } = useLangTT();
   const fmtQ = useFmtQ();
 
   const { flags: paymentsFlags, loading: paymentsLoading } = usePaymentProfile();
@@ -1393,7 +1410,10 @@ function CheckoutCoreNoStripe() {
 
 /** ------- Export por defecto ------- */
 export default function CheckoutCardsPage() {
-  const { tt } = useLangTT();
+  const { tt, ready } = useLangTT();
+if (!ready) return <div className="container py-4">Loading…</div>;
+
+  
   return (
     <Suspense fallback={<div className="container py-4">{tt('common.loading', 'Loading…')}</div>}>
       <CheckoutCoreNoStripe />
