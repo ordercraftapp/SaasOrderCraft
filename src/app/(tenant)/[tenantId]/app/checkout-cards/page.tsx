@@ -812,10 +812,6 @@ function CheckoutUI(props: {
   paypalActiveHint?: string,
   cart: ReturnType<typeof useCheckoutState>['helpers']['cart'],
 }) {
-  // ⬇️ Gate de i18n para evitar hidratación inconsistente
-  const { tt, ready } = useLangTT();
-  if (!ready) return <div className="container py-4">Loading…</div>;
-
   const { state, actions, onSubmitCash, paypalActiveHint, cart } = props;
   const {
     mode, table, notes, address, phone, customerName,
@@ -825,14 +821,16 @@ function CheckoutUI(props: {
     taxUI,
     availableTables, tablesLoading,
   } = state;
+
   const {
     setMode, setTable, setNotes, setAddress, setPhone, setAddressLabel,
     setSelectedDeliveryOptionId, setTip, setTipEdited, setSaving, setPayMethod,
     onChangeAddressLabel, setPromoCode, applyPromo, clearPromo,
   } = actions;
 
+  // ⚠️ Ejecuta TODOS los hooks antes de cualquier return condicional
+  const { tt, ready } = useLangTT();
   const fmtQ = useFmtQ();
-
   const { flags: paymentsFlags, loading: paymentsLoading } = usePaymentProfile();
 
   useEffect(() => {
@@ -845,6 +843,9 @@ function CheckoutUI(props: {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [paymentsFlags.cash, paymentsFlags.paypal, paymentsLoading]);
+
+  // ⛔️ Recién aquí hacemos el gate de render para evitar error #310
+  if (!ready) return <div className="container py-4">Loading…</div>;
 
   const submitMethodDisabled =
     (payMethod === 'paypal' && !paymentsFlags.paypal) ||
