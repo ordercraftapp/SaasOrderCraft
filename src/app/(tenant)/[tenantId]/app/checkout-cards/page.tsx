@@ -80,6 +80,11 @@ async function userHasTenantClaim(u: any, tenantId: string) {
   return !!t[tenantId];
 }
 
+async function getClaims(u: any) {
+  const tok = await u.getIdTokenResult(true);
+  return tok?.claims || {};
+}
+
 /* --------------------------------------------
    🔧 /paymentProfile/default (por tenant)
    >>> CAMBIADO: ahora refresca claims con refresh-role antes de leer el doc
@@ -1266,14 +1271,14 @@ const onSubmitCash = async () => {
     const auth = getAuth();
     const u = auth.currentUser;
 
-    // 1) Debe estar logueado (no anónimo)
+    // (A) Debe existir sesión
     if (!u) {
       alert('Inicia sesión para crear la orden.');
       actions.setSaving(false);
       return;
     }
 
-    // 2) Refrescar claims en el server (tu endpoint)
+    // (B) Refrescar claims en tu backend (si aplica)
     try {
       const idToken = await u.getIdToken(true);
       const resp = await fetch(withTenant('/app/api/auth/refresh-role'), {
@@ -1283,20 +1288,9 @@ const onSubmitCash = async () => {
         credentials: 'same-origin',
       });
       if (resp?.ok) await u.getIdToken(true);
-    } catch { /* no pasa nada */ }
+    } catch {}
 
-    // 3) Verificar claim del tenant ANTES de escribir
-    const hasClaim = await userHasTenantClaim(u, tenantId!);
-    if (!hasClaim) {
-      // Útil para diagnosticar rápidamente en tu consola
-      const tok = await u.getIdTokenResult();
-      console.warn('Sin claim del tenant', tenantId, tok?.claims);
-      alert('Tu sesión no tiene acceso a este local (tenant). Vuelve a entrar o cambia de cuenta.');
-      actions.setSaving(false);
-      return;
-    }
-
-    // 4) Construir payload y escribir
+    // (C) Construir payload igual que antes
     const payload = await buildOrderPayload();
     (payload as any).payment = {
       provider: 'cash',
@@ -1306,9 +1300,60 @@ const onSubmitCash = async () => {
       createdAt: serverTimestamp(),
     };
 
+    // (D) Tomar claims y hacer PRE-FLIGHT de las mismas condiciones que tus reglas
+    const claims: any = await getClaims(u);
+    const simpleTenantClaim = claims?.tenantId === tenantId; // tu regla lo acepta
+    const mapTenantClaim = !!(claims?.tenants && claims?.tenants[tenantId!]); // tu regla también lo acepta
+
+    const preflight = {
+      tenantIdPropInPayload: (payload as any)?.tenantId === tenantId, // enforceTenantIdOnCreate
+      createdByUidMatches: (payload as any)?.createdBy?.uid === u.uid, // createdBy.uid == auth.uid
+      statusPlaced: (payload as any)?.status === 'placed',
+      orderTypeAllowed: ['dine-in', 'delivery', 'pickup'].includes((payload as any)?.orderInfo?.type),
+      // inTenant(tenantId) - cualquiera de los dos es válido según tus reglas
+      inTenant_simple: simpleTenantClaim,
+      inTenant_map: mapTenantClaim,
+      // diagnóstico extra
+      tenantIdResolved: tenantId,
+      authUid: u.uid,
+      email: u.email || null,
+      claimsPreview: {
+        tenantId: claims?.tenantId ?? null,
+        tenantsKeys: claims?.tenants ? Object.keys(claims.tenants) : [],
+        rolesAtTenant: claims?.tenants?.[tenantId!]?.roles || null,
+      },
+    };
+
+    // Si algo crítico está mal, no intentes escribir y muestra diagnóstico claro
+    if (!tenantId) {
+      alert('Sin tenantId en el cliente. No se puede crear la orden.');
+      console.warn('PRE-FLIGHT', preflight);
+      actions.setSaving(false);
+      return;
+    }
+    if (!preflight.inTenant_simple && !preflight.inTenant_map) {
+      alert('Tu sesión no tiene claim para este tenant. (Mira la consola para más detalle)');
+      console.warn('PRE-FLIGHT (sin inTenant)', preflight);
+      actions.setSaving(false);
+      return;
+    }
+    if (!preflight.tenantIdPropInPayload) {
+      alert('El payload no incluye tenantId correcto.');
+      console.warn('PRE-FLIGHT (tenantId mismatch)', preflight);
+      actions.setSaving(false);
+      return;
+    }
+    if (!preflight.createdByUidMatches || !preflight.statusPlaced || !preflight.orderTypeAllowed) {
+      alert('El payload no cumple las condiciones de reglas (revisa consola).');
+      console.warn('PRE-FLIGHT (payload mismatch reglas)', preflight, payload);
+      actions.setSaving(false);
+      return;
+    }
+
+    // (E) Si pasa el preflight, ahora sí escribe
     const ref = await addDoc(tCol('orders', tenantId!), { ...payload, tenantId });
 
-    // consume promo si aplica (tu código)
+    // (F) consumir promo como ya tenías
     if (state.promo?.promoId) {
       try {
         await fetch(withTenant('/app/api/promotions/consume'), {
