@@ -127,6 +127,7 @@ function usePaymentProfile() {
           setFlags({ cash: true, paypal: false });
         }
       } catch (e) {
+        console.warn('[deliveryOptions:first] error, trying fallback', e);
         console.warn('paymentProfile read failed:', e);
         if (!cancelled) setFlags({ cash: true, paypal: false });
       } finally {
@@ -338,71 +339,94 @@ function useCheckoutState() {
   }, [tenantId]);
 
   // Opciones de delivery (Firestore namespaced)
-  useEffect(() => {
-    if (!tenantId) return;
-    let cancelled = false;
-    const load = async () => {
-      if (mode !== 'delivery') {
-        setDeliveryOptions([]);
-        setSelectedDeliveryOptionId('');
-        return;
+ // Opciones de delivery (Firestore namespaced)
+useEffect(() => {
+  if (!tenantId) return;
+  let cancelled = false;
+
+  const load = async () => {
+    console.log('[deliveryOptions] init', { tenantId, mode, when: new Date().toISOString() });
+
+    if (mode !== 'delivery') {
+      console.log('[deliveryOptions] mode != delivery -> limpiar opciones');
+      setDeliveryOptions([]);
+      setSelectedDeliveryOptionId('');
+      return;
+    }
+
+    try {
+      const qRef = query(
+        tCol('deliveryOptions', tenantId),
+        where('isActive', '==', true),
+        orderBy('sortOrder', 'asc')
+      );
+      const snap = await getDocs(qRef);
+      if (cancelled) return;
+
+      console.log('[deliveryOptions:first] tenantId=', tenantId, 'size=', snap.size);
+
+      const arr = snap.docs.map((d) => {
+        const raw = d.data() as any;
+        return {
+          id: d.id,
+          title: String(raw.title ?? ''),
+          description: raw.description ? String(raw.description) : undefined,
+          price: Number(raw.price ?? 0),
+          isActive: Boolean(raw.isActive ?? true),
+          sortOrder: Number.isFinite(raw.sortOrder) ? Number(raw.sortOrder) : undefined,
+        } as DeliveryOption;
+      });
+
+      setDeliveryOptions(arr);
+      if (!selectedDeliveryOptionId && arr.length > 0) {
+        setSelectedDeliveryOptionId(arr[0].id);
+        console.log('[deliveryOptions:first] preselect', arr[0].id);
       }
+    } catch (e) {
+      // ⬇️ AQUÍ va el primer catch que preguntas
+      console.warn('[deliveryOptions:first] error, trying fallback', e);
+
       try {
         const qRef = query(
           tCol('deliveryOptions', tenantId),
-          where('isActive', '==', true),
-          orderBy('sortOrder', 'asc')
+          where('isActive', '==', true)
         );
         const snap = await getDocs(qRef);
         if (cancelled) return;
-        const arr = snap.docs.map((d) => {
-          const raw = d.data() as any;
-          return {
-            id: d.id,
-            title: String(raw.title ?? ''),
-            description: raw.description ? String(raw.description) : undefined,
-            price: Number(raw.price ?? 0),
-            isActive: Boolean(raw.isActive ?? true),
-            sortOrder: Number.isFinite(raw.sortOrder) ? Number(raw.sortOrder) : undefined,
-          } as DeliveryOption;
-        });
+
+        console.log('[deliveryOptions:fallback] tenantId=', tenantId, 'size=', snap.size);
+
+        const arr = snap.docs
+          .map((d) => {
+            const raw = d.data() as any;
+            return {
+              id: d.id,
+              title: String(raw.title ?? ''),
+              description: raw.description ? String(raw.description) : undefined,
+              price: Number(raw.price ?? 0),
+              isActive: Boolean(raw.isActive ?? true),
+              sortOrder: Number.isFinite(raw.sortOrder) ? Number(raw.sortOrder) : undefined,
+            } as DeliveryOption;
+          })
+          .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+
         setDeliveryOptions(arr);
         if (!selectedDeliveryOptionId && arr.length > 0) {
           setSelectedDeliveryOptionId(arr[0].id);
+          console.log('[deliveryOptions:fallback] preselect', arr[0].id);
         }
-      } catch {
-        try {
-          const qRef = query(
-            tCol('deliveryOptions', tenantId),
-            where('isActive', '==', true)
-          );
-          const snap = await getDocs(qRef);
-          if (cancelled) return;
-          const arr = snap.docs
-            .map((d) => {
-              const raw = d.data() as any;
-              return {
-                id: d.id,
-                title: String(raw.title ?? ''),
-                description: raw.description ? String(raw.description) : undefined,
-                price: Number(raw.price ?? 0),
-                isActive: Boolean(raw.isActive ?? true),
-                sortOrder: Number.isFinite(raw.sortOrder) ? Number(raw.sortOrder) : undefined,
-              } as DeliveryOption;
-            })
-            .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
-          setDeliveryOptions(arr);
-          if (!selectedDeliveryOptionId && arr.length > 0) {
-            setSelectedDeliveryOptionId(arr[0].id);
-          }
-        } catch {
-          setDeliveryOptions([]);
-        }
+      } catch (e2) {
+        // ⬇️ AQUÍ va el segundo catch que preguntas
+        console.error('[deliveryOptions:fallback] error', e2);
+        setDeliveryOptions([]);
       }
-    };
-    load();
-    return () => { cancelled = true; };
-  }, [mode, tenantId, selectedDeliveryOptionId]);
+    }
+  };
+
+  load();
+  return () => { cancelled = true; };
+}, [mode, tenantId, selectedDeliveryOptionId]);
+
 
   // Tip sugerido
   useEffect(() => {
