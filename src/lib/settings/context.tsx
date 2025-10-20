@@ -1,4 +1,4 @@
-// src/lib/settings/context.tsx
+// src/lib/settings/context.tsx //
 "use client";
 
 import React, { createContext, useCallback, useEffect, useMemo, useState } from "react";
