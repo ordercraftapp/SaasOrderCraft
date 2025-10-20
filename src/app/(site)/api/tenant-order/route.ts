@@ -158,6 +158,34 @@ export async function POST(req: NextRequest) {
           .get();
 
         if (!q.empty) {
+          // ----- Bootstrap defensivo en idempotencia -----
+          try {
+            const now = Timestamp.now();
+            await Promise.all([
+              adminDb.doc(`tenants/${desired}/paymentProfile/default`).set(
+                {
+                  tenantId: desired,
+                  cash: true,
+                  card: false,
+                  paypal: false,
+                  createdAt: now,
+                },
+                { merge: true },
+              ),
+              adminDb.doc(`tenants/${desired}/settings/general`).set(
+                {
+                  createdAt: now,
+                  currency: 'USD',
+                  currencyLocale: 'en-US',
+                  language: 'en',
+                },
+                { merge: true },
+              ),
+            ]);
+          } catch (e) {
+            console.error('[tenant-order:idempotent] bootstrap docs failed:', e);
+          }
+
           const doc = q.docs[0];
           const res = json({ tenantId: desired, orderId: doc.id }, 200);
           res.cookies.set('tenantId', desired, { path: '/', httpOnly: false });
@@ -280,6 +308,30 @@ export async function POST(req: NextRequest) {
         createdAt: now,
         updatedAt: now,
       });
+
+      // ------- Bootstrap: paymentProfile/default y settings/general (transaccional) -------
+      trx.set(
+        adminDb.doc(`tenants/${desired}/paymentProfile/default`),
+        {
+          tenantId: desired,
+          cash: true,
+          card: false,    // tarjeta desactivada por defecto
+          paypal: false,  // PayPal desactivado por defecto
+          createdAt: now,
+        },
+        { merge: true },
+      );
+
+      trx.set(
+        adminDb.doc(`tenants/${desired}/settings/general`),
+        {
+          createdAt: now,
+          currency: 'USD',
+          currencyLocale: 'en-US',
+          language: 'en',
+        },
+        { merge: true },
+      );
 
       return { tenantId: desired, orderId: orderRef.id, ownerUid };
     });
