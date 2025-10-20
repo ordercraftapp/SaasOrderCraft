@@ -31,7 +31,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
 
   // ✅ AHORA: memoiza el IO por tenantId
   const io = useMemo(() => {
-    console.log("[settings] makeSettingsIO tenantId:", tenantId); // 🧪 DEBUG
+    //console.log("[settings] makeSettingsIO tenantId:", tenantId); // 🧪 DEBUG
     return makeSettingsIO(tenantId);
   }, [tenantId]);
 
@@ -41,7 +41,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
 
   const load = useCallback(async () => {
     if (!tenantId) {
-      console.log("[settings] load skipped: tenantId is null/undefined"); // 🧪 DEBUG
+      //console.log("[settings] load skipped: tenantId is null/undefined"); // 🧪 DEBUG
       setSettings(null);
       setLoading(false);
       setErr(null);
@@ -52,9 +52,9 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     setErr(null);
 
     try {
-      console.log("[settings] loading for tenantId:", tenantId); // 🧪 DEBUG
+      //console.log("[settings] loading for tenantId:", tenantId); // 🧪 DEBUG
       const s = await io.readGeneralSettings(); // ✅ usa el IO memoizado
-      console.log("[settings] loaded:", s); // 🧪 DEBUG
+      //console.log("[settings] loaded:", s); // 🧪 DEBUG
       setSettings(s);
     } catch (e: any) {
       console.error("[settings] load error:", e); // 🧪 DEBUG
