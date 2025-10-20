@@ -39,9 +39,6 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [error, setErr] = useState<string | null>(null);
 
-  // 🧪 DEBUG
-  console.log("[settings] SettingsProvider mount. tenantId:", tenantId);
-
   const load = useCallback(async () => {
     if (!tenantId) {
       console.log("[settings] load skipped: tenantId is null/undefined"); // 🧪 DEBUG

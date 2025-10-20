@@ -62,9 +62,6 @@ export default function AdminSettingsPage() {
   const { settings, loading, error, fmtCurrency, reload } = useTenantSettings();
   const writeGeneralSettings = useWriteGeneralSettings();
 
-  // 🧪 DEBUG (quitar luego): confirma tenantId del contexto
-  console.log("[page] tenantId (context):", tenantId);
-
   const lang = useMemo(() => {
     try {
       if (typeof window !== "undefined") {
@@ -100,9 +97,6 @@ export default function AdminSettingsPage() {
       if (!tenantId) return;
       const auth = getAuth();
       const u = auth.currentUser;
-
-      // 🧪 DEBUG (quitar luego): usuario autenticado
-      console.log("[page] auth user:", { uid: u?.uid, email: u?.email });
 
       if (!u) return;
       try {
@@ -142,9 +136,6 @@ export default function AdminSettingsPage() {
       try {
         const ref = doc(db, `tenants/${tenantId}/paymentProfile/default`);
 
-        // 🧪 DEBUG (quitar luego): path de lectura
-        console.log("[page] GET paymentProfile path:", ref.path, "tenantId:", tenantId);
-
         const snap = await getDoc(ref);
         if (cancelled) return;
         if (snap.exists()) {
@@ -180,14 +171,6 @@ export default function AdminSettingsPage() {
     setPaymentsSaved(null);
     try {
       const ref = doc(db, `tenants/${tenantId}/paymentProfile/default`);
-
-      // 🧪 DEBUG (quitar luego): path de escritura y payload
-      console.log("[page] SET paymentProfile path:", ref.path, "payload:", {
-        tenantId,
-        cash: !!payments.cash,
-        card: !!payments.card,
-        paypal: !!payments.paypal,
-      });
 
       await setDoc(
         ref,
