@@ -553,17 +553,6 @@ function OrderCard({
   const isBusy = (to: StatusSnake) => busyKey === `${o.id}:${to}`;
   const nexts = nextActionsKitchen(o, canAct);
 
-  // 🔎 Diagnóstico por tarjeta                                             quitarrrrrr
-  useEffect(() => {
-    // Solo loguea cuando cambia el status o canAct
-    console.log('[kitchen] card.actions', {
-      orderId: o.id,
-      status: o.status,
-      canAct,
-      nexts: nexts.map(n => n.to),
-    });
-  }, [o.id, o.status, canAct, nexts.length]);  //////hast aqui
-
   const typeVal = getDisplayType(o);
   const tableVal = getDisplayTable(o);
   const notesVal = getDisplayNotes(o);
@@ -731,17 +720,8 @@ function KitchenBoardPage_Inner() {
   // ✅ canAct contempla kitchen, admin global (providers) o admin por-tenant (claims token)
   const canAct = (isKitchen || isAdmin || !!tenantFlags.admin);
 
-  // 🔎 Logs de diagnóstico (quitar cuando todo OK)
-  useEffect(() => {
-    if (!tenantId) return;
-    console.log('[kitchen] auth flags', { isKitchen, isAdmin, canAct, tenantId });
-    console.log('[kitchen] claimsLocal tenant node', {
-      tenantId,
-      raw: claimsLocal?.tenants?.[tenantId] ?? null,
-      flags: tenantFlags,
-    });
-  }, [isKitchen, isAdmin, canAct, tenantId, claimsLocal, tenantFlags]);
 
+  
   const [soundOn, setSoundOn] = useState(true);
   const beep = useBeep(soundOn);
   const onOrdersChange = async (prev: Map<string, string>, next: Map<string, string>) => {
