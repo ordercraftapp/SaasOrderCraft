@@ -1,4 +1,3 @@
-// src/app/(tenant)/[tenantId]/app/admin/roles/page.tsx
 'use client';
 
 import React from 'react';
@@ -59,7 +58,7 @@ function useAuthClaims() {
         if (!alive) return;
         setUser(u ?? null);
         if (u) {
-          // ⬅️ CAMBIO 1: forzar refresh para traer claims actualizados
+          // ⬅️ Forzar refresh para traer claims actualizados
           const res = await getIdTokenResult(u, true);
           setClaims(res.claims || null);
         } else {
@@ -69,7 +68,9 @@ function useAuthClaims() {
       });
       return () => unsub();
     })();
-    return () => { alive = false; };
+    return () => {
+      alive = false;
+    };
   }, []);
   return { authReady, user, claims } as const;
 }
@@ -106,9 +107,20 @@ function RolesPage_Inner() {
   const isTenantAdmin = React.useMemo(() => {
     if (!tenantId) return false;
     const t = claims?.tenants?.[tenantId];
-    // ⬅️ CAMBIO 2: usar truthiness para tolerar valores truthy
     return !!(t?.admin || claims?.role === 'superadmin' || claims?.admin === true);
   }, [claims, tenantId]);
+
+  // 🔎 Log de diagnóstico (quitar en prod si quieres)
+  React.useEffect(() => {
+    if (tenantId) {
+      console.log('[roles:page] context', {
+        tenantId,
+        isTenantAdmin,
+        claims,
+        tenantClaims: claims?.tenants?.[tenantId] || null,
+      });
+    }
+  }, [tenantId, claims, isTenantAdmin]);
 
   // idioma del tenant
   const { settings } = useTenantSettings();
@@ -135,11 +147,14 @@ function RolesPage_Inner() {
       if (!tenantId) throw new Error('Missing tenantId');
       setErr(null);
       setLoading(true);
+      console.log('[roles:page] load:start', { tenantId });
       const idToken = await getIdTokenSafe(true);
       if (!idToken) throw new Error('Not authenticated');
       const data = await listUsersAction({ idToken, tenantId, pageSize: 200 });
+      console.log('[roles:page] load:success', { count: (data.users || []).length });
       setRows(data.users || []);
     } catch (e: any) {
+      console.error('[roles:page] load:error', e);
       setErr(e?.message || 'Error');
     } finally {
       setLoading(false);
@@ -152,6 +167,7 @@ function RolesPage_Inner() {
 
   const onToggle = async (uid: string, role: RoleKey, value: boolean) => {
     try {
+      console.log('[roles:page] toggle', { uid, role, value, tenantId });
       if (!tenantId) throw new Error('Missing tenantId');
       const idToken = await getIdTokenSafe(true);
       if (!idToken) throw new Error('Not authenticated');
@@ -168,6 +184,7 @@ function RolesPage_Inner() {
         )
       );
     } catch (e: any) {
+      console.error('[roles:page] toggle:error', e);
       alert(e?.message || tt('admin.roles.alert.updateError', 'Could not update roles'));
     }
   };
@@ -253,12 +270,12 @@ function RolesPage_Inner() {
 
 export default function RolesPage() {
   return (
-  <ToolGate feature="roles">
-    <Protected>
-      <AdminOnly>        
-          <RolesPage_Inner />        
-      </AdminOnly>
-    </Protected>
-  </ToolGate>
+    <ToolGate feature="roles">
+      <Protected>
+        <AdminOnly>
+          <RolesPage_Inner />
+        </AdminOnly>
+      </Protected>
+    </ToolGate>
   );
 }

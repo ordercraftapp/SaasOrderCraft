@@ -1,4 +1,3 @@
-// src/app/(tenant)/[tenantId]/app/admin/roles/actions.ts
 "use server";
 
 /**
@@ -7,7 +6,7 @@
  * - Wrappers (en la page): <Protected><AdminOnly><ToolGate feature="roles">…</ToolGate></AdminOnly></Protected>
  * - Contexto tenant: estas actions EXIGEN tenantId explícito.
  * - Feature gating por plan: lee tenants/{tenantId}/system_flags/plan y valida que 'roles' esté permitido.
- * - Firebase Auth (Admin): claims NAMESPACED por tenant => customClaims.tenants[tenantId].{ admin,kitchen,waiter,delivery }
+ * - Firebase Auth (Admin): claims NAMESPACED por tenant => customClaims.tenants[tenantId].{ admin,kitchen,waiter,delivery,cashier }
  * - Sin helpers externos de planes en server actions: matriz mínima local para validar.
  */
 
@@ -15,7 +14,7 @@ import { adminAuth } from "@/lib/firebase/admin"; // tu bootstrap Admin SDK (aut
 import { getAdminDB } from "@/lib/firebase/admin"; // Firestore Admin (db)
 
 /** ===== Tipos ===== */
-export type RoleKey = "admin" | "kitchen" | "waiter" | "delivery";
+type RoleKey = "admin" | "kitchen" | "waiter" | "delivery" | "cashier";
 type PlanKey = "Starter" | "Pro" | "Full";
 
 /** ===== Matriz mínima de features por plan (server-side) ===== */
@@ -27,10 +26,7 @@ const FEATURE_MATRIX: Record<PlanKey, Record<string, boolean>> = {
 
 /** ===== Utils de claims namespaced por tenant ===== */
 type TenantedClaims = {
-  tenants?: Record<
-    string,
-    Partial<Record<RoleKey, boolean>>
-  >;
+  tenants?: Record<string, Partial<Record<RoleKey, boolean>>>;
   // Opcionales globales legacy:
   admin?: boolean;
   role?: string; // 'admin' / 'superadmin'
@@ -44,10 +40,19 @@ function hasTenantAdminClaim(decoded: TenantedClaims, tenantId: string): boolean
 /** Lee el plan del tenant y valida feature */
 async function requireFeatureRoles(tenantId: string) {
   const db = getAdminDB();
-  const snap = await db.doc(`tenants/${tenantId}/system_flags/plan`).get();
+  const docPath = `tenants/${tenantId}/system_flags/plan`;
+  const snap = await db.doc(docPath).get();
   const data = (snap.exists ? (snap.data() as { plan?: PlanKey }) : {}) || {};
   const plan = (data?.plan || "Starter") as PlanKey;
   const allowed = !!FEATURE_MATRIX[plan]?.roles;
+
+  console.log("[roles:actions] requireFeatureRoles", {
+    tenantId,
+    docPath,
+    plan,
+    allowed,
+  });
+
   if (!allowed) {
     const err = new Error("feature_not_allowed");
     (err as any).status = 403;
@@ -62,11 +67,25 @@ async function assertTenantAdmin(idToken: string, tenantId: string) {
   if (!tenantId) throw new Error("Missing tenantId");
 
   // 1) Validar plan/feature
-  await requireFeatureRoles(tenantId);
+  const { plan } = await requireFeatureRoles(tenantId);
 
   // 2) Validar claims
-  const decoded = (await adminAuth.verifyIdToken(idToken)) as unknown as TenantedClaims;
+  const decodedAny = (await adminAuth.verifyIdToken(idToken)) as any;
+  const decoded = decodedAny as TenantedClaims;
+  const uid = decodedAny?.uid;
+
   const ok = hasTenantAdminClaim(decoded, tenantId);
+
+  console.log("[roles:actions] assertTenantAdmin", {
+    tenantId,
+    actorUid: uid,
+    plan,
+    ok,
+    actorHasGlobalAdmin: !!decoded?.admin,
+    actorRole: decoded?.role,
+    actorTenantAdmin: !!decoded?.tenants?.[tenantId]?.admin,
+  });
+
   if (!ok) {
     const err = new Error("Forbidden");
     (err as any).status = 403;
@@ -132,13 +151,16 @@ export async function listUsersAction(args: {
   }));
 
   // Filtrar por tenant (o superadmin/global admin)
+  const beforeCount = users.length;
   users = users.filter((u) => {
     const c = u.claims || {};
-    const has = hasTenantAdminClaim(c, tenantId) // admins del tenant cuentan como visibles
-      || !!c?.tenants?.[tenantId] // cualquier rol bajo el tenant
-      || c?.role === "superadmin"; // superadmin
+    const has =
+      hasTenantAdminClaim(c, tenantId) || // admins del tenant cuentan como visibles
+      !!c?.tenants?.[tenantId] || // cualquier rol bajo el tenant
+      c?.role === "superadmin"; // superadmin
     return has;
   });
+  const afterCount = users.length;
 
   // Búsqueda simple
   const q = search.trim().toLowerCase();
@@ -150,6 +172,16 @@ export async function listUsersAction(args: {
         u.displayName.toLowerCase().includes(q)
     );
   }
+
+  console.log("[roles:actions] listUsersAction", {
+    tenantId,
+    pageSize,
+    beforeCount,
+    afterCount,
+    search: q || null,
+    returnedCount: users.length,
+    nextPageToken: res.pageToken || null,
+  });
 
   return { users, nextPageToken: res.pageToken || null };
 }
@@ -177,7 +209,7 @@ export async function setClaimsAction(args: {
   // Puedes comentar este bloque si no lo deseas.
   try {
     const actor = await adminAuth.verifyIdToken(idToken);
-    if (actor.uid === uid && changes.admin === false) {
+    if (actor.uid === uid && (changes as any).admin === false) {
       // Permite bajar otros roles, pero no auto-remover admin del actor.
       throw new Error("You cannot remove your own admin role for this tenant.");
     }
@@ -188,6 +220,20 @@ export async function setClaimsAction(args: {
   const userRec = await adminAuth.getUser(uid);
   const current = (userRec.customClaims as TenantedClaims) || {};
   const next = mergeTenantRoleClaims(current, tenantId, changes);
+
+  console.log("[roles:actions] setClaimsAction", {
+    tenantId,
+    targetUid: uid,
+    changes,
+    before: {
+      hasTenants: !!current.tenants,
+      rolesForTenant: current?.tenants?.[tenantId] || null,
+    },
+    after: {
+      hasTenants: !!next.tenants,
+      rolesForTenant: next?.tenants?.[tenantId] || null,
+    },
+  });
 
   await adminAuth.setCustomUserClaims(uid, next);
 
