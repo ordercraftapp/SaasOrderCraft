@@ -1263,7 +1263,7 @@ async function userHasTenantClaim(u: any, tenantId: string) {
   return !!t[tenantId];
 }
 
-// Reemplaza tu onSubmitCash completo por este:
+// ⬇️ Reemplaza COMPLETO tu onSubmitCash por este:
 const onSubmitCash = async () => {
   try {
     actions.setSaving(true);
@@ -1271,14 +1271,19 @@ const onSubmitCash = async () => {
     const auth = getAuth();
     const u = auth.currentUser;
 
-    // (A) Debe existir sesión
+    // A) Debe haber sesión real (no anónima idealmente)
     if (!u) {
       alert('Inicia sesión para crear la orden.');
       actions.setSaving(false);
       return;
     }
+    if ((u as any).isAnonymous) {
+      alert('Con cuenta anónima no se puede crear la orden aquí. Inicia sesión con una cuenta.');
+      actions.setSaving(false);
+      return;
+    }
 
-    // (B) Refrescar claims en tu backend (si aplica)
+    // B) Refrescar claims en backend y luego el token local
     try {
       const idToken = await u.getIdToken(true);
       const resp = await fetch(withTenant('/app/api/auth/refresh-role'), {
@@ -1290,7 +1295,7 @@ const onSubmitCash = async () => {
       if (resp?.ok) await u.getIdToken(true);
     } catch {}
 
-    // (C) Construir payload igual que antes
+    // C) Construir payload
     const payload = await buildOrderPayload();
     (payload as any).payment = {
       provider: 'cash',
@@ -1300,23 +1305,21 @@ const onSubmitCash = async () => {
       createdAt: serverTimestamp(),
     };
 
-    // (D) Tomar claims y hacer PRE-FLIGHT de las mismas condiciones que tus reglas
+    // D) PRE-FLIGHT de reglas
     const claims: any = await getClaims(u);
-    const simpleTenantClaim = claims?.tenantId === tenantId; // tu regla lo acepta
-    const mapTenantClaim = !!(claims?.tenants && claims?.tenants[tenantId!]); // tu regla también lo acepta
+    const simpleTenantClaim = claims?.tenantId === tenantId;
+    const mapTenantClaim = !!(claims?.tenants && claims?.tenants[tenantId!]);
 
     const preflight = {
-      tenantIdPropInPayload: (payload as any)?.tenantId === tenantId, // enforceTenantIdOnCreate
-      createdByUidMatches: (payload as any)?.createdBy?.uid === u.uid, // createdBy.uid == auth.uid
-      statusPlaced: (payload as any)?.status === 'placed',
-      orderTypeAllowed: ['dine-in', 'delivery', 'pickup'].includes((payload as any)?.orderInfo?.type),
-      // inTenant(tenantId) - cualquiera de los dos es válido según tus reglas
-      inTenant_simple: simpleTenantClaim,
-      inTenant_map: mapTenantClaim,
-      // diagnóstico extra
       tenantIdResolved: tenantId,
       authUid: u.uid,
       email: u.email || null,
+      inTenant_simple: simpleTenantClaim,
+      inTenant_map: mapTenantClaim,
+      tenantIdPropInPayload: (payload as any)?.tenantId === tenantId,
+      createdByUidMatches: (payload as any)?.createdBy?.uid === u.uid,
+      statusPlaced: (payload as any)?.status === 'placed',
+      orderTypeAllowed: ['dine-in','delivery','pickup'].includes((payload as any)?.orderInfo?.type),
       claimsPreview: {
         tenantId: claims?.tenantId ?? null,
         tenantsKeys: claims?.tenants ? Object.keys(claims.tenants) : [],
@@ -1324,36 +1327,35 @@ const onSubmitCash = async () => {
       },
     };
 
-    // Si algo crítico está mal, no intentes escribir y muestra diagnóstico claro
+    // E) Cortes claros si algo no cumple
     if (!tenantId) {
-      alert('Sin tenantId en el cliente. No se puede crear la orden.');
-      console.warn('PRE-FLIGHT', preflight);
+      console.warn('PRE-FLIGHT ❌ tenantId missing', preflight);
+      alert('No se pudo determinar el tenant. Vuelve a cargar la página.');
       actions.setSaving(false);
       return;
     }
     if (!preflight.inTenant_simple && !preflight.inTenant_map) {
-      alert('Tu sesión no tiene claim para este tenant. (Mira la consola para más detalle)');
-      console.warn('PRE-FLIGHT (sin inTenant)', preflight);
+      console.warn('PRE-FLIGHT ❌ inTenant fail', preflight);
+      alert('Tu sesión no tiene acceso a este tenant. Cierra sesión y vuelve a entrar.');
       actions.setSaving(false);
       return;
     }
     if (!preflight.tenantIdPropInPayload) {
-      alert('El payload no incluye tenantId correcto.');
-      console.warn('PRE-FLIGHT (tenantId mismatch)', preflight);
+      console.warn('PRE-FLIGHT ❌ payload.tenantId != path tenantId', preflight, payload);
+      alert('El payload no incluye el tenantId correcto.');
       actions.setSaving(false);
       return;
     }
     if (!preflight.createdByUidMatches || !preflight.statusPlaced || !preflight.orderTypeAllowed) {
-      alert('El payload no cumple las condiciones de reglas (revisa consola).');
-      console.warn('PRE-FLIGHT (payload mismatch reglas)', preflight, payload);
+      console.warn('PRE-FLIGHT ❌ payload no cumple reglas', preflight, payload);
+      alert('Datos de la orden inválidos para las reglas. Revisa consola.');
       actions.setSaving(false);
       return;
     }
 
-    // (E) Si pasa el preflight, ahora sí escribe
+    // F) OK → escribir
     const ref = await addDoc(tCol('orders', tenantId!), { ...payload, tenantId });
 
-    // (F) consumir promo como ya tenías
     if (state.promo?.promoId) {
       try {
         await fetch(withTenant('/app/api/promotions/consume'), {
@@ -1374,7 +1376,6 @@ const onSubmitCash = async () => {
     actions.setSaving(false);
   }
 };
-
 
   // PayPal: carga SDK sólo si está habilitado
   const [paypalReady, setPaypalReady] = useState(false);
