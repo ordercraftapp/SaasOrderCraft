@@ -8,13 +8,41 @@ import { getUserFromRequest } from '@/lib/server/auth';
 
 const json = (d: unknown, s = 200) => NextResponse.json(d, { status: s });
 
-// Helpers de rol (admin/cashier/kitchen pueden ver)
-function hasRole(u: any, r: string) {
-  const tok = u?.token || u;
-  return tok?.role === r || (Array.isArray(tok?.roles) && tok.roles.includes(r));
+/* =========================
+   Helpers de roles por-tenant
+   ========================= */
+function normalizeTenantNode(node: any): Record<string, boolean> {
+  if (!node) return {};
+  if (node.roles && typeof node.roles === 'object') return { ...(node.roles as any) };
+  return { ...(node as any) };
 }
-function isStaff(u: any) {
-  return hasRole(u, 'admin') || hasRole(u, 'cashier') || hasRole(u, 'kitchen');
+function hasRoleGlobal(claims: any, role: string) {
+  return !!(
+    claims &&
+    (claims[role] === true ||
+      (Array.isArray(claims.roles) && claims.roles.includes(role)) ||
+      claims.role === role)
+  );
+}
+function hasRoleTenant(claims: any, tenantId: string, role: string) {
+  const node = claims?.tenants?.[tenantId];
+  const flags = normalizeTenantNode(node);
+  return !!flags?.[role];
+}
+/** Staff permitido para ver contadores:
+ *  - por-tenant: admin, kitchen, cashier, delivery
+ *  - global (compat): admin, waiter
+ */
+function isStaffForTenant(u: any, tenantId: string) {
+  const claims = u?.claims ?? u?.token ?? u;
+  return (
+    hasRoleTenant(claims, tenantId, 'admin')   ||
+    hasRoleTenant(claims, tenantId, 'kitchen') ||
+    hasRoleTenant(claims, tenantId, 'cashier') ||
+    hasRoleTenant(claims, tenantId, 'delivery')||
+    hasRoleGlobal(claims, 'admin') ||          // compat legacy
+    hasRoleGlobal(claims, 'waiter')            // compat legacy
+  );
 }
 
 export async function GET(req: NextRequest, { params }: { params: { tenantId: string } }) {
@@ -22,7 +50,6 @@ export async function GET(req: NextRequest, { params }: { params: { tenantId: st
     // 🔐 Auth
     const user = await getUserFromRequest(req);
     if (!user) return json({ ok: false, error: 'Unauthorized' }, 401);
-    if (!isStaff(user)) return json({ ok: false, error: 'Forbidden' }, 403);
 
     // 🔐 Tenant
     const tenantId = requireTenantId(
@@ -30,40 +57,63 @@ export async function GET(req: NextRequest, { params }: { params: { tenantId: st
       'api:admin/nav-counts'
     );
 
-    // 🗂️ Colección de órdenes por tenant: tenants/{tenantId}/orders
+    if (!isStaffForTenant(user, tenantId)) {
+      return json({ ok: false, error: 'Forbidden' }, 403);
+    }
+
+    // 🗂️ Colección Admin (tenants/{tenantId}/orders)
     const col = tColAdmin('orders', tenantId);
 
-    // 1) Kitchen pendientes (no "kitchen ready"): placed + kitchen_in_progress
+    // 1) Kitchen pendientes: 'placed' + 'kitchen_in_progress'
     const qKitchen = col.where('status', 'in', ['placed', 'kitchen_in_progress']);
 
-    // 2) Cashier queue: listas de cocina y no cerradas (ready_to_close / kitchen_done)
-    const qCashier = col.where('status', 'in', ['kitchen_done', 'ready_to_close']);
+    // 2) Cashier queue: 'kitchen_done' + 'ready_to_close'
+    //    ✅ Incluir explícitamente dine_in y pickup (normalizado en 'type')
+    const cashierStatuses = ['kitchen_done', 'ready_to_close'] as const;
+    const qCashierType = col
+      .where('status', 'in', cashierStatuses as unknown as string[])
+      .where('type', 'in', ['dine_in', 'pickup']);
 
-    // 3) Delivery pendientes: type delivery y subestado != delivered
+    //    🔁 Fallback legacy: algunos docs antiguos guardan el tipo en orderInfo.type
+    const qCashierLegacy = col
+      .where('status', 'in', cashierStatuses as unknown as string[])
+      .where('orderInfo.type', 'in', ['dine-in', 'pickup']);
+
+    // 3) Delivery pendientes:
+    //    type = 'delivery' y status en tránsito
     const qDelivery = col
-      .where('orderInfo.type', '==', 'delivery')
-      .where('orderInfo.delivery', 'in', ['pending', 'assigned_to_courier', 'on_the_way']);
+      .where('type', '==', 'delivery')
+      .where('status', 'in', ['assigned_to_courier', 'on_the_way']);
 
-    // 🔢 Agregaciones count()
-    const [c1, c2, c3] = await Promise.all([
+    // 🔢 Aggregation count()
+    const [c1, c2Type, c3, c2Legacy] = await Promise.all([
       qKitchen.count().get(),
-      qCashier.count().get(),
+      qCashierType.count().get(),
       qDelivery.count().get(),
+      qCashierLegacy.count().get(),
     ]);
 
     const kitchenPending = c1.data().count || 0;
-    const cashierQueue = c2.data().count || 0;
+
+    // 🧠 Evitar doble conteo: priorizamos esquema normalizado.
+    // Si el normalizado arroja >0, usamos ese valor. Si da 0 (dataset legacy),
+    // usamos el legacy. Así no sumamos dos veces documentos que tengan ambos campos.
+    let cashierQueue = c2Type.data().count || 0;
+    if (cashierQueue === 0) {
+      cashierQueue = c2Legacy.data().count || 0;
+    }
+
     const deliveryPending = c3.data().count || 0;
 
     return json({
       ok: true,
       kitchenPending,
-      cashierQueue,
+      cashierQueue,     // ✅ ya incluye pickup
       deliveryPending,
       ts: new Date().toISOString(),
     });
   } catch (e: any) {
-    console.error('[GET /${tenantId}/app/api/admin/nav-counts] error:', e);
+    console.error('[GET /app/api/admin/nav-counts] error:', e);
     return json({ ok: false, error: e?.message || 'Server error' }, 500);
   }
 }

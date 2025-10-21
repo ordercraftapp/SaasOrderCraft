@@ -847,7 +847,7 @@ function OrderCard({
             </button>
             <a
               className="btn btn-outline-secondary btn-sm"
-              href={`/admin/cashier/receipt/${o.id}`}
+              href={`/app/admin/cashier/receipt/${o.id}`}
               target="_blank"
               rel="noopener noreferrer"
             >
