@@ -13,17 +13,41 @@ async function getUserFromAuthHeader(req: NextRequest) {
   const token = hdr.slice(7).trim();
   try {
     const decoded = await adminAuth.verifyIdToken(token);
-    return decoded as any; // { uid, email, roles?, admin?, kitchen?, cashier?, delivery? }
+    return decoded as any; // { uid, email, tenants?, admin?, role?, roles?[] ... }
   } catch {
     return null;
   }
 }
-function hasRole(claims: any, role: string) {
-  // admite boolean claim (claims.admin=true) o arreglo claims.roles=["admin",...]
-  return !!(claims && (claims[role] === true || (Array.isArray(claims.roles) && claims.roles.includes(role))));
+
+/** Normaliza nodo por-tenant: acepta { admin:true, kitchen:true } o { roles:{ admin:true,... } } */
+function normalizeTenantNode(node: any): Record<string, boolean> {
+  if (!node) return {};
+  if (node.roles && typeof node.roles === "object") return { ...(node.roles as any) };
+  return { ...(node as any) };
 }
-function canOperate(claims: any) {
-  return hasRole(claims, "admin") || hasRole(claims, "kitchen") || hasRole(claims, "cashier") || hasRole(claims, "delivery");
+
+function hasRoleGlobal(claims: any, role: string) {
+  // admite boolean claim global (claims.admin === true) o arreglo global claims.roles=["admin",...]
+  return !!(claims && (claims[role] === true || (Array.isArray(claims.roles) && claims.roles.includes(role)) || claims.role === role));
+}
+
+function hasRoleTenant(claims: any, tenantId: string, role: string) {
+  const node = claims?.tenants?.[tenantId];
+  const flags = normalizeTenantNode(node);
+  return !!flags?.[role];
+}
+
+/** Puede operar en cocina: admin/kitchen/cashier/delivery por-tenant, o global legacy admin/waiter */
+function canOperateTenant(claims: any, tenantId: string) {
+  // por-tenant
+  if (hasRoleTenant(claims, tenantId, "admin")) return true;
+  if (hasRoleTenant(claims, tenantId, "kitchen")) return true;
+  if (hasRoleTenant(claims, tenantId, "cashier")) return true;
+  if (hasRoleTenant(claims, tenantId, "delivery")) return true;
+  // compat global (legado)
+  if (hasRoleGlobal(claims, "admin")) return true;
+  if (hasRoleGlobal(claims, "waiter")) return true;
+  return false;
 }
 
 /** ---------- Flujos permitidos ---------- */
@@ -41,6 +65,18 @@ function flowFor(t: "dine_in" | "delivery") {
   return t === "delivery" ? FLOW_DELIVERY : FLOW_DINE_IN;
 }
 
+function toSnakeStatus(s: string): StatusSnake {
+  const alias: Record<string, StatusSnake> = {
+    ready: "ready_to_close",
+    served: "ready_to_close",
+    completed: "closed",
+    ready_for_delivery: "assigned_to_courier",
+    out_for_delivery: "on_the_way",
+  };
+  const snake = s.includes("_") ? s : s.replace(/[A-Z]/g, (m) => `_${m.toLowerCase()}`);
+  return (alias[snake] ?? snake) as StatusSnake;
+}
+
 // 📁 carpeta es [tenant] → params.tenant
 type Ctx = { params: { tenant: string; id: string } };
 
@@ -55,8 +91,11 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
 
     // 🔐 auth + roles
     const user = await getUserFromAuthHeader(req);
-    if (!user || !canOperate(user)) {
+    if (!user) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    if (!canOperateTenant(user, tenantId)) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
     const id = ctx.params.id;
@@ -64,7 +103,7 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
 
     let body: any;
     try { body = await req.json(); } catch { body = {}; }
-    const nextStatus = String(body?.nextStatus || "").trim() as StatusSnake;
+    const nextStatus = toSnakeStatus(String(body?.nextStatus || "").trim());
     if (!nextStatus) return NextResponse.json({ error: "Missing nextStatus" }, { status: 400 });
 
     const db = getAdminDB();
@@ -82,7 +121,7 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
       const typeForFlow = normalizeOperationalType(order);
       const allowed = flowFor(typeForFlow);
 
-      // Validaciones de transición (permite 1 paso adelante; opcional: 1 paso atrás)
+      // Validaciones de transición (permite 1 paso adelante; y 1 atrás)
       const curIdx = allowed.indexOf(currentStatus as any);
       const nxtIdx = allowed.indexOf(nextStatus as any);
 
@@ -90,16 +129,18 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
       const isBackward = curIdx >= 0 && nxtIdx === curIdx - 1;
 
       if (!isForward && !isBackward) {
-        throw new Error(
-          `Invalid transition: ${currentStatus} → ${nextStatus} (type=${order?.orderInfo?.type || order?.type || "unknown"})`
-        );
+        const msg = `Invalid transition: ${currentStatus} → ${nextStatus} (type=${order?.orderInfo?.type || order?.type || "unknown"})`;
+        // 409 más expresivo que 400 para transición inválida
+        const err: any = new Error(msg);
+        err.status = 409;
+        throw err;
       }
 
       // Status history (append)
       const hist = Array.isArray(order.statusHistory) ? order.statusHistory.slice() : [];
       hist.push({
         at: new Date().toISOString(),
-        by: user.uid || null,
+        by: (user as any)?.uid || null,
         from: currentStatus,
         to: nextStatus,
       });
@@ -116,7 +157,8 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
 
     return NextResponse.json(result, { status: 200 });
   } catch (e: any) {
-    return NextResponse.json({ error: e?.message || "Error" }, { status: 400 });
+    const status = Number(e?.status) || 400;
+    return NextResponse.json({ error: e?.message || "Error" }, { status });
   }
 }
 
