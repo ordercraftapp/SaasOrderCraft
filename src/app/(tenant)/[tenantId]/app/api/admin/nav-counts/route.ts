@@ -11,6 +11,10 @@ const json = (d: unknown, s = 200) => NextResponse.json(d, { status: s });
 /* =========================
    Helpers de roles por-tenant
    ========================= */
+function extractClaims(u: any) {
+  // getUserFromRequest puede devolver {claims:decoded} o el decoded directo, o {token:decoded}
+  return u?.claims ?? u?.token ?? u ?? {};
+}
 function normalizeTenantNode(node: any): Record<string, boolean> {
   if (!node) return {};
   if (node.roles && typeof node.roles === 'object') return { ...(node.roles as any) };
@@ -21,7 +25,8 @@ function hasRoleGlobal(claims: any, role: string) {
     claims &&
     (claims[role] === true ||
       (Array.isArray(claims.roles) && claims.roles.includes(role)) ||
-      claims.role === role)
+      claims.role === role ||
+      (role === 'admin' && claims.role === 'superadmin'))
   );
 }
 function hasRoleTenant(claims: any, tenantId: string, role: string) {
@@ -31,17 +36,17 @@ function hasRoleTenant(claims: any, tenantId: string, role: string) {
 }
 /** Staff permitido para ver contadores:
  *  - por-tenant: admin, kitchen, cashier, delivery
- *  - global (compat): admin, waiter
+ *  - global (compat): admin, superadmin, waiter
  */
 function isStaffForTenant(u: any, tenantId: string) {
-  const claims = u?.claims ?? u?.token ?? u;
+  const claims = extractClaims(u);
   return (
     hasRoleTenant(claims, tenantId, 'admin')   ||
     hasRoleTenant(claims, tenantId, 'kitchen') ||
     hasRoleTenant(claims, tenantId, 'cashier') ||
     hasRoleTenant(claims, tenantId, 'delivery')||
-    hasRoleGlobal(claims, 'admin') ||          // compat legacy
-    hasRoleGlobal(claims, 'waiter')            // compat legacy
+    hasRoleGlobal(claims, 'admin')             ||
+    hasRoleGlobal(claims, 'waiter')
   );
 }
 
@@ -68,19 +73,18 @@ export async function GET(req: NextRequest, { params }: { params: { tenantId: st
     const qKitchen = col.where('status', 'in', ['placed', 'kitchen_in_progress']);
 
     // 2) Cashier queue: 'kitchen_done' + 'ready_to_close'
-    //    ✅ Incluir explícitamente dine_in y pickup (normalizado en 'type')
+    //    ✅ incluir dine_in y pickup
     const cashierStatuses = ['kitchen_done', 'ready_to_close'] as const;
     const qCashierType = col
       .where('status', 'in', cashierStatuses as unknown as string[])
       .where('type', 'in', ['dine_in', 'pickup']);
 
-    //    🔁 Fallback legacy: algunos docs antiguos guardan el tipo en orderInfo.type
+    //    🔁 fallback legacy a orderInfo.type (sin doble conteo)
     const qCashierLegacy = col
       .where('status', 'in', cashierStatuses as unknown as string[])
       .where('orderInfo.type', 'in', ['dine-in', 'pickup']);
 
-    // 3) Delivery pendientes:
-    //    type = 'delivery' y status en tránsito
+    // 3) Delivery pendientes: type delivery con estados en tránsito
     const qDelivery = col
       .where('type', '==', 'delivery')
       .where('status', 'in', ['assigned_to_courier', 'on_the_way']);
@@ -95,9 +99,7 @@ export async function GET(req: NextRequest, { params }: { params: { tenantId: st
 
     const kitchenPending = c1.data().count || 0;
 
-    // 🧠 Evitar doble conteo: priorizamos esquema normalizado.
-    // Si el normalizado arroja >0, usamos ese valor. Si da 0 (dataset legacy),
-    // usamos el legacy. Así no sumamos dos veces documentos que tengan ambos campos.
+    // Evitar doble conteo: preferimos el esquema normalizado
     let cashierQueue = c2Type.data().count || 0;
     if (cashierQueue === 0) {
       cashierQueue = c2Legacy.data().count || 0;
@@ -108,7 +110,7 @@ export async function GET(req: NextRequest, { params }: { params: { tenantId: st
     return json({
       ok: true,
       kitchenPending,
-      cashierQueue,     // ✅ ya incluye pickup
+      cashierQueue,     // incluye pickup
       deliveryPending,
       ts: new Date().toISOString(),
     });

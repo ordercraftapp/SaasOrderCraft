@@ -173,10 +173,19 @@ function useNavCounts(pollMs = 15000) {
 
       setErr(null);
       setLoading(true);
+
       // ✅ usa prefijo /api; apiFetch lo vuelve /{tenantId}/app/api/...
-      const res = await apiFetch('/api/admin/nav-counts');
+      let res = await apiFetch('/api/admin/nav-counts');
+
+      if (res.status === 403) {
+        // Fuerza refresh del ID token y reintenta una vez
+        await getIdTokenSafe(true);
+        res = await apiFetch('/api/admin/nav-counts');
+      }
+
       const data = await res.json().catch(() => ({} as any));
       if (!res.ok || data?.ok === false) throw new Error(data?.error || `HTTP ${res.status}`);
+
       setCounts({
         kitchenPending: Number(data.kitchenPending || 0),
         cashierQueue: Number(data.cashierQueue || 0),
