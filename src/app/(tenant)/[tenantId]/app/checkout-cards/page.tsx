@@ -1331,6 +1331,9 @@ const onSubmitCash = async () => {
     };
 
     // 👉 SIEMPRE imprime el preflight para depurar
+    if (process.env.NODE_ENV !== 'production') {
+  console.log('PRE-FLIGHT ▶', preflight);
+}
     console.log('PRE-FLIGHT ▶', preflight);
 
     // E) Cortes claros si algo no cumple
