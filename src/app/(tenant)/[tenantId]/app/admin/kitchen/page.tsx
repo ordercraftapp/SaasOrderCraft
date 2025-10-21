@@ -69,6 +69,12 @@ async function getIdTokenResultSafe(): Promise<{ token: string; claims: any } | 
   }
 }
 
+/** Normaliza el nodo del tenant (soporta {roles:{...}} o plano) */
+function normalizeTenantNode(node: any): Record<string, any> {
+  if (!node) return {};
+  if (node.roles && typeof node.roles === 'object') return { ...node.roles };
+  return { ...node };
+}
 
 /* --------------------------------------------
    API base (tenant-scoped) + fetch helper
@@ -547,6 +553,17 @@ function OrderCard({
   const isBusy = (to: StatusSnake) => busyKey === `${o.id}:${to}`;
   const nexts = nextActionsKitchen(o, canAct);
 
+  // 🔎 Diagnóstico por tarjeta                                             quitarrrrrr
+  useEffect(() => {
+    // Solo loguea cuando cambia el status o canAct
+    console.log('[kitchen] card.actions', {
+      orderId: o.id,
+      status: o.status,
+      canAct,
+      nexts: nexts.map(n => n.to),
+    });
+  }, [o.id, o.status, canAct, nexts.length]);  //////hast aqui
+
   const typeVal = getDisplayType(o);
   const tableVal = getDisplayTable(o);
   const notesVal = getDisplayNotes(o);
@@ -662,6 +679,10 @@ function OrderCard({
 function KitchenBoardPage_Inner() {
   const apiBase = useApiBase();
 
+  // 🔹 tenantId desde la URL (para resolver claims por-tenant)
+  const params = useParams();
+  const tenantId = String((params as any)?.tenantId ?? (params as any)?.tenant ?? '').trim();
+
   const { settings } = useTenantSettings();
   const lang = React.useMemo(() => {
     try {
@@ -681,6 +702,45 @@ function KitchenBoardPage_Inner() {
   const isKitchen = flags.isKitchen;
   const isAdmin   = flags.isAdmin;
   const authReady = !authLoading;
+
+  // ➕ Normalizador local (soporta {roles:{...}} o forma plana)
+  const normalizeTenantNode = React.useCallback((node: any): Record<string, any> => {
+    if (!node) return {};
+    if (node.roles && typeof node.roles === 'object') return { ...node.roles };
+    return { ...node };
+  }, []);
+
+  // 🔸 Fallback: leer claims crudos del ID token para detectar admin por-tenant
+  const [claimsLocal, setClaimsLocal] = useState<any | null>(null);
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      if (!user) { setClaimsLocal(null); return; }
+      const r = await getIdTokenResultSafe();
+      if (!alive) return;
+      setClaimsLocal(r?.claims || null);
+    })();
+    return () => { alive = false; };
+  }, [user]);
+
+  const tenantFlags = useMemo(() => {
+    const node = claimsLocal?.tenants?.[tenantId];
+    return normalizeTenantNode(node);
+  }, [claimsLocal, tenantId, normalizeTenantNode]);
+
+  // ✅ canAct contempla kitchen, admin global (providers) o admin por-tenant (claims token)
+  const canAct = (isKitchen || isAdmin || !!tenantFlags.admin);
+
+  // 🔎 Logs de diagnóstico (quitar cuando todo OK)
+  useEffect(() => {
+    if (!tenantId) return;
+    console.log('[kitchen] auth flags', { isKitchen, isAdmin, canAct, tenantId });
+    console.log('[kitchen] claimsLocal tenant node', {
+      tenantId,
+      raw: claimsLocal?.tenants?.[tenantId] ?? null,
+      flags: tenantFlags,
+    });
+  }, [isKitchen, isAdmin, canAct, tenantId, claimsLocal, tenantFlags]);
 
   const [soundOn, setSoundOn] = useState(true);
   const beep = useBeep(soundOn);
@@ -804,8 +864,6 @@ function KitchenBoardPage_Inner() {
     .slice()
     .sort(byCreatedAtDesc);
 
-  const canAct = (isKitchen || isAdmin);
-
   const { isFs, toggle: toggleFs } = useFullscreen();
 
   const errorText = error
@@ -927,6 +985,7 @@ function KitchenBoardPage_Inner() {
     </div>
   );
 }
+
 
 export default function KitchenBoardPage() {
   return (
