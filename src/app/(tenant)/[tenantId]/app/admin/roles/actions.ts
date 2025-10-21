@@ -7,10 +7,10 @@
  * - Contexto tenant: estas actions EXIGEN tenantId explícito.
  * - Feature gating por plan: lee tenants/{tenantId}/system_flags/plan y valida que 'roles' esté permitido.
  * - Firebase Auth (Admin): claims NAMESPACED por tenant => customClaims.tenants[tenantId].{ admin,kitchen,waiter,delivery,cashier }
- * - Sin helpers externos de planes en server actions: matriz mínima local para validar.
+ * - Matriz mínima local para validar (sin helpers externos).
  */
 
-import { adminAuth } from "@/lib/firebase/admin"; // tu bootstrap Admin SDK (auth)
+import { adminAuth } from "@/lib/firebase/admin"; // Admin SDK (auth)
 import { getAdminDB } from "@/lib/firebase/admin"; // Firestore Admin (db)
 
 /** ===== Tipos ===== */
@@ -26,15 +26,25 @@ const FEATURE_MATRIX: Record<PlanKey, Record<string, boolean>> = {
 
 /** ===== Utils de claims namespaced por tenant ===== */
 type TenantedClaims = {
-  tenants?: Record<string, Partial<Record<RoleKey, boolean>>>;
+  tenants?: Record<string, Partial<Record<RoleKey, boolean>> | { roles?: Partial<Record<RoleKey, boolean>> }>;
   // Opcionales globales legacy:
   admin?: boolean;
   role?: string; // 'admin' / 'superadmin'
 };
 
 function hasTenantAdminClaim(decoded: TenantedClaims, tenantId: string): boolean {
-  const t = decoded?.tenants?.[tenantId];
-  return !!(decoded?.admin || decoded?.role === "superadmin" || t?.admin === true);
+  const node = decoded?.tenants?.[tenantId] as any;
+  const flags = node?.roles ? { ...node.roles } : node || {};
+  return !!(decoded?.admin || decoded?.role === "superadmin" || flags?.admin === true);
+}
+
+/** Aplana un nodo de tenant: {roles:{admin:true}} -> {admin:true} */
+function normalizeTenantNode(node: any): Partial<Record<RoleKey, boolean>> {
+  if (!node) return {};
+  if (node.roles && typeof node.roles === "object") {
+    return { ...(node.roles as any) };
+  }
+  return { ...(node as any) };
 }
 
 /** Lee el plan del tenant y valida feature */
@@ -46,12 +56,7 @@ async function requireFeatureRoles(tenantId: string) {
   const plan = (data?.plan || "Starter") as PlanKey;
   const allowed = !!FEATURE_MATRIX[plan]?.roles;
 
-  console.log("[roles:actions] requireFeatureRoles", {
-    tenantId,
-    docPath,
-    plan,
-    allowed,
-  });
+  console.log("[roles:actions] requireFeatureRoles", { tenantId, docPath, plan, allowed });
 
   if (!allowed) {
     const err = new Error("feature_not_allowed");
@@ -83,7 +88,8 @@ async function assertTenantAdmin(idToken: string, tenantId: string) {
     ok,
     actorHasGlobalAdmin: !!decoded?.admin,
     actorRole: decoded?.role,
-    actorTenantAdmin: !!decoded?.tenants?.[tenantId]?.admin,
+    actorTenantRaw: decoded?.tenants?.[tenantId] || null,
+    actorTenantFlags: normalizeTenantNode(decoded?.tenants?.[tenantId]) || null,
   });
 
   if (!ok) {
@@ -101,24 +107,28 @@ function mergeTenantRoleClaims(
   changes: Partial<Record<RoleKey, boolean>>
 ): TenantedClaims {
   const base: TenantedClaims = current ? { ...current } : {};
-  const tenants = { ...(base.tenants || {}) };
-  const prevTenant = { ...(tenants[tenantId] || {}) };
+  const tenantsAny = { ...(base.tenants || {}) } as Record<string, any>;
 
-  // Aplicar cambios (true/false). Si queda falso/undefined lo removemos.
-  const nextTenant: Partial<Record<RoleKey, boolean>> = { ...prevTenant, ...changes };
+  // Traer el previo (soporta forma antigua con {roles:{...}})
+  const prevRaw = tenantsAny[tenantId];
+  const prevFlags = normalizeTenantNode(prevRaw);
 
-  // Limpieza de flags falsos/undefined
-  (Object.keys(nextTenant) as RoleKey[]).forEach((k) => {
-    if (nextTenant[k] !== true) delete nextTenant[k];
+  // Mezclar cambios
+  const nextFlags: Partial<Record<RoleKey, boolean>> = { ...prevFlags, ...changes };
+
+  // Limpiar falsos/undefined
+  (Object.keys(nextFlags) as RoleKey[]).forEach((k) => {
+    if (nextFlags[k] !== true) delete nextFlags[k];
   });
 
-  if (Object.keys(nextTenant).length === 0) {
-    delete tenants[tenantId]; // sin roles → borra el nodo del tenant
+  if (Object.keys(nextFlags).length === 0) {
+    delete tenantsAny[tenantId]; // sin roles → borra el nodo del tenant
   } else {
-    tenants[tenantId] = nextTenant;
+    // Guardar SIEMPRE en forma PLANA (migración implícita a la forma nueva)
+    tenantsAny[tenantId] = nextFlags;
   }
 
-  return { ...base, tenants };
+  return { ...base, tenants: tenantsAny as any };
 }
 
 /* ======================================================================== *
@@ -142,13 +152,17 @@ export async function listUsersAction(args: {
 
   const res = await adminAuth.listUsers(pageSize, nextPageToken || undefined);
 
-  let users = res.users.map((u) => ({
-    uid: u.uid,
-    email: u.email || "",
-    displayName: u.displayName || "",
-    disabled: !!u.disabled,
-    claims: (u.customClaims as TenantedClaims) || {},
-  }));
+  let users = res.users.map((u) => {
+    const claims = (u.customClaims as TenantedClaims) || {};
+    // Log opcional ligero: no imprimir claims completos en producción por privacidad.
+    return {
+      uid: u.uid,
+      email: u.email || "",
+      displayName: u.displayName || "",
+      disabled: !!u.disabled,
+      claims,
+    };
+  });
 
   // Filtrar por tenant (o superadmin/global admin)
   const beforeCount = users.length;
@@ -156,9 +170,10 @@ export async function listUsersAction(args: {
     const c = u.claims || {};
     const has =
       hasTenantAdminClaim(c, tenantId) || // admins del tenant cuentan como visibles
-      !!c?.tenants?.[tenantId] || // cualquier rol bajo el tenant
-      c?.role === "superadmin"; // superadmin
-    return has;
+      !!normalizeTenantNode((c as any)?.tenants?.[tenantId]) && // cualquier rol bajo el tenant
+      Object.keys(normalizeTenantNode((c as any)?.tenants?.[tenantId])).length > 0 ||
+      (c as any)?.role === "superadmin"; // superadmin
+    return !!has;
   });
   const afterCount = users.length;
 
@@ -191,6 +206,7 @@ export async function listUsersAction(args: {
  * - No toca otros tenants.
  * - Limpia flags false/undefined.
  * - Si se remueven todos los roles del tenant, borra el nodo tenants[tenantId].
+ * - Si el nodo estaba en forma antigua ({roles:{...}}), lo migra a la forma plana.
  */
 export async function setClaimsAction(args: {
   idToken: string;
@@ -206,11 +222,9 @@ export async function setClaimsAction(args: {
   if (!changes || typeof changes !== "object") throw new Error("Missing changes");
 
   // ⚠️ Evitar que un admin se quite su propio 'admin' y se bloquee (opcional)
-  // Puedes comentar este bloque si no lo deseas.
   try {
     const actor = await adminAuth.verifyIdToken(idToken);
     if (actor.uid === uid && (changes as any).admin === false) {
-      // Permite bajar otros roles, pero no auto-remover admin del actor.
       throw new Error("You cannot remove your own admin role for this tenant.");
     }
   } catch (e) {
@@ -219,20 +233,17 @@ export async function setClaimsAction(args: {
 
   const userRec = await adminAuth.getUser(uid);
   const current = (userRec.customClaims as TenantedClaims) || {};
+
+  // Mezcla con normalización (aplana si venía en forma {roles:{...}})
   const next = mergeTenantRoleClaims(current, tenantId, changes);
 
   console.log("[roles:actions] setClaimsAction", {
     tenantId,
     targetUid: uid,
     changes,
-    before: {
-      hasTenants: !!current.tenants,
-      rolesForTenant: current?.tenants?.[tenantId] || null,
-    },
-    after: {
-      hasTenants: !!next.tenants,
-      rolesForTenant: next?.tenants?.[tenantId] || null,
-    },
+    beforeTenantRaw: (current as any)?.tenants?.[tenantId] || null,
+    beforeTenantFlags: normalizeTenantNode((current as any)?.tenants?.[tenantId]) || null,
+    afterTenantFlags: normalizeTenantNode((next as any)?.tenants?.[tenantId]) || null,
   });
 
   await adminAuth.setCustomUserClaims(uid, next);

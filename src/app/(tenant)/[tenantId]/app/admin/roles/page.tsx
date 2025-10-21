@@ -45,6 +45,14 @@ async function getIdTokenSafe(forceRefresh = false): Promise<string | null> {
     return null;
   }
 }
+
+/** Normaliza el nodo del tenant (soporta {roles:{...}} o plano) */
+function normalizeTenantNode(node: any): Record<string, any> {
+  if (!node) return {};
+  if (node.roles && typeof node.roles === 'object') return { ...node.roles };
+  return { ...node };
+}
+
 function useAuthClaims() {
   const [authReady, setAuthReady] = React.useState(false);
   const [user, setUser] = React.useState<any | null>(null);
@@ -58,7 +66,7 @@ function useAuthClaims() {
         if (!alive) return;
         setUser(u ?? null);
         if (u) {
-          // ⬅️ Forzar refresh para traer claims actualizados
+          // Forzar refresh para traer claims actualizados
           const res = await getIdTokenResult(u, true);
           setClaims(res.claims || null);
         } else {
@@ -68,9 +76,7 @@ function useAuthClaims() {
       });
       return () => unsub();
     })();
-    return () => {
-      alive = false;
-    };
+    return () => { alive = false; };
   }, []);
   return { authReady, user, claims } as const;
 }
@@ -103,21 +109,25 @@ function RolesPage_Inner() {
   const tenantId = useTenantId();
   const { authReady, user, claims } = useAuthClaims();
 
-  // ¿Es admin del tenant actual?
+  // ¿Es admin del tenant actual? (tolerante a {roles:{...}} y plano)
   const isTenantAdmin = React.useMemo(() => {
     if (!tenantId) return false;
-    const t = claims?.tenants?.[tenantId];
-    return !!(t?.admin || claims?.role === 'superadmin' || claims?.admin === true);
+    const node = claims?.tenants?.[tenantId];
+    const flags = normalizeTenantNode(node);
+    return !!(flags?.admin || claims?.role === 'superadmin' || claims?.admin === true);
   }, [claims, tenantId]);
 
-  // 🔎 Log de diagnóstico (quitar en prod si quieres)
+  // 🔎 Log de diagnóstico (puedes quitar en prod)
   React.useEffect(() => {
     if (tenantId) {
+      const raw = claims?.tenants?.[tenantId];
+      const flags = normalizeTenantNode(raw);
       console.log('[roles:page] context', {
         tenantId,
         isTenantAdmin,
         claims,
-        tenantClaims: claims?.tenants?.[tenantId] || null,
+        tenantClaims: raw || null,
+        tenantFlagsNormalized: flags || null,
       });
     }
   }, [tenantId, claims, isTenantAdmin]);
@@ -217,7 +227,8 @@ function RolesPage_Inner() {
           </thead>
           <tbody>
             {rows.map((u) => {
-              const tClaims = u.claims?.tenants?.[tenantId] || {};
+              const raw = u.claims?.tenants?.[tenantId];
+              const flags = normalizeTenantNode(raw);
               return (
                 <tr key={u.uid}>
                   <td>
@@ -231,7 +242,7 @@ function RolesPage_Inner() {
                   </td>
 
                   {ROLES.map((r) => {
-                    const checked = !!tClaims?.[r.key];
+                    const checked = !!flags?.[r.key];
                     return (
                       <td key={r.key}>
                         <input
