@@ -832,7 +832,7 @@ function CheckoutUI(props: {
     setSelectedDeliveryOptionId, setTip, setTipEdited, setSaving, setPayMethod,
     onChangeAddressLabel, setPromoCode, applyPromo, clearPromo,
   } = actions;
-
+  const tenantId = useTenantId(); // quitarrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr
   // ⚠️ Ejecuta TODOS los hooks antes de cualquier return condicional
   const { tt, ready } = useLangTT();
   const fmtQ = useFmtQ();
@@ -856,12 +856,13 @@ function CheckoutUI(props: {
     (payMethod === 'paypal' && !paymentsFlags.paypal) ||
     (payMethod === 'cash' && !paymentsFlags.cash);
 
-  const disableSubmit =
-    saving ||
-    submitMethodDisabled ||
-    (mode === 'dine-in' ? !table.trim() :
-     mode === 'delivery' ? !(address && phone && selectedDeliveryOptionId) :
-     !phone);
+ const disableSubmit =
+  saving ||
+  !tenantId ||          // <-- agrega este check
+  submitMethodDisabled ||
+  (mode === 'dine-in' ? !table.trim()
+   : mode === 'delivery' ? !(address && phone && selectedDeliveryOptionId)
+   : !phone);
 
   const grandToShow = (taxUI?.grandPayableQ ?? grandTotal);
 
@@ -1271,7 +1272,7 @@ const onSubmitCash = async () => {
     const auth = getAuth();
     const u = auth.currentUser;
 
-    // A) Debe haber sesión real (no anónima idealmente)
+    // A) Sesión válida (mejor no anónima)
     if (!u) {
       alert('Inicia sesión para crear la orden.');
       actions.setSaving(false);
@@ -1283,7 +1284,7 @@ const onSubmitCash = async () => {
       return;
     }
 
-    // B) Refrescar claims en backend y luego el token local
+    // B) Refrescar claims en backend y el token local
     try {
       const idToken = await u.getIdToken(true);
       const resp = await fetch(withTenant('/app/api/auth/refresh-role'), {
@@ -1327,6 +1328,18 @@ const onSubmitCash = async () => {
       },
     };
 
+    // 👀 SIEMPRE mostrar el preflight y claims en consola
+    console.group('PRE-FLIGHT: create order');
+    console.log('preflight', preflight);
+    console.log('claims raw', claims);
+    console.log('payload sample (sin items):', {
+      tenantId: (payload as any)?.tenantId,
+      status: (payload as any)?.status,
+      createdBy: (payload as any)?.createdBy,
+      orderInfo: (payload as any)?.orderInfo,
+    });
+    console.groupEnd();
+
     // E) Cortes claros si algo no cumple
     if (!tenantId) {
       console.warn('PRE-FLIGHT ❌ tenantId missing', preflight);
@@ -1354,21 +1367,34 @@ const onSubmitCash = async () => {
     }
 
     // F) OK → escribir
-    const ref = await addDoc(tCol('orders', tenantId!), { ...payload, tenantId });
+    try {
+      console.log('addDoc → collection:', `tenants/${tenantId}/orders`);
+      const ref = await addDoc(tCol('orders', tenantId!), { ...payload, tenantId });
+      console.log('addDoc OK → new id:', ref.id);
 
-    if (state.promo?.promoId) {
-      try {
-        await fetch(withTenant('/app/api/promotions/consume'), {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'x-tenant': tenantId || '' },
-          body: JSON.stringify({ promoId: state.promo.promoId, code: state.promo.code, orderId: ref.id }),
-        });
-      } catch {}
+      if (state.promo?.promoId) {
+        try {
+          await fetch(withTenant('/app/api/promotions/consume'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'x-tenant': tenantId || '' },
+            body: JSON.stringify({ promoId: state.promo.promoId, code: state.promo.code, orderId: ref.id }),
+          });
+        } catch (e) {
+          console.warn('consume promo failed', e);
+        }
+      }
+
+      cart.clear();
+      router.push(withTenant('/app/cart-new'));
+      alert('Order created (cash) ✓');
+    } catch (writeErr: any) {
+      console.error('addDoc FAILED', {
+        path: `tenants/${tenantId}/orders`,
+        error: writeErr?.message || writeErr,
+        code: writeErr?.code,
+      });
+      throw writeErr;
     }
-
-    helpers.cart.clear();
-    helpers.router.push(withTenant('/app/cart-new'));
-    alert('Order created (cash) ✓');
   } catch (e: any) {
     console.error(e);
     alert('No se pudo crear la orden: ' + (e?.message || 'permiso denegado'));
@@ -1376,6 +1402,7 @@ const onSubmitCash = async () => {
     actions.setSaving(false);
   }
 };
+
 
   // PayPal: carga SDK sólo si está habilitado
   const [paypalReady, setPaypalReady] = useState(false);
