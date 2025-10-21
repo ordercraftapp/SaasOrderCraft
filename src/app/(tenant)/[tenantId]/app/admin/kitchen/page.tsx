@@ -6,6 +6,7 @@ import { useParams } from 'next/navigation';
 import Protected from '@/app/(tenant)/[tenantId]/components/Protected';
 import { OnlyKitchen } from "@/app/(tenant)/[tenantId]/components/Only";
 import ToolGate from '@/components/ToolGate'; 
+import { useAuth } from '@/app/(tenant)/[tenantId]/app/providers';
 
 // 🔤 i18n
 import { t as translate } from "@/lib/i18n/t";
@@ -67,45 +68,7 @@ async function getIdTokenResultSafe(): Promise<{ token: string; claims: any } | 
     return null;
   }
 }
-function useAuthState() {
-  const [authReady, setAuthReady] = useState(false);
-  const [user, setUser] = useState<any | null>(null);
-  useEffect(() => {
-    let mounted = true;
-    (async () => {
-      const { onAuthStateChanged, getAuth } = await getAuthMod();
-      const auth = getAuth();
-      const unsub = onAuthStateChanged(auth, (u) => {
-        if (!mounted) return;
-        setUser(u ?? null);
-        setAuthReady(true);
-      });
-      return () => unsub();
-    })();
-    return () => { mounted = false; };
-  }, []);
-  return { authReady, user } as const;
-}
-function useAuthClaims() {
-  const { authReady, user } = useAuthState();
-  const [claims, setClaims] = useState<any | null>(null);
-  useEffect(() => {
-    let mounted = true;
-    (async () => {
-      if (!user) { setClaims(null); return; }
-      const res = await getIdTokenResultSafe();
-      if (mounted) setClaims(res?.claims ?? null);
-    })();
-    return () => { mounted = false; };
-  }, [user]);
-  const flags = useMemo(() => ({
-    isAdmin: !!claims?.admin,
-    isKitchen: !!claims?.kitchen || !!claims?.admin,
-    isWaiter: !!claims?.waiter || !!claims?.admin,
-    isDelivery: !!claims?.delivery || !!claims?.admin,
-  }), [claims]);
-  return { authReady, user, claims, ...flags } as const;
-}
+
 
 /* --------------------------------------------
    API base (tenant-scoped) + fetch helper
@@ -714,7 +677,10 @@ function KitchenBoardPage_Inner() {
     return s === key ? fallback : s;
   };
 
-  const { authReady, user, isKitchen, isAdmin } = useAuthClaims();
+  const { loading: authLoading, user, flags } = useAuth();
+  const isKitchen = flags.isKitchen;
+  const isAdmin   = flags.isAdmin;
+  const authReady = !authLoading;
 
   const [soundOn, setSoundOn] = useState(true);
   const beep = useBeep(soundOn);
