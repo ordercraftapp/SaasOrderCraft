@@ -1265,6 +1265,7 @@ async function userHasTenantClaim(u: any, tenantId: string) {
 }
 
 // ⬇️ Reemplaza COMPLETO tu onSubmitCash por este:
+// ⬇️ Reemplaza COMPLETO por este:
 const onSubmitCash = async () => {
   try {
     actions.setSaving(true);
@@ -1272,7 +1273,7 @@ const onSubmitCash = async () => {
     const auth = getAuth();
     const u = auth.currentUser;
 
-    // A) Sesión válida (mejor no anónima)
+    // A) Sesión válida
     if (!u) {
       alert('Inicia sesión para crear la orden.');
       actions.setSaving(false);
@@ -1284,7 +1285,7 @@ const onSubmitCash = async () => {
       return;
     }
 
-    // B) Refrescar claims en backend y el token local
+    // B) Refrescar claims en backend y luego el token local
     try {
       const idToken = await u.getIdToken(true);
       const resp = await fetch(withTenant('/app/api/auth/refresh-role'), {
@@ -1294,19 +1295,17 @@ const onSubmitCash = async () => {
         credentials: 'same-origin',
       });
       if (resp?.ok) await u.getIdToken(true);
-    } catch {}
+    } catch (e) {
+      console.warn('refresh-role fallo (continuo):', e);
+    }
 
-    // C) Construir payload
-    const payload = await buildOrderPayload();
-    (payload as any).payment = {
-      provider: 'cash',
-      status: 'pending',
-      amount: (payload as any).totals?.grandTotalWithTax ?? (payload as any).orderTotal,
-      currency: (payload as any).totals?.currency || 'USD',
-      createdAt: serverTimestamp(),
-    };
+    // C) Construir payload BASE
+    const base = await buildOrderPayload();
 
-    // D) PRE-FLIGHT de reglas
+    // ⚠️ Importante: agrega tenantId DENTRO del payload ANTES del pre-flight
+    const payload = { ...base, tenantId };
+
+    // D) PRE-FLIGHT (siempre imprime)
     const claims: any = await getClaims(u);
     const simpleTenantClaim = claims?.tenantId === tenantId;
     const mapTenantClaim = !!(claims?.tenants && claims?.tenants[tenantId!]);
@@ -1320,7 +1319,7 @@ const onSubmitCash = async () => {
       tenantIdPropInPayload: (payload as any)?.tenantId === tenantId,
       createdByUidMatches: (payload as any)?.createdBy?.uid === u.uid,
       statusPlaced: (payload as any)?.status === 'placed',
-      orderTypeAllowed: ['dine-in','delivery','pickup'].includes((payload as any)?.orderInfo?.type),
+      orderTypeAllowed: ['dine-in', 'delivery', 'pickup'].includes((payload as any)?.orderInfo?.type),
       claimsPreview: {
         tenantId: claims?.tenantId ?? null,
         tenantsKeys: claims?.tenants ? Object.keys(claims.tenants) : [],
@@ -1328,17 +1327,8 @@ const onSubmitCash = async () => {
       },
     };
 
-    // 👀 SIEMPRE mostrar el preflight y claims en consola
-    console.group('PRE-FLIGHT: create order');
-    console.log('preflight', preflight);
-    console.log('claims raw', claims);
-    console.log('payload sample (sin items):', {
-      tenantId: (payload as any)?.tenantId,
-      status: (payload as any)?.status,
-      createdBy: (payload as any)?.createdBy,
-      orderInfo: (payload as any)?.orderInfo,
-    });
-    console.groupEnd();
+    // 👉 SIEMPRE imprime el preflight para depurar
+    console.log('PRE-FLIGHT ▶', preflight);
 
     // E) Cortes claros si algo no cumple
     if (!tenantId) {
@@ -1366,11 +1356,9 @@ const onSubmitCash = async () => {
       return;
     }
 
-    // F) OK → escribir
+    // F) Escribir en Firestore (usa el payload que YA trae tenantId)
     try {
-      console.log('addDoc → collection:', `tenants/${tenantId}/orders`);
-      const ref = await addDoc(tCol('orders', tenantId!), { ...payload, tenantId });
-      console.log('addDoc OK → new id:', ref.id);
+      const ref = await addDoc(tCol('orders', tenantId!), payload);
 
       if (state.promo?.promoId) {
         try {
@@ -1380,28 +1368,31 @@ const onSubmitCash = async () => {
             body: JSON.stringify({ promoId: state.promo.promoId, code: state.promo.code, orderId: ref.id }),
           });
         } catch (e) {
-          console.warn('consume promo failed', e);
+          console.warn('consume promo fallo (continuo):', e);
         }
       }
 
       cart.clear();
       router.push(withTenant('/app/cart-new'));
       alert('Order created (cash) ✓');
-    } catch (writeErr: any) {
-      console.error('addDoc FAILED', {
-        path: `tenants/${tenantId}/orders`,
-        error: writeErr?.message || writeErr,
-        code: writeErr?.code,
+    } catch (err: any) {
+      // 🔎 Captura y muestra el error real de Firestore
+      console.error('addDoc error ▶', {
+        code: err?.code,
+        message: err?.message,
+        name: err?.name,
+        stack: err?.stack,
       });
-      throw writeErr;
+      alert('No se pudo crear la orden (Firestore): ' + (err?.message || 'Missing or insufficient permissions.'));
     }
   } catch (e: any) {
-    console.error(e);
+    console.error('onSubmitCash error ▶', e);
     alert('No se pudo crear la orden: ' + (e?.message || 'permiso denegado'));
   } finally {
     actions.setSaving(false);
   }
 };
+
 
 
   // PayPal: carga SDK sólo si está habilitado
