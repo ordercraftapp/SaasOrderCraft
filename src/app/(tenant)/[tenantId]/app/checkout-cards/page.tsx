@@ -609,186 +609,189 @@ function useCheckoutState() {
   }, []);
 
   const buildOrderPayload = useCallback(async () => {
-    const meta: DineInInfo | DeliveryInfo | PickupInfo =
-      mode === 'dine-in'
-        ? { type: 'dine-in', table, notes: notes || undefined }
-        : mode === 'delivery'
-        ? { type: 'delivery', address, phone, notes: notes || undefined }
-        : { type: 'pickup', phone, notes: notes || undefined };
+  const meta: DineInInfo | DeliveryInfo | PickupInfo =
+    mode === 'dine-in'
+      ? { type: 'dine-in', table, notes: notes || undefined }
+      : mode === 'delivery'
+      ? { type: 'delivery', address, phone, notes: notes || undefined }
+      : { type: 'pickup', phone, notes: notes || undefined };
 
-    const auth = getAuth();
-    const u = auth.currentUser;
+  const auth = getAuth();
+  const u = auth.currentUser;
 
-    let orderInfo: any = meta;
-    if (mode === 'delivery') {
-      const selectedAddr = addressLabel === 'home' ? homeAddr
-                        : addressLabel === 'office' ? officeAddr
-                        : null;
-      const addressInfo = selectedAddr ? {
-        line1: selectedAddr.line1 || '',
-        city: selectedAddr.city || '',
-        country: selectedAddr.country || '',
-        zip: selectedAddr.zip || '',
-        notes: selectedAddr.notes || '',
-      } : undefined;
+  let orderInfo: any = meta;
+  if (mode === 'delivery') {
+    const selectedAddr = addressLabel === 'home' ? homeAddr
+                      : addressLabel === 'office' ? officeAddr
+                      : null;
+    const addressInfo = selectedAddr ? {
+      line1: selectedAddr.line1 || '',
+      city: selectedAddr.city || '',
+      country: selectedAddr.country || '',
+      zip: selectedAddr.zip || '',
+      notes: selectedAddr.notes || '',
+    } : undefined;
 
-      const selectedOpt = deliveryOptions.find((o) => o.id === selectedDeliveryOptionId);
-      orderInfo = {
-        ...(meta as DeliveryInfo),
-        delivery: 'pending',
-        customerName: customerName || u?.displayName || undefined,
-        addressLabel: addressLabel || undefined,
-        addressInfo,
-        addressNotes: selectedAddr?.notes || undefined,
-        deliveryOptionId: selectedOpt?.id || undefined,
-        deliveryOption: selectedOpt
-          ? { title: selectedOpt.title, description: selectedOpt.description || '', price: Number(selectedOpt.price || 0) }
-          : undefined,
-      };
-    }
-
-    const { orderSource, deviceInfo } = detectOrderSource();
-    (orderInfo as any).orderSource = orderSource;
-    (orderInfo as any).deviceInfo = deviceInfo;
-
-    const cleanOrderInfo = undefToNullDeep(orderInfo);
-
-    const appliedPromotions = promo ? [{
-      promoId: promo.promoId,
-      code: promo.code,
-      discountTotalCents: promo.discountTotalCents,
-      discountTotal: (promo.discountTotalCents / 100),
-      byLine: promo.discountByLine,
-    }] : [];
-
-    const toCents = (n: number | undefined | null) => Math.round(((n as number) || 0) * 100);
-
-    const active = await getActiveTaxProfile();
-    const zeroProfile = {
-      id: 'no-tax',
-      country: 'GT',
-      currency: process.env.NEXT_PUBLIC_PAY_CURRENCY || 'USD',
-      pricesIncludeTax: true,
-      rounding: 'half_up',
-      rates: [{ code: 'ALL', label: 'No tax', rateBps: 0, appliesTo: 'all' }],
-      surcharges: [],
-      delivery: { mode: 'as_line', taxable: false },
-    } as const;
-
-    const profile = active || (zeroProfile as any);
-
-    const linesForTax = cart.items.map((ln: any) => {
-      const perUnitTotal = cart.computeLineTotal({ ...ln, quantity: 1 });
-      const perUnitExtras = perUnitTotal - ln.basePrice;
-      return {
-        lineId: ln.menuItemId + '-' + (Math.random().toString(36).slice(2)),
-        quantity: ln.quantity,
-        unitPriceCents: toCents(ln.basePrice),
-        addonsCents: 0,
-        optionsDeltaCents: toCents(perUnitExtras),
-        lineTotalCents: undefined,
-        taxExempt: false,
-        name: ln.menuItemName,
-      };
-    });
-
-    const orderTypeForTax = mode;
-    const rawDeliveryFeeCents = toCents(mode === 'delivery' ? deliveryFee : 0);
-
-    const draftInput = {
-      currency: profile?.currency ?? 'USD',
-      orderType: orderTypeForTax,
-      lines: linesForTax,
-      customer: {
-        taxId: customerTaxId || undefined,
-        name: customerBillingName || customerName || undefined,
-      },
-      deliveryFeeCents:
-        (profile?.delivery?.mode === 'as_line' && mode === 'delivery')
-          ? toCents(deliveryFee)
-          : 0,
-      deliveryAddressInfo:
-        mode === 'delivery'
-          ? ((orderInfo as any)?.addressInfo ?? {
-              country: homeAddr?.country || officeAddr?.country,
-              city: homeAddr?.city || officeAddr?.city,
-              zip: homeAddr?.zip || officeAddr?.zip,
-              line1: address || homeAddr?.line1 || officeAddr?.line1,
-              notes: (orderInfo as any)?.addressNotes || undefined,
-            })
-          : null,
+    const selectedOpt = deliveryOptions.find((o) => o.id === selectedDeliveryOptionId);
+    orderInfo = {
+      ...(meta as DeliveryInfo),
+      delivery: 'pending',
+      customerName: customerName || u?.displayName || undefined,
+      addressLabel: addressLabel || undefined,
+      addressInfo,
+      addressNotes: selectedAddr?.notes || undefined,
+      deliveryOptionId: selectedOpt?.id || undefined,
+      deliveryOption: selectedOpt
+        ? { title: selectedOpt.title, description: selectedOpt.description || '', price: Number(selectedOpt.price || 0) }
+        : undefined,
     };
+  }
 
-    const taxSnapshot = calculateTaxSnapshot(draftInput as any, profile as any);
+  const { orderSource, deviceInfo } = detectOrderSource();
+  (orderInfo as any).orderSource = orderSource;
+  (orderInfo as any).deviceInfo = deviceInfo;
 
-    const tipCents = toCents(mode === 'delivery' ? 0 : tip);
-    const discountCents = promo?.discountTotalCents ?? 0;
+  const cleanOrderInfo = undefToNullDeep(orderInfo);
 
-    const deliveryOutsideCents =
-      (profile?.delivery?.mode === 'as_line')
-        ? 0
-        : rawDeliveryFeeCents;
+  const appliedPromotions = promo ? [{
+    promoId: promo.promoId,
+    code: promo.code,
+    discountTotalCents: promo.discountTotalCents,
+    discountTotal: (promo.discountTotalCents / 100),
+    byLine: promo.discountByLine,
+  }] : [];
 
-    const grandTotalWithTaxCents =
-      (taxSnapshot?.totals?.grandTotalCents || 0)
-      + deliveryOutsideCents
-      + tipCents
-      - discountCents;
+  const toCents = (n: number | undefined | null) => Math.round(((n as number) || 0) * 100);
 
-    const grandTotalWithTax = grandTotalWithTaxCents / 100;
+  // ⚠️ NO LEER FIRESTORE AQUÍ. Usa el profile YA cargado o uno cero:
+  const zeroProfile = {
+    id: 'no-tax',
+    country: 'GT',
+    currency: process.env.NEXT_PUBLIC_PAY_CURRENCY || 'USD',
+    pricesIncludeTax: true,
+    rounding: 'half_up',
+    rates: [{ code: 'ALL', label: 'No tax', rateBps: 0, appliesTo: 'all' }],
+    surcharges: [],
+    delivery: { mode: 'as_line', taxable: false },
+  } as const;
 
+  const profile = (activeProfile || zeroProfile) as any; // ⬅️ usa el de estado
+
+  const linesForTax = cart.items.map((ln: any) => {
+    const perUnitTotal = cart.computeLineTotal({ ...ln, quantity: 1 });
+    const perUnitExtras = perUnitTotal - ln.basePrice;
     return {
-      items: cart.items.map((ln) => ({
-        menuItemId: ln.menuItemId,
-        menuItemName: ln.menuItemName,
-        basePrice: ln.basePrice,
-        quantity: ln.quantity,
-        addons: ln.addons.map((a) => ({ name: a.name, price: a.price })),
-        optionGroups: ln.optionGroups.map((g) => ({
-          groupId: g.groupId,
-          groupName: g.groupName,
-          type: g.type || 'single',
-          items: g.items.map((it: any) => ({ id: it.id, name: it.name, priceDelta: it.priceDelta })),
-        })),
-        lineTotal: cart.computeLineTotal(ln),
-      })),
-      orderTotal: grandTotal,
-      orderInfo: cleanOrderInfo,
-      totals: {
-        subtotal,
-        deliveryFee,
-        tip: mode === 'delivery' ? 0 : tip,
-        discount: promoDiscountGTQ,
-        currency: process.env.NEXT_PUBLIC_PAY_CURRENCY || 'USD',
-        tax: (taxSnapshot?.totals?.taxCents || 0) / 100,
-        grandTotalWithTax,
-      },
-      totalsCents: {
-        itemsSubTotalCents: taxSnapshot?.totals?.subTotalCents ?? 0,
-        itemsTaxCents: taxSnapshot?.totals?.taxCents ?? 0,
-        itemsGrandTotalCents: taxSnapshot?.totals?.grandTotalCents ?? 0,
-        deliveryFeeCents: rawDeliveryFeeCents,
-        tipCents,
-        discountCents,
-        grandTotalWithTaxCents,
-        currency: draftInput.currency,
-      },
-      taxSnapshot: taxSnapshot ? undefToNullDeep(taxSnapshot) : null,
-      appliedPromotions,
-      promotionCode: promo?.code || null,
-      status: 'placed',
-      createdAt: serverTimestamp(),
-      ...(u ? {
-        userEmail: u.email,
-        userEmail_lower: u.email?.toLowerCase() || undefined,
-        createdBy: { uid: u.uid, email: u.email ?? null }
-      } : {}),
+      lineId: ln.menuItemId + '-' + (Math.random().toString(36).slice(2)),
+      quantity: ln.quantity,
+      unitPriceCents: toCents(ln.basePrice),
+      addonsCents: 0,
+      optionsDeltaCents: toCents(perUnitExtras),
+      lineTotalCents: undefined,
+      taxExempt: false,
+      name: ln.menuItemName,
     };
-  }, [
-    address, addressLabel, customerName, customerBillingName, customerTaxId,
-    deliveryFee, deliveryOptions, grandTotal, homeAddr, mode, notes, officeAddr, phone,
-    selectedDeliveryOptionId, subtotal, table, tip, promoDiscountGTQ, promo, cart
-  ]);
+  });
+
+  const orderTypeForTax = mode;
+  const rawDeliveryFeeCents = toCents(mode === 'delivery' ? deliveryFee : 0);
+
+  const draftInput = {
+    currency: profile?.currency ?? 'USD',
+    orderType: orderTypeForTax,
+    lines: linesForTax,
+    customer: {
+      taxId: customerTaxId || undefined,
+      name: customerBillingName || customerName || undefined,
+    },
+    deliveryFeeCents:
+      (profile?.delivery?.mode === 'as_line' && mode === 'delivery')
+        ? toCents(deliveryFee)
+        : 0,
+    deliveryAddressInfo:
+      mode === 'delivery'
+        ? ((orderInfo as any)?.addressInfo ?? {
+            country: homeAddr?.country || officeAddr?.country,
+            city: homeAddr?.city || officeAddr?.city,
+            zip: homeAddr?.zip || officeAddr?.zip,
+            line1: address || homeAddr?.line1 || officeAddr?.line1,
+            notes: (orderInfo as any)?.addressNotes || undefined,
+          })
+        : null,
+  };
+
+  const taxSnapshot = calculateTaxSnapshot(draftInput as any, profile as any);
+
+  const tipCents = toCents(mode === 'delivery' ? 0 : tip);
+  const discountCents = promo?.discountTotalCents ?? 0;
+
+  const deliveryOutsideCents =
+    (profile?.delivery?.mode === 'as_line')
+      ? 0
+      : rawDeliveryFeeCents;
+
+  const grandTotalWithTaxCents =
+    (taxSnapshot?.totals?.grandTotalCents || 0)
+    + deliveryOutsideCents
+    + tipCents
+    - discountCents;
+
+  const grandTotalWithTax = grandTotalWithTaxCents / 100;
+
+  return {
+    items: cart.items.map((ln) => ({
+      menuItemId: ln.menuItemId,
+      menuItemName: ln.menuItemName,
+      basePrice: ln.basePrice,
+      quantity: ln.quantity,
+      addons: ln.addons.map((a) => ({ name: a.name, price: a.price })),
+      optionGroups: ln.optionGroups.map((g) => ({
+        groupId: g.groupId,
+        groupName: g.groupName,
+        type: g.type || 'single',
+        items: g.items.map((it: any) => ({ id: it.id, name: it.name, priceDelta: it.priceDelta })),
+      })),
+      lineTotal: cart.computeLineTotal(ln),
+    })),
+    orderTotal: grandTotal,
+    orderInfo: cleanOrderInfo,
+    totals: {
+      subtotal,
+      deliveryFee,
+      tip: mode === 'delivery' ? 0 : tip,
+      discount: promoDiscountGTQ,
+      currency: process.env.NEXT_PUBLIC_PAY_CURRENCY || 'USD',
+      tax: (taxSnapshot?.totals?.taxCents || 0) / 100,
+      grandTotalWithTax,
+    },
+    totalsCents: {
+      itemsSubTotalCents: taxSnapshot?.totals?.subTotalCents ?? 0,
+      itemsTaxCents: taxSnapshot?.totals?.taxCents ?? 0,
+      itemsGrandTotalCents: taxSnapshot?.totals?.grandTotalCents ?? 0,
+      deliveryFeeCents: rawDeliveryFeeCents,
+      tipCents,
+      discountCents,
+      grandTotalWithTaxCents,
+      currency: draftInput.currency,
+    },
+    taxSnapshot: taxSnapshot ? undefToNullDeep(taxSnapshot) : null,
+    appliedPromotions,
+    promotionCode: promo?.code || null,
+    status: 'placed',
+    createdAt: serverTimestamp(),
+    ...(u ? {
+      userEmail: u.email,
+      userEmail_lower: u.email?.toLowerCase() || undefined,
+      createdBy: { uid: u.uid, email: u.email ?? null }
+    } : {}),
+  };
+}, [
+  // 👇 incluye activeProfile en deps para que se use el actual
+  activeProfile,
+  address, addressLabel, customerName, customerBillingName, customerTaxId,
+  deliveryFee, deliveryOptions, grandTotal, homeAddr, mode, notes, officeAddr, phone,
+  selectedDeliveryOptionId, subtotal, table, tip, promoDiscountGTQ, promo, cart
+]);
+
 
   return {
     state: {
