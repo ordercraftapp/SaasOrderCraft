@@ -360,6 +360,44 @@ function armOrderListeners(_: number) {
         mergeChunkIntoState(draft, tblStr, incoming);
       });
 
+      // quitar despues                                                         quitarrrrr
+      const unsub = onSnapshot(qRef, (snap) => {
+  const draft: Record<string, OrderDoc | undefined> = {};
+  const seen: Array<{id:string, status:any, table:any}> = [];
+
+  snap.forEach((d) => {
+    const data = d.data() as any;
+    const rawTbl = data?.orderInfo?.table;
+    const tblStr = typeof rawTbl === "number" ? String(rawTbl) : String((rawTbl ?? "")).trim();
+    seen.push({ id: d.id, status: data?.status, table: rawTbl });
+
+    if (!tblStr) return;
+    draft[tblStr] = { id: d.id, ...data } as OrderDoc;
+  });
+
+  console.info(
+    "[waiter] tenant:", tenantId,
+    "| variant:", field, value,
+    "| docs:", snap.size,
+    "| mesas detectadas:", Object.keys(draft),
+    "| ejemplos:", seen.slice(0, 5)
+  );
+
+  setActiveByTable((prev) => {
+    const merged = { ...prev };
+    for (const k of Object.keys(draft)) {
+      const incoming = draft[k]!;
+      const prevT = updatedOrCreatedAt(merged[k]) as Date;
+      const incT  = updatedOrCreatedAt(incoming) as Date;
+      if (incT >= prevT) merged[k] = incoming;
+    }
+    return merged;
+  });
+}, (err) => {
+  console.error("[waiter] onSnapshot error:", err?.code, err?.message);
+});
+// hasta aqui
+
       setActiveByTable((prev) => {
         const merged = { ...prev };
         for (const k of Object.keys(draft)) {
