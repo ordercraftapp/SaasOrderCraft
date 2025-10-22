@@ -2,7 +2,6 @@
 export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
-import { getUserFromRequest } from "@/lib/server/auth";
 import { sendTransactionalEmail } from "@/lib/email/brevoTx";
 import { orderDeliveredHtml, orderDeliveredText } from "@/lib/email/orderDeliveredTemplate";
 import { FieldValue } from "firebase-admin/firestore";
@@ -11,18 +10,83 @@ import { FieldValue } from "firebase-admin/firestore";
 import { resolveTenantFromRequest, requireTenantId } from "@/lib/tenant/server";
 // ✅ Firestore Admin (tenant-aware)
 import { tColAdmin } from "@/lib/db_admin";
+// ✅ Admin Auth
+import { adminAuth } from "@/lib/firebase/admin";
 
 const json = (d: unknown, s = 200) => NextResponse.json(d, { status: s });
 
 type OrderDoc = any;
 
+/* ============================================================================
+   Helpers de auth/roles robustos por-tenant (mismo patrón que en delivery PATCH)
+   ========================================================================== */
+function extractClaims(u: any) {
+  return u?.claims ?? u?.token ?? u ?? {};
+}
+function normalizeTenantNode(node: any): Record<string, boolean> {
+  if (!node || typeof node !== "object") return {};
+  const res: Record<string, boolean> = {};
+  const merge = (src: any) => {
+    if (src && typeof src === "object") {
+      for (const k of Object.keys(src)) if (typeof src[k] === "boolean") res[k] ||= !!src[k];
+    }
+  };
+  merge(node);                // plano {admin:true}
+  merge(node.roles);          // {roles:{admin:true}}
+  merge(node.flags);          // {flags:{admin:true}}
+  merge(node.rolesNormalized);// {rolesNormalized:{admin:true}}
+  return res;
+}
+function hasRoleGlobal(claims: any, role: string) {
+  return !!(
+    claims?.[role] === true ||
+    (Array.isArray(claims?.roles) && claims.roles.includes(role)) ||
+    claims?.role === role ||
+    (role === "admin" && (claims?.role === "superadmin" || claims?.superadmin === true))
+  );
+}
+function inTenant(claims: any, tenantId: string) {
+  if (!claims) return false;
+  if (claims.tenantId && claims.tenantId === tenantId) return true;
+  if (claims.tenants && claims.tenants[tenantId]) return true;
+  return false;
+}
+function hasAnyTenantRole(claims: any, tenantId: string, roles: string[]) {
+  const flags = normalizeTenantNode(claims?.tenants?.[tenantId]);
+  return roles.some((r) => !!flags[r]);
+}
+async function getClaimsFromAuthHeader(req: NextRequest) {
+  const authHeader = req.headers.get("authorization") ?? "";
+  const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : null;
+  if (!token) return null;
+  try {
+    const decoded = await adminAuth.verifyIdToken(token, false);
+    return { uid: decoded.uid, claims: extractClaims(decoded) };
+  } catch {
+    return null;
+  }
+}
+async function ensureTenantAwareClaims(baseClaims: any, uid: string | null, tenantId: string) {
+  let claims = extractClaims(baseClaims);
+  const hasTenantNode = !!claims?.tenants?.[tenantId];
+  if (!hasTenantNode && uid) {
+    try {
+      const rec = await adminAuth.getUser(uid);
+      const cc = rec?.customClaims || {};
+      claims = { ...claims, ...cc };
+    } catch {}
+  }
+  return claims;
+}
+
+/* ============================================================================
+   Lógica de negocio existente (sin cambios)
+   ========================================================================== */
 function isDeliveryOrder(o: OrderDoc) {
   const t = o?.orderInfo?.type?.toLowerCase?.();
   if (t) return t === "delivery";
   return !!(o?.orderInfo?.address || o?.deliveryAddress || o?.type === "delivery");
 }
-
-// ✅ Acepta delivered por varios caminos
 function isDelivered(o: OrderDoc) {
   const sub = String(o?.orderInfo?.delivery || "").toLowerCase();
   if (sub === "delivered") return true;
@@ -40,8 +104,6 @@ function isDelivered(o: OrderDoc) {
   );
   return !!hit;
 }
-
-// ✅ Más sitios posibles para el correo
 function getRecipientEmail(o: OrderDoc): string | null {
   return (
     (o?.createdBy?.email && String(o.createdBy.email)) ||
@@ -52,28 +114,41 @@ function getRecipientEmail(o: OrderDoc): string | null {
     null
   );
 }
-
 function getCustomerName(o: OrderDoc): string | undefined {
   return o?.orderInfo?.customerName || undefined;
 }
 
+/* ============================================================================
+   Handler
+   ========================================================================== */
 export async function POST(
   req: NextRequest,
   ctx: { params: { tenant: string } }
 ) {
   try {
-    // 🔐 Auth: admin, delivery o cashier
-    const me: any = await getUserFromRequest(req);
-    if (!me) return json({ error: "Unauthorized" }, 401);
-    const role = me?.role || "";
-    const isAllowed = ["admin", "delivery", "cashier"].includes(role);
-    if (!isAllowed) return json({ error: "Forbidden" }, 403);
-
     // 🔐 Tenant
     const tenantId = requireTenantId(
       resolveTenantFromRequest(req, ctx?.params),
       "api:/tx/order-delivered"
     );
+
+    // 🔐 Auth robusto: Bearer → fusiona customClaims → valida pertenencia+rol
+    const authInfo = await getClaimsFromAuthHeader(req);
+    if (!authInfo) return json({ error: "Unauthorized" }, 401);
+
+    const claims = await ensureTenantAwareClaims(authInfo.claims, authInfo.uid, tenantId);
+
+    if (!inTenant(claims, tenantId)) {
+      return json({ error: "Forbidden" }, 403);
+    }
+
+    const allowed =
+      hasAnyTenantRole(claims, tenantId, ["admin", "delivery", "cashier"]) ||
+      hasRoleGlobal(claims, "admin") ||
+      hasRoleGlobal(claims, "delivery") ||
+      hasRoleGlobal(claims, "cashier");
+
+    if (!allowed) return json({ error: "Forbidden" }, 403);
 
     // orderId por query o body
     const url = new URL(req.url);
@@ -87,6 +162,11 @@ export async function POST(
     const snap = await ref.get();
     if (!snap.exists) return json({ error: "Order not found" }, 404);
     const order = { id: snap.id, ...(snap.data() || {}) } as OrderDoc;
+
+    // Defensa: que el doc pertenezca al tenant (si tu modelo lo guarda)
+    if (order.tenantId && order.tenantId !== tenantId) {
+      return json({ error: "Order does not belong to tenant" }, 403);
+    }
 
     // Debe ser delivery
     if (!isDeliveryOrder(order)) {
@@ -151,7 +231,7 @@ export async function POST(
 
     // Marcar idempotencia (tenant-scoped + timestamps server)
     const patch = {
-      tenantId, // refuerzo de scope
+      tenantId,
       tx: {
         ...(tx || {}),
         deliveredEmailSentAt: FieldValue.serverTimestamp(),
@@ -160,15 +240,6 @@ export async function POST(
       updatedAt: FieldValue.serverTimestamp(),
     };
     await ref.set(patch, { merge: true });
-
-    // (Opcional) Auditoría
-    // await tColAdmin('_admin_audit', tenantId).add({
-    //   type: 'order_delivered_email_sent',
-    //   tenantId,
-    //   orderId,
-    //   messageId: messageId || null,
-    //   at: FieldValue.serverTimestamp(),
-    // });
 
     return json({ ok: true, orderId, messageId });
   } catch (e: any) {
