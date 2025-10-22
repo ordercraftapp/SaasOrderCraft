@@ -5,23 +5,31 @@ import { NextRequest, NextResponse } from 'next/server';
 import { resolveTenantFromRequest, requireTenantId } from '@/lib/tenant/server';
 import { tColAdmin } from '@/lib/db_admin';
 import { getUserFromRequest } from '@/lib/server/auth';
+import { adminAuth } from '@/lib/firebase/admin';
 
 const json = (d: unknown, s = 200) => NextResponse.json(d, { status: s });
 
-/* ============= Helpers de roles por-tenant (hiper tolerantes) ============= */
+/* =========================
+   Helpers de auth y roles
+   ========================= */
+async function getUserFromAuthHeader(req: NextRequest) {
+  const hdr = req.headers.get('authorization') || req.headers.get('Authorization');
+  if (!hdr || !hdr.toLowerCase().startsWith('bearer ')) return null;
+  const token = hdr.slice(7).trim();
+  try {
+    const decoded = await adminAuth.verifyIdToken(token, true);
+    return decoded as any; // { uid, tenants?, role?, roles?[] ... }
+  } catch {
+    return null;
+  }
+}
+
 function extractClaims(u: any) {
-  // getUserFromRequest puede devolver {claims}, el decoded directo, o {token}
+  // Soporta {claims}, {token} o el decoded directo
   return u?.claims ?? u?.token ?? u ?? {};
 }
-
-function pickTruthyKeys(obj: any) {
-  if (!obj || typeof obj !== 'object') return [];
-  return Object.keys(obj).filter((k) => !!obj[k]);
-}
-
 function normalizeTenantNode(node: any): Record<string, boolean> {
   if (!node || typeof node !== 'object') return {};
-  // Soporta: plano, roles, flags, rolesNormalized
   const res: Record<string, boolean> = {};
   const merge = (src: any) => {
     if (src && typeof src === 'object') {
@@ -30,13 +38,12 @@ function normalizeTenantNode(node: any): Record<string, boolean> {
       }
     }
   };
-  merge(node);
-  merge(node.roles);
-  merge(node.flags);
-  merge(node.rolesNormalized);
+  merge(node);                // plano {admin:true, kitchen:true}
+  merge(node.roles);          // {roles:{...}}
+  merge(node.flags);          // {flags:{...}}
+  merge(node.rolesNormalized);// {rolesNormalized:{...}}
   return res;
 }
-
 function hasRoleGlobal(claims: any, role: string) {
   return !!(
     claims &&
@@ -46,53 +53,63 @@ function hasRoleGlobal(claims: any, role: string) {
       (role === 'admin' && claims.role === 'superadmin'))
   );
 }
-
-function hasRoleTenantAnyKey(claims: any, tenantId: string, roles: string[]) {
+function hasAnyTenantRole(claims: any, tenantId: string, roles: string[]) {
   const node = claims?.tenants?.[tenantId];
   const flags = normalizeTenantNode(node);
   return roles.some((r) => !!flags[r]);
 }
 
-function isStaffForTenant(u: any, tenantId: string) {
-  const claims = extractClaims(u);
-
-  // 🔎 LOG de diagnóstico (quítalo cuando todo quede OK)
-  try {
-    const tNode = claims?.tenants?.[tenantId];
-    const n = normalizeTenantNode(tNode);
-    console.log('[nav-counts] tenantId=', tenantId, {
-      top_role: claims?.role,
-      top_roles: claims?.roles,
-      tenants_keys: Object.keys(claims?.tenants || {}),
-      tenant_node_keys: tNode ? Object.keys(tNode) : null,
-      tenant_flags_true: pickTruthyKeys(n),
-    });
-  } catch {}
-
-  // Por-tenant (todas las variantes) + global legacy
-  return (
-    hasRoleTenantAnyKey(claims, tenantId, ['admin','kitchen','cashier','delivery']) ||
-    hasRoleGlobal(claims, 'admin') ||
-    hasRoleGlobal(claims, 'waiter')
-  );
-}
-
 /* ============================== Handler ============================== */
 export async function GET(req: NextRequest, { params }: { params: { tenantId: string } }) {
   try {
-    // 🔐 Auth
-    const user = await getUserFromRequest(req);
-    if (!user) return json({ ok: false, error: 'Unauthorized' }, 401);
-
-    // 🔐 Tenant
+    // 🔐 Tenant del path
     const tenantId = requireTenantId(
       resolveTenantFromRequest(req, params),
       'api:admin/nav-counts'
     );
 
-    if (!isStaffForTenant(user, tenantId)) {
-      return json({ ok: false, error: 'Forbidden' }, 403);
+    // 1) Preferimos el ID token del Authorization header (claims frescos)
+    let user: any = await getUserFromAuthHeader(req);
+
+    // 2) Fallback a tu helper (puede devolver sesión sin tenants)
+    if (!user) user = await getUserFromRequest(req);
+    if (!user) return json({ ok: false, error: 'Unauthorized' }, 401);
+
+    // 3) Si aún no vemos tenants, hacemos fallback a customClaims del Admin SDK
+    let claims = extractClaims(user);
+    if (!claims?.tenants || !claims.tenants[tenantId]) {
+      try {
+        const uid = claims?.uid || user?.uid;
+        if (uid) {
+          const rec = await adminAuth.getUser(uid);
+          const cc = (rec?.customClaims ?? {}) as any;
+          // Unimos superficialmente para no perder nada global
+          claims = { ...claims, ...cc };
+        }
+      } catch {}
     }
+
+    // 🔎 Diagnóstico (bórralo luego)
+    try {
+      const tNode = claims?.tenants?.[tenantId];
+      const normalized = normalizeTenantNode(tNode);
+      console.log('[nav-counts:v2] tenantId=', tenantId, {
+        hasTenants: !!claims?.tenants,
+        tenantKeys: Object.keys(claims?.tenants || {}),
+        tNodeKeys: tNode ? Object.keys(tNode) : null,
+        flagsTrue: Object.keys(normalized).filter((k) => normalized[k]),
+        topRole: claims?.role,
+        rolesArr: claims?.roles,
+      });
+    } catch {}
+
+    // ✅ Permisos: por-tenant admin/kitchen/cashier/delivery, o global (compat) admin/waiter
+    const allowed =
+      hasAnyTenantRole(claims, tenantId, ['admin', 'kitchen', 'cashier', 'delivery']) ||
+      hasRoleGlobal(claims, 'admin') ||
+      hasRoleGlobal(claims, 'waiter');
+
+    if (!allowed) return json({ ok: false, error: 'Forbidden' }, 403);
 
     // 🗂️ Colección Admin (tenants/{tenantId}/orders)
     const col = tColAdmin('orders', tenantId);
@@ -129,7 +146,13 @@ export async function GET(req: NextRequest, { params }: { params: { tenantId: st
     if (cashierQueue === 0) cashierQueue = c2Legacy.data().count || 0;
     const deliveryPending = c3.data().count || 0;
 
-    return json({ ok: true, kitchenPending, cashierQueue, deliveryPending, ts: new Date().toISOString() });
+    return json({
+      ok: true,
+      kitchenPending,
+      cashierQueue,     // ✅ incluye pickup
+      deliveryPending,
+      ts: new Date().toISOString(),
+    });
   } catch (e: any) {
     console.error('[GET /app/api/admin/nav-counts] error:', e);
     return json({ ok: false, error: e?.message || 'Server error' }, 500);
