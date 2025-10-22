@@ -14,12 +14,10 @@ import {
   onSnapshot,
   query,
   where,
-  orderBy,
   limit,
   Timestamp,
   Unsubscribe,
   type Query,
-  type QuerySnapshot,
   type DocumentData,
 } from "firebase/firestore";
 
@@ -321,35 +319,20 @@ function WaiterPage_Inner() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loadingSettings, tenantId, enabled]); // 🔒 dep: enabled
 
-  function armOrderListeners(count: number) {
+function armOrderListeners(_: number) {
   // Limpia listeners previos
   unsubRef.current.forEach((u) => u && u());
   unsubRef.current = [];
 
-  const allTables = Array.from({ length: count }, (_, i) => String(i + 1));
+  // Empezamos “vacío”; se va llenando con mesas ocupadas
+  setActiveByTable({});
 
-  // chunk de strings (para orderInfo.table string)
-  const chunksStr: string[][] = [];
-  for (let i = 0; i < allTables.length; i += IN_FILTER_MAX) {
-    chunksStr.push(allTables.slice(i, i + IN_FILTER_MAX));
-  }
-
-  // chunk de números (para orderInfo.table num) — solo donde Number es válido
-  const allTablesNum = allTables
-    .map((s) => Number(s))
-    .filter((n) => Number.isFinite(n)) as number[];
-  const chunksNum: number[][] = [];
-  for (let i = 0; i < allTablesNum.length; i += IN_FILTER_MAX) {
-    chunksNum.push(allTablesNum.slice(i, i + IN_FILTER_MAX));
-  }
-
-  // Resetea estado visible
-  const nextState: Record<string, OrderDoc | undefined> = {};
-  allTables.forEach((t) => (nextState[t] = undefined));
-  setActiveByTable(nextState);
-
-  // Helper común para fusionar en estado (elige la orden más "reciente")
-  const mergeChunkIntoState = (draftMap: Record<string, OrderDoc | undefined>, tableKey: string, incoming: OrderDoc) => {
+  // Elige la orden más reciente por mesa
+  const mergeChunkIntoState = (
+    draftMap: Record<string, OrderDoc | undefined>,
+    tableKey: string,
+    incoming: OrderDoc
+  ) => {
     const prev = draftMap[tableKey];
     if (!prev) { draftMap[tableKey] = incoming; return; }
     const prevT = updatedOrCreatedAt(prev) as Date;
@@ -357,113 +340,64 @@ function WaiterPage_Inner() {
     if (incT >= prevT) draftMap[tableKey] = incoming;
   };
 
-  // Registra un listener y cómo aplicar resultados al estado por conjunto de mesas
-const attachListener = (
-  qRef: Query<any>,                 // <- antes: Query<DocumentData>
-  tableChunk: Array<string | number>
-) => {
-  const unsub = onSnapshot(qRef, (snap: QuerySnapshot<DocumentData>) => {
-    const draft: Record<string, OrderDoc | undefined> = {};
-    for (const d of snap.docs) {
-      const data = d.data() as any;
-      const rawTbl = data?.orderInfo?.table;
-      const tblStr = typeof rawTbl === "number" ? String(rawTbl) : String(rawTbl ?? "");
-      if (!tblStr) continue;
+  // Listener por variante de tipo (como en el layout)
+  const attachVariant = (field: "orderInfo.type" | "type", value: "dine-in" | "dine_in") => {
+    const qRef = query(
+      tCol("orders", tenantId),
+      where(field, "==", value),
+      where("status", "in", OPEN_STATUSES as unknown as string[]),
+      limit(1000)
+    ) as Query<DocumentData>;
 
-      const incoming: OrderDoc = { id: d.id, ...data } as OrderDoc;
-      mergeChunkIntoState(draft, tblStr, incoming);
-    }
+    const unsub = onSnapshot(qRef, (snap) => {
+      const draft: Record<string, OrderDoc | undefined> = {};
+      snap.forEach((d) => {
+        const data = d.data() as any;
+        const rawTbl = data?.orderInfo?.table;
+        const tblStr = typeof rawTbl === "number" ? String(rawTbl) : String(rawTbl ?? "");
+        if (!tblStr) return;
+        const incoming: OrderDoc = { id: d.id, ...data } as OrderDoc;
+        mergeChunkIntoState(draft, tblStr, incoming);
+      });
 
-    setActiveByTable((prev) => {
-      const merged = { ...prev };
-      for (const k of Object.keys(draft)) {
-        const incoming = draft[k];
-        if (!incoming) continue;
-        const prevT = updatedOrCreatedAt(merged[k]) as Date;
-        const incT  = updatedOrCreatedAt(incoming) as Date;
-        if (incT >= prevT) merged[k] = incoming;
-      }
-      return merged;
+      setActiveByTable((prev) => {
+        const merged = { ...prev };
+        for (const k of Object.keys(draft)) {
+          const incoming = draft[k];
+          if (!incoming) continue;
+          const prevT = updatedOrCreatedAt(merged[k]) as Date;
+          const incT  = updatedOrCreatedAt(incoming) as Date;
+          if (incT >= prevT) merged[k] = incoming;
+        }
+        return merged;
+      });
     });
-  });
 
-  unsubRef.current.push(unsub);
-};
+    unsubRef.current.push(unsub);
+  };
+
+  // Monta solo 3 listeners (cubre tus casos)
+  attachVariant("orderInfo.type", "dine-in");
+  attachVariant("orderInfo.type", "dine_in");
+  attachVariant("type",           "dine_in");
+} //  <-- 👈👈👈  CIERRE CORRECTO DE armOrderListeners
 
 
+ // ------------- UI Helpers -------------
+const tables = useMemo(() => Array.from({ length: numTables }, (_, i) => String(i + 1)), [numTables]);
 
-  // Definimos las combinaciones de filtros "tipo de orden"
-  // NOTA: no podemos usar 2 "in" en la misma query; por eso multiplicamos listeners.
-  type TypeVariant = { field: "orderInfo.type" | "type"; value: "dine-in" | "dine_in" };
-  const TYPE_VARIANTS: TypeVariant[] = [
-    { field: "orderInfo.type", value: "dine-in" },
-    { field: "orderInfo.type", value: "dine_in" },
-    { field: "type",           value: "dine_in" }, // top-level moderno
-    // { field: "type",        value: "dine-in" },  // si tienes legacy con guión en top-level, descomenta
-  ];
-
-  // Por cada status abierto montamos listeners para:
-  // - table (string) × cada variante de type
-  // - table (number) × cada variante de type
-  OPEN_STATUSES.forEach((st) => {
-    // --- bloque de strings ---
-chunksStr.forEach((tableChunk) => {
-  TYPE_VARIANTS.forEach((tv) => {
-    const qRef = query(
-      tCol("orders", tenantId),
-      where(tv.field, "==", tv.value),
-      where("orderInfo.table", "in", tableChunk),
-      where("status", "==", st),
-      orderBy("createdAt", "desc"),
-      limit(200)
-    ) as Query<DocumentData>;          // <- cast explícito
-    attachListener(qRef, tableChunk);
-  });
-});
-
-// --- bloque de numbers ---
-chunksNum.forEach((tableChunkNum) => {
-  TYPE_VARIANTS.forEach((tv) => {
-    const qRef = query(
-      tCol("orders", tenantId),
-      where(tv.field, "==", tv.value),
-      where("orderInfo.table", "in", tableChunkNum as number[]),
-      where("status", "==", st),
-      orderBy("createdAt", "desc"),
-      limit(200)
-    ) as Query<DocumentData>;          // <- cast explícito
-    attachListener(qRef, tableChunkNum as any[]);
-  });
-});
-
-  });
+function tableOccupied(t: string) { return !!activeByTable[t]; }
+function statusBadgeFor(t: string) {
+  const st = activeByTable[t]?.status;
+  if (!st) return null;
+  const variant = STATUS_BADGE[st] ?? "secondary";
+  const label = st.replaceAll("_", " ");
+  return <span className={`badge text-bg-${variant} ms-2 text-capitalize`}>{label}</span>;
 }
+function openTablePanel(t: string) { setSelectedTable(t); }
+function closePanel() { setSelectedTable(null); }
+const selectedOrder: OrderDoc | undefined = selectedTable ? activeByTable[selectedTable] : undefined;
 
-
-  // ------------- UI Helpers -------------
-  const tables = useMemo(() => Array.from({ length: numTables }, (_, i) => String(i + 1)), [numTables]);
-
-  function tableOccupied(t: string) {
-    return !!activeByTable[t];
-  }
-
-  function statusBadgeFor(t: string) {
-    const st = activeByTable[t]?.status;
-    if (!st) return null;
-    const variant = STATUS_BADGE[st] ?? "secondary";
-    const label = st.replaceAll("_", " ");
-    return <span className={`badge text-bg-${variant} ms-2 text-capitalize`}>{label}</span>;
-  }
-
-  function openTablePanel(t: string) {
-    setSelectedTable(t);
-  }
-
-  function closePanel() {
-    setSelectedTable(null);
-  }
-
-  const selectedOrder: OrderDoc | undefined = selectedTable ? activeByTable[selectedTable] : undefined;
 
   // =================== Render INNER ===================
   return (
