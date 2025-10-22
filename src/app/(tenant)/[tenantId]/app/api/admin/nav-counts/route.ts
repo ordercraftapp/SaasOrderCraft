@@ -89,19 +89,8 @@ export async function GET(req: NextRequest, { params }: { params: { tenantId: st
       } catch {}
     }
 
-    // 🔎 Diagnóstico (bórralo luego)
-    try {
-      const tNode = claims?.tenants?.[tenantId];
-      const normalized = normalizeTenantNode(tNode);
-      console.log('[nav-counts:v2] tenantId=', tenantId, {
-        hasTenants: !!claims?.tenants,
-        tenantKeys: Object.keys(claims?.tenants || {}),
-        tNodeKeys: tNode ? Object.keys(tNode) : null,
-        flagsTrue: Object.keys(normalized).filter((k) => normalized[k]),
-        topRole: claims?.role,
-        rolesArr: claims?.roles,
-      });
-    } catch {}
+    
+    
 
     // ✅ Permisos: por-tenant admin/kitchen/cashier/delivery, o global (compat) admin/waiter
     const allowed =

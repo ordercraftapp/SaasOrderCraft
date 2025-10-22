@@ -13,11 +13,43 @@ type PatchBody = {
   delivery?: DeliverySubState;
 };
 
-// Utilidad para roles básicos (claims personalizados en el token)
-function hasRole(decoded: any, ...roles: string[]) {
-  const r = decoded?.role;
-  const rs: string[] = decoded?.roles || [];
-  return roles.some((x) => r === x || rs.includes(x));
+/* ============================================================================
+   Helpers de autorización por-tenant
+   ========================================================================== */
+// ¿El usuario pertenece al tenant?
+function inTenant(decoded: any, tenantId: string) {
+  if (!decoded) return false;
+  if (decoded.tenantId && decoded.tenantId === tenantId) return true;
+  if (decoded.tenants && decoded.tenants[tenantId]) return true;
+  return false;
+}
+
+// ¿Tiene alguno de estos roles en el tenant? (con fallback global)
+function hasRoleForTenant(decoded: any, tenantId: string, ...roles: string[]) {
+  if (!decoded) return false;
+
+  // por-tenant: array
+  const tEntry = decoded.tenants?.[tenantId];
+  const tenantRolesArray: string[] = Array.isArray(tEntry?.roles) ? tEntry.roles : [];
+
+  // por-tenant: flags ({ admin: true, delivery: true, ... })
+  const tenantRoleFlags = tEntry && typeof tEntry === "object" ? tEntry : null;
+
+  // fallback global
+  const globalRole: string | undefined = decoded.role;
+  const globalRolesArray: string[] = Array.isArray(decoded.roles) ? decoded.roles : [];
+  const globalFlags = decoded; // ej.: decoded.admin === true
+
+  return roles.some((r) => {
+    if (!r) return false;
+    return (
+      tenantRolesArray.includes(r) ||
+      (tenantRoleFlags && tenantRoleFlags[r] === true) ||
+      globalRolesArray.includes(r) ||
+      globalRole === r ||
+      globalFlags?.[r] === true
+    );
+  });
 }
 
 // 📁 carpeta es [tenant] → params.tenant
@@ -48,8 +80,13 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Permite admin y personal de delivery (ajusta a tu modelo de roles)
-    if (!hasRole(decoded, "admin", "delivery")) {
+    // Debe pertenecer al tenant del path
+    if (!inTenant(decoded, tenantId)) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+
+    // Permite admin o delivery en *este tenant*
+    if (!hasRoleForTenant(decoded, tenantId, "admin", "delivery")) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
