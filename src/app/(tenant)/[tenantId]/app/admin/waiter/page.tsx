@@ -4,7 +4,6 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import Protected from "@/app/(tenant)/[tenantId]/components/Protected";
 import ToolGate from "@/components/ToolGate";
-import { OnlyWaiter } from "@/app/(tenant)/[tenantId]/components/Only";
 import "@/lib/firebase/client";
 import { useAuth } from "@/app/(tenant)/[tenantId]/app/providers";
 import {
@@ -32,6 +31,47 @@ import { useTenantSettings } from "@/lib/settings/hooks";
 import { tCol, tDoc } from "@/lib/db";
 import { useTenantId } from "@/lib/tenant/context";
 
+/* ===== Firebase Auth helpers (idéntico a Kitchen) ===== */
+async function getAuthMod() {
+  const app = await import("firebase/app");
+  if (!app.getApps().length) {
+    const cfg = {
+      apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY!,
+      authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN!,
+      projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID!,
+      appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID!,
+      storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
+      messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+    };
+    if (cfg.apiKey && cfg.authDomain && cfg.projectId && cfg.appId) {
+      app.initializeApp(cfg);
+    } else {
+      console.warn("[Firebase] Falta configuración NEXT_PUBLIC_*; Auth puede fallar.");
+    }
+  }
+  return await import("firebase/auth");
+}
+
+async function getIdTokenResultSafe(): Promise<{ token: string; claims: any } | null> {
+  try {
+    const { getAuth, getIdTokenResult } = await getAuthMod();
+    const auth = getAuth();
+    const user = auth.currentUser;
+    if (!user) return null;
+    const res = await getIdTokenResult(user, false);
+    return { token: res.token, claims: res.claims };
+  } catch {
+    return null;
+  }
+}
+
+/** Normaliza nodo de roles por-tenant: acepta {roles:{...}} o plano */
+function normalizeTenantNode(node: any): Record<string, any> {
+  if (!node) return {};
+  if (node.roles && typeof node.roles === "object") return { ...node.roles };
+  return { ...node };
+}
+
 // =================== Types ===================
 type FirestoreTS = Timestamp | { seconds: number; nanoseconds?: number } | Date | null | undefined;
 
@@ -57,7 +97,7 @@ type OrderDoc = {
   statusHistory?: Array<{ at?: string; by?: string; from?: string; to?: string }>;
   orderInfo?: {
     type?: "dine-in" | "delivery" | "pickup";
-    table?: string;
+    table?: string | number;
     notes?: string;
   };
   items?: OrderItem[];
@@ -150,12 +190,18 @@ function pickAmount(
   // 2) totalsCents
   const c: any = order.totalsCents || {};
   const centsKey =
-    key === "subtotal" ? "itemsSubTotalCents"
-      : key === "tax" ? "itemsTaxCents"
-      : key === "tip" ? "tipCents"
-      : key === "discount" ? "discountCents"
-      : key === "deliveryFee" ? "deliveryFeeCents"
-      : key === "grandTotalWithTax" ? "grandTotalWithTaxCents"
+    key === "subtotal"
+      ? "itemsSubTotalCents"
+      : key === "tax"
+      ? "itemsTaxCents"
+      : key === "tip"
+      ? "tipCents"
+      : key === "discount"
+      ? "discountCents"
+      : key === "deliveryFee"
+      ? "deliveryFeeCents"
+      : key === "grandTotalWithTax"
+      ? "grandTotalWithTaxCents"
       : undefined;
 
   if (centsKey && typeof c[centsKey] === "number") {
@@ -175,7 +221,6 @@ function pickAmount(
 function detectPricesIncludeTax(order?: OrderDoc): boolean {
   if (!order) return true; // ✅ por defecto NO sumar impuesto
 
-  // 1) Señales explícitas (las más confiables)
   const explicit =
     order.totals?.pricesIncludeTax ??
     order.taxProfile?.pricesIncludeTax ??
@@ -197,7 +242,6 @@ function computeGrandTotal(order?: OrderDoc): number | undefined {
   const sub = getFreshSubtotal(order);
   const includeTaxInPrice = detectPricesIncludeTax(order);
 
-  // Si los precios incluyen impuesto, NO lo sumamos aparte.
   const tax = includeTaxInPrice ? 0 : (pickAmount(order, "tax") ?? 0);
   const tip = pickAmount(order, "tip") ?? 0;
   const fee = pickAmount(order, "deliveryFee") ?? 0;
@@ -211,12 +255,7 @@ function updatedOrCreatedAt(d?: OrderDoc) {
   return tsToDate(d?.updatedAt) || tsToDate(d?.createdAt) || new Date(0);
 }
 
-const OPEN_STATUSES: OrderDoc["status"][] = [
-  "placed",
-  "kitchen_in_progress",
-  "kitchen_done",
-  "ready_to_close",
-];
+const OPEN_STATUSES: OrderDoc["status"][] = ["placed", "kitchen_in_progress", "kitchen_done", "ready_to_close"];
 
 const STATUS_BADGE: Record<string, "secondary" | "warning" | "success" | "primary"> = {
   placed: "secondary",
@@ -225,20 +264,14 @@ const STATUS_BADGE: Record<string, "secondary" | "warning" | "success" | "primar
   ready_to_close: "primary",
 };
 
-// Max items allowed in a Firestore "in" filter
-const IN_FILTER_MAX = 10;
-
-// 👉 URL base a donde quieres mandar al mesero al “Pick”
 const PICK_TARGET_BASE = "/checkout-cards?type=dine-in&table=";
 
 // =================== Page (INNER) ===================
 function WaiterPage_Inner() {
   const tenantId = useTenantId() as string; // tenant requerido en esta vista
-  useEffect(() => {                                //quitar        
-  console.log('[waiter] tenantId =', tenantId);   //quitar
-}, [tenantId]);                                   //quitar
   const db = useMemo(() => getFirestore(), []);
-  const { user, flags } = useAuth(); // usamos flags para rol efectivo
+  const { user, flags } = useAuth(); // usamos flags del provider
+
   const [numTables, setNumTables] = useState<number>(12);
   const [loadingSettings, setLoadingSettings] = useState(true);
 
@@ -266,11 +299,46 @@ function WaiterPage_Inner() {
     return s === key ? fallback : s;
   };
 
-  // 🔒 Habilitación real de efectos (sesión + tenant + rol waiter/admin)
-  const enabled = !!user && !!tenantId && (flags?.isWaiter || flags?.isAdmin);
-  useEffect(() => {                                                                    //quitar
-  console.log('[waiter] enabled?', { enabled, uid: user?.uid, flags, tenantId });      ///quitar
-}, [enabled, user, flags, tenantId]);                                                  //quitar
+  /* === Fallback de roles desde claims (igual que Kitchen) === */
+  const [claimsLocal, setClaimsLocal] = useState<any | null>(null);
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      if (!user) {
+        setClaimsLocal(null);
+        return;
+      }
+      const r = await getIdTokenResultSafe();
+      if (!alive) return;
+      setClaimsLocal(r?.claims || null);
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [user]);
+
+  const tenantFlags = useMemo(() => {
+    const node = claimsLocal?.tenants?.[tenantId];
+    return normalizeTenantNode(node);
+  }, [claimsLocal, tenantId]);
+
+  const globalAdmin = !!claimsLocal?.admin || !!claimsLocal?.roles?.admin || claimsLocal?.role === "admin";
+
+  const effectiveIsAdmin = !!(flags?.isAdmin || tenantFlags.admin || globalAdmin);
+  const effectiveIsWaiter = !!(flags?.isWaiter || tenantFlags.waiter || tenantFlags.floor || tenantFlags.mesero);
+
+  // ✅ habilita si user + tenant y (admin o waiter)
+  const enabled = !!user && !!tenantId && (effectiveIsAdmin || effectiveIsWaiter);
+
+  console.log("[waiter] tenantId =", tenantId);
+  console.log("[waiter] enabled?", {
+    enabled,
+    uid: user?.uid,
+    tenantId,
+    flags,
+    tenantFlags,
+    globalAdmin,
+  });
 
   // ------------- Load & Save Settings -------------
   useEffect(() => {
@@ -292,7 +360,7 @@ function WaiterPage_Inner() {
     return () => {
       mounted = false;
     };
-  }, [db, tenantId, enabled]); // 🔒 dep: enabled
+  }, [db, tenantId, enabled]);
 
   async function saveNumTables() {
     if (!tenantId || !enabled) return; // 🔒
@@ -313,7 +381,6 @@ function WaiterPage_Inner() {
 
   // ------------- Live Orders per Table -------------
   useEffect(() => {
-    // 🔒 si no está habilitado o aún no cargan settings, no montar listeners
     if (!tenantId || !enabled) return;
     if (!loadingSettings) {
       armOrderListeners(numTables);
@@ -323,126 +390,115 @@ function WaiterPage_Inner() {
       unsubRef.current = [];
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loadingSettings, tenantId, enabled]); // 🔒 dep: enabled
+  }, [loadingSettings, tenantId, enabled]);
 
-function armOrderListeners(_: number) {
-  // Limpia listeners previos
-  unsubRef.current.forEach((u) => u && u());
-  unsubRef.current = [];
+  function armOrderListeners(_: number) {
+    // Limpia listeners previos
+    unsubRef.current.forEach((u) => u && u());
+    unsubRef.current = [];
 
-  // Empezamos “vacío”; se va llenando con mesas ocupadas
-  setActiveByTable({});
+    // Empezamos “vacío”; se va llenando con mesas ocupadas
+    setActiveByTable({});
 
-  // Elige la orden más reciente por mesa
-  const mergeChunkIntoState = (
-    draftMap: Record<string, OrderDoc | undefined>,
-    tableKey: string,
-    incoming: OrderDoc
-  ) => {
-    const prev = draftMap[tableKey];
-    if (!prev) { draftMap[tableKey] = incoming; return; }
-    const prevT = updatedOrCreatedAt(prev) as Date;
-    const incT  = updatedOrCreatedAt(incoming) as Date;
-    if (incT >= prevT) draftMap[tableKey] = incoming;
-  };
+    // Elige la orden más reciente por mesa
+    const mergeChunkIntoState = (
+      draftMap: Record<string, OrderDoc | undefined>,
+      tableKey: string,
+      incoming: OrderDoc
+    ) => {
+      const prev = draftMap[tableKey];
+      if (!prev) {
+        draftMap[tableKey] = incoming;
+        return;
+      }
+      const prevT = updatedOrCreatedAt(prev) as Date;
+      const incT = updatedOrCreatedAt(incoming) as Date;
+      if (incT >= prevT) draftMap[tableKey] = incoming;
+    };
 
-  // Listener por variante de tipo (como en el layout)
-  const attachVariant = (field: "orderInfo.type" | "type", value: "dine-in" | "dine_in") => {
-    const qRef = query(
-      tCol("orders", tenantId),
-      where(field, "==", value),
-      where("status", "in", OPEN_STATUSES as unknown as string[]),
-      limit(1000)
-    ) as Query<DocumentData>;
+    // Listener por variante de tipo (como en Kitchen)
+    const attachVariant = (field: "orderInfo.type" | "type", value: "dine-in" | "dine_in") => {
+      const qRef = query(
+        tCol("orders", tenantId), // → tenants/{tenantId}/orders
+        where(field, "==", value),
+        where("status", "in", OPEN_STATUSES as unknown as string[]),
+        limit(1000)
+      ) as Query<DocumentData>;
 
-    const unsub = onSnapshot(qRef, (snap) => {
-      const draft: Record<string, OrderDoc | undefined> = {};
-      snap.forEach((d) => {
-        const data = d.data() as any;
-        const rawTbl = data?.orderInfo?.table;
-        const tblStr = typeof rawTbl === "number" ? String(rawTbl) : String(rawTbl ?? "");
-        if (!tblStr) return;
-        const incoming: OrderDoc = { id: d.id, ...data } as OrderDoc;
-        mergeChunkIntoState(draft, tblStr, incoming);
-      });
+      const unsub = onSnapshot(
+        qRef,
+        (snap) => {
+          const draft: Record<string, OrderDoc | undefined> = {};
+          const seen: Array<{ id: string; status: any; table: any }> = [];
 
-      // quitar despues                                                         quitarrrrr
-      const unsub = onSnapshot(qRef, (snap) => {
-  const draft: Record<string, OrderDoc | undefined> = {};
-  const seen: Array<{id:string, status:any, table:any}> = [];
+          snap.forEach((d) => {
+            const data = d.data() as any;
 
-  snap.forEach((d) => {
-    const data = d.data() as any;
-    const rawTbl = data?.orderInfo?.table;
-    const tblStr = typeof rawTbl === "number" ? String(rawTbl) : String((rawTbl ?? "")).trim();
-    seen.push({ id: d.id, status: data?.status, table: rawTbl });
+            // 👇 AQUÍ tomamos la mesa de tenants/{tenantId}/orders/{id}.orderInfo.table
+            const rawTbl = data?.orderInfo?.table;
+            const tblStr = typeof rawTbl === "number" ? String(rawTbl) : String((rawTbl ?? "")).trim();
+            seen.push({ id: d.id, status: data?.status, table: rawTbl });
 
-    if (!tblStr) return;
-    draft[tblStr] = { id: d.id, ...data } as OrderDoc;
-  });
+            if (!tblStr) return;
 
-  console.info(
-    "[waiter] tenant:", tenantId,
-    "| variant:", field, value,
-    "| docs:", snap.size,
-    "| mesas detectadas:", Object.keys(draft),
-    "| ejemplos:", seen.slice(0, 5)
-  );
+            const incoming: OrderDoc = { id: d.id, ...data } as OrderDoc;
+            mergeChunkIntoState(draft, tblStr, incoming);
+          });
 
-  setActiveByTable((prev) => {
-    const merged = { ...prev };
-    for (const k of Object.keys(draft)) {
-      const incoming = draft[k]!;
-      const prevT = updatedOrCreatedAt(merged[k]) as Date;
-      const incT  = updatedOrCreatedAt(incoming) as Date;
-      if (incT >= prevT) merged[k] = incoming;
-    }
-    return merged;
-  });
-  console.log("Snapshot data:", snap.size); // Número de resultados que devuelve el snapshot
-}, (err) => {
-  console.error("[waiter] onSnapshot error:", err?.code, err?.message);
-});
-// hasta aqui
+          console.info(
+            "[waiter] tenant:", tenantId,
+            "| variant:", field, value,
+            "| docs:", snap.size,
+            "| mesas detectadas:", Object.keys(draft),
+            "| ejemplos:", seen.slice(0, 5)
+          );
 
-      setActiveByTable((prev) => {
-        const merged = { ...prev };
-        for (const k of Object.keys(draft)) {
-          const incoming = draft[k];
-          if (!incoming) continue;
-          const prevT = updatedOrCreatedAt(merged[k]) as Date;
-          const incT  = updatedOrCreatedAt(incoming) as Date;
-          if (incT >= prevT) merged[k] = incoming;
+          setActiveByTable((prev) => {
+            const merged = { ...prev };
+            for (const k of Object.keys(draft)) {
+              const incoming = draft[k];
+              if (!incoming) continue;
+              const prevT = updatedOrCreatedAt(merged[k]) as Date;
+              const incT = updatedOrCreatedAt(incoming) as Date;
+              if (incT >= prevT) merged[k] = incoming;
+            }
+            return merged;
+          });
+        },
+        (err) => {
+          console.error("[waiter] onSnapshot error:", err?.code, err?.message);
         }
-        return merged;
-      });
-    });
+      );
 
-    unsubRef.current.push(unsub);
-  };
+      unsubRef.current.push(unsub);
+    };
 
-  // Monta solo 3 listeners (cubre tus casos)
-  attachVariant("orderInfo.type", "dine-in");
-  attachVariant("orderInfo.type", "dine_in");
-  attachVariant("type",           "dine_in");
-} //  <-- 👈👈👈  CIERRE CORRECTO DE armOrderListeners
+    // Monta 3 listeners (cubre tus variantes)
+    attachVariant("orderInfo.type", "dine-in");
+    attachVariant("orderInfo.type", "dine_in");
+    attachVariant("type", "dine_in");
+  } // fin armOrderListeners
 
+  // ------------- UI Helpers -------------
+  const tables = useMemo(() => Array.from({ length: numTables }, (_, i) => String(i + 1)), [numTables]);
 
- // ------------- UI Helpers -------------
-const tables = useMemo(() => Array.from({ length: numTables }, (_, i) => String(i + 1)), [numTables]);
-
-function tableOccupied(t: string) { return !!activeByTable[t]; }
-function statusBadgeFor(t: string) {
-  const st = activeByTable[t]?.status;
-  if (!st) return null;
-  const variant = STATUS_BADGE[st] ?? "secondary";
-  const label = st.replaceAll("_", " ");
-  return <span className={`badge text-bg-${variant} ms-2 text-capitalize`}>{label}</span>;
-}
-function openTablePanel(t: string) { setSelectedTable(t); }
-function closePanel() { setSelectedTable(null); }
-const selectedOrder: OrderDoc | undefined = selectedTable ? activeByTable[selectedTable] : undefined;
-
+  function tableOccupied(t: string) {
+    return !!activeByTable[t];
+  }
+  function statusBadgeFor(t: string) {
+    const st = activeByTable[t]?.status;
+    if (!st) return null;
+    const variant = STATUS_BADGE[st] ?? "secondary";
+    const label = st.replaceAll("_", " ");
+    return <span className={`badge text-bg-${variant} ms-2 text-capitalize`}>{label}</span>;
+  }
+  function openTablePanel(t: string) {
+    setSelectedTable(t);
+  }
+  function closePanel() {
+    setSelectedTable(null);
+  }
+  const selectedOrder: OrderDoc | undefined = selectedTable ? activeByTable[selectedTable] : undefined;
 
   // =================== Render INNER ===================
   return (
@@ -568,10 +624,7 @@ const selectedOrder: OrderDoc | undefined = selectedTable ? activeByTable[select
           {!selectedTable ? null : !selectedOrder ? (
             <div className="d-flex align-items-center justify-content-between">
               <div className="text-muted">{tt("admin.waiter.drawer.empty", "Empty table. No open order.")}</div>
-              <Link
-                href={`${PICK_TARGET_BASE}${encodeURIComponent(selectedTable)}`}
-                className="btn btn-primary btn-sm"
-              >
+              <Link href={`${PICK_TARGET_BASE}${encodeURIComponent(selectedTable)}`} className="btn btn-primary btn-sm">
                 {tt("admin.waiter.drawer.pick", "Pick")}
               </Link>
             </div>
@@ -583,27 +636,20 @@ const selectedOrder: OrderDoc | undefined = selectedTable ? activeByTable[select
 
       {/* Backdrop for offcanvas */}
       {selectedTable && (
-        <div
-          className="offcanvas-backdrop fade show"
-          onClick={closePanel}
-          style={{ cursor: "pointer" }}
-        />
+        <div className="offcanvas-backdrop fade show" onClick={closePanel} style={{ cursor: "pointer" }} />
       )}
     </main>
   );
 }
 
-// =================== Wrapper con gates (igual que Kitchen) ===================
+// =================== Wrapper (sin OnlyWaiter para no bloquear mientras pruebas) ===================
 export default function WaiterPage() {
   return (
     <Protected>
-        
-          <ToolGate feature="waiter">
-            <WaiterPage_Inner />
-          </ToolGate>
-        
-      </Protected>
-    
+      <ToolGate feature="waiter">
+        <WaiterPage_Inner />
+      </ToolGate>
+    </Protected>
   );
 }
 
@@ -645,9 +691,7 @@ function OrderDetailCard({ order, onClose }: { order: OrderDoc; onClose: () => v
             <div className="fw-bold h5 mb-0">
               {tt("admin.waiter.detail.order", `Order #${order.id.slice(-6)}`, { id: order.id.slice(-6) })}
             </div>
-            <div className="text-muted small">
-              {createdAt ? createdAt.toLocaleString() : ""}
-            </div>
+            <div className="text-muted small">{createdAt ? createdAt.toLocaleString() : ""}</div>
           </div>
           <div className="text-end">
             <div className="small text-muted">{tt("admin.waiter.detail.invoice", "Invoice")}</div>
@@ -676,19 +720,19 @@ function OrderDetailCard({ order, onClose }: { order: OrderDoc; onClose: () => v
                 <div className="d-flex justify-content-between">
                   <div>
                     <div className="fw-semibold">
-                      {ln.menuItemName || "Item"}{" "}
-                      <span className="text-muted">× {ln.quantity}</span>
+                      {ln.menuItemName || "Item"} <span className="text-muted">× {ln.quantity}</span>
                     </div>
                     <div className="text-muted small">
                       {tt("admin.waiter.detail.item.base", "Base")}: {fmtQ(ln.basePrice)}{" "}
                       {typeof ln.lineTotal === "number" && (
-                        <> • {tt("admin.waiter.detail.item.line", "Line")}: {fmtQ(ln.lineTotal)}</>
+                        <>
+                          {" "}
+                          • {tt("admin.waiter.detail.item.line", "Line")}: {fmtQ(ln.lineTotal)}
+                        </>
                       )}
                     </div>
                   </div>
-                  <div className="fw-semibold">
-                    {fmtQ(typeof ln.lineTotal === "number" ? ln.lineTotal : sumLine(ln))}
-                  </div>
+                  <div className="fw-semibold">{fmtQ(typeof ln.lineTotal === "number" ? ln.lineTotal : sumLine(ln))}</div>
                 </div>
 
                 {(ln.addons?.length ?? 0) > 0 && (
@@ -714,9 +758,7 @@ function OrderDetailCard({ order, onClose }: { order: OrderDoc; onClose: () => v
                           {(g.items ?? []).map((it, ii) => (
                             <li key={`gi-${gi}-it-${ii}`}>
                               {it.name}
-                              {typeof it.priceDelta === "number" && it.priceDelta !== 0
-                                ? ` (+${fmtQ(it.priceDelta)})`
-                                : ""}
+                              {typeof it.priceDelta === "number" && it.priceDelta !== 0 ? ` (+${fmtQ(it.priceDelta)})` : ""}
                             </li>
                           ))}
                         </ul>
