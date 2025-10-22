@@ -234,6 +234,9 @@ const PICK_TARGET_BASE = "/checkout-cards?type=dine-in&table=";
 // =================== Page (INNER) ===================
 function WaiterPage_Inner() {
   const tenantId = useTenantId() as string; // tenant requerido en esta vista
+  useEffect(() => {                                //quitar        
+  console.log('[waiter] tenantId =', tenantId);   //quitar
+}, [tenantId]);                                   //quitar
   const db = useMemo(() => getFirestore(), []);
   const { user, flags } = useAuth(); // usamos flags para rol efectivo
   const [numTables, setNumTables] = useState<number>(12);
@@ -265,6 +268,9 @@ function WaiterPage_Inner() {
 
   // 🔒 Habilitación real de efectos (sesión + tenant + rol waiter/admin)
   const enabled = !!user && !!tenantId && (flags?.isWaiter || flags?.isAdmin);
+  useEffect(() => {                                                                    //quitar
+  console.log('[waiter] enabled?', { enabled, uid: user?.uid, flags, tenantId });      ///quitar
+}, [enabled, user, flags, tenantId]);                                                  //quitar
 
   // ------------- Load & Save Settings -------------
   useEffect(() => {
@@ -393,6 +399,7 @@ function armOrderListeners(_: number) {
     }
     return merged;
   });
+  console.log("Snapshot data:", snap.size); // Número de resultados que devuelve el snapshot
 }, (err) => {
   console.error("[waiter] onSnapshot error:", err?.code, err?.message);
 });
