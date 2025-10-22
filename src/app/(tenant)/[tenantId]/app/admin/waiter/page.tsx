@@ -18,6 +18,9 @@ import {
   limit,
   Timestamp,
   Unsubscribe,
+  type Query,
+  type QuerySnapshot,
+  type DocumentData,
 } from "firebase/firestore";
 
 /** ✅ Currency centralizado (respeta settings) */
@@ -225,7 +228,7 @@ const STATUS_BADGE: Record<string, "secondary" | "warning" | "success" | "primar
 };
 
 // Max items allowed in a Firestore "in" filter
-const IN_FILTER_MAX = 30;
+const IN_FILTER_MAX = 10;
 
 // 👉 URL base a donde quieres mandar al mesero al “Pick”
 const PICK_TARGET_BASE = "/checkout-cards?type=dine-in&table=";
@@ -319,66 +322,123 @@ function WaiterPage_Inner() {
   }, [loadingSettings, tenantId, enabled]); // 🔒 dep: enabled
 
   function armOrderListeners(count: number) {
-    unsubRef.current.forEach((u) => u && u());
-    unsubRef.current = [];
+  // Limpia listeners previos
+  unsubRef.current.forEach((u) => u && u());
+  unsubRef.current = [];
 
-    const allTables = Array.from({ length: count }, (_, i) => String(i + 1));
+  const allTables = Array.from({ length: count }, (_, i) => String(i + 1));
 
-    const chunks: string[][] = [];
-    for (let i = 0; i < allTables.length; i += IN_FILTER_MAX) {
-      chunks.push(allTables.slice(i, i + IN_FILTER_MAX));
+  // chunk de strings (para orderInfo.table string)
+  const chunksStr: string[][] = [];
+  for (let i = 0; i < allTables.length; i += IN_FILTER_MAX) {
+    chunksStr.push(allTables.slice(i, i + IN_FILTER_MAX));
+  }
+
+  // chunk de números (para orderInfo.table num) — solo donde Number es válido
+  const allTablesNum = allTables
+    .map((s) => Number(s))
+    .filter((n) => Number.isFinite(n)) as number[];
+  const chunksNum: number[][] = [];
+  for (let i = 0; i < allTablesNum.length; i += IN_FILTER_MAX) {
+    chunksNum.push(allTablesNum.slice(i, i + IN_FILTER_MAX));
+  }
+
+  // Resetea estado visible
+  const nextState: Record<string, OrderDoc | undefined> = {};
+  allTables.forEach((t) => (nextState[t] = undefined));
+  setActiveByTable(nextState);
+
+  // Helper común para fusionar en estado (elige la orden más "reciente")
+  const mergeChunkIntoState = (draftMap: Record<string, OrderDoc | undefined>, tableKey: string, incoming: OrderDoc) => {
+    const prev = draftMap[tableKey];
+    if (!prev) { draftMap[tableKey] = incoming; return; }
+    const prevT = updatedOrCreatedAt(prev) as Date;
+    const incT  = updatedOrCreatedAt(incoming) as Date;
+    if (incT >= prevT) draftMap[tableKey] = incoming;
+  };
+
+  // Registra un listener y cómo aplicar resultados al estado por conjunto de mesas
+const attachListener = (
+  qRef: Query<any>,                 // <- antes: Query<DocumentData>
+  tableChunk: Array<string | number>
+) => {
+  const unsub = onSnapshot(qRef, (snap: QuerySnapshot<DocumentData>) => {
+    const draft: Record<string, OrderDoc | undefined> = {};
+    for (const d of snap.docs) {
+      const data = d.data() as any;
+      const rawTbl = data?.orderInfo?.table;
+      const tblStr = typeof rawTbl === "number" ? String(rawTbl) : String(rawTbl ?? "");
+      if (!tblStr) continue;
+
+      const incoming: OrderDoc = { id: d.id, ...data } as OrderDoc;
+      mergeChunkIntoState(draft, tblStr, incoming);
     }
 
-    const nextState: Record<string, OrderDoc | undefined> = {};
-    allTables.forEach((t) => (nextState[t] = undefined));
-    setActiveByTable(nextState);
-
-    OPEN_STATUSES.forEach((st) => {
-      chunks.forEach((tableChunk) => {
-        const qRef = query(
-          tCol("orders", tenantId),
-          where("orderInfo.type", "==", "dine-in"),
-          where("orderInfo.table", "in", tableChunk),
-          where("status", "==", st),
-          orderBy("createdAt", "desc"),
-          limit(200)
-        );
-
-        const unsub = onSnapshot(qRef, (snap) => {
-          const draft: Record<string, OrderDoc | undefined> = {};
-          for (const d of snap.docs) {
-            const data = d.data() as any;
-            const tbl = String(data?.orderInfo?.table ?? "");
-            if (!tbl) continue;
-
-            const incoming: OrderDoc = { id: d.id, ...data } as OrderDoc;
-            const ex = draft[tbl];
-            if (!ex) {
-              draft[tbl] = incoming;
-            } else {
-              const prevT = updatedOrCreatedAt(ex) as Date;
-              const incT = updatedOrCreatedAt(incoming) as Date;
-              if (incT >= prevT) draft[tbl] = incoming;
-            }
-          }
-
-          setActiveByTable((prev) => {
-            const merged = { ...prev };
-            tableChunk.forEach((t) => {
-              const incoming = draft[t];
-              if (!incoming) return merged;
-              const prevT = updatedOrCreatedAt(merged[t]) as Date;
-              const incT = updatedOrCreatedAt(incoming) as Date;
-              if (incT >= prevT) merged[t] = incoming;
-            });
-            return merged;
-          });
-        });
-
-        unsubRef.current.push(unsub);
-      });
+    setActiveByTable((prev) => {
+      const merged = { ...prev };
+      for (const k of Object.keys(draft)) {
+        const incoming = draft[k];
+        if (!incoming) continue;
+        const prevT = updatedOrCreatedAt(merged[k]) as Date;
+        const incT  = updatedOrCreatedAt(incoming) as Date;
+        if (incT >= prevT) merged[k] = incoming;
+      }
+      return merged;
     });
-  }
+  });
+
+  unsubRef.current.push(unsub);
+};
+
+
+
+  // Definimos las combinaciones de filtros "tipo de orden"
+  // NOTA: no podemos usar 2 "in" en la misma query; por eso multiplicamos listeners.
+  type TypeVariant = { field: "orderInfo.type" | "type"; value: "dine-in" | "dine_in" };
+  const TYPE_VARIANTS: TypeVariant[] = [
+    { field: "orderInfo.type", value: "dine-in" },
+    { field: "orderInfo.type", value: "dine_in" },
+    { field: "type",           value: "dine_in" }, // top-level moderno
+    // { field: "type",        value: "dine-in" },  // si tienes legacy con guión en top-level, descomenta
+  ];
+
+  // Por cada status abierto montamos listeners para:
+  // - table (string) × cada variante de type
+  // - table (number) × cada variante de type
+  OPEN_STATUSES.forEach((st) => {
+    // --- bloque de strings ---
+chunksStr.forEach((tableChunk) => {
+  TYPE_VARIANTS.forEach((tv) => {
+    const qRef = query(
+      tCol("orders", tenantId),
+      where(tv.field, "==", tv.value),
+      where("orderInfo.table", "in", tableChunk),
+      where("status", "==", st),
+      orderBy("createdAt", "desc"),
+      limit(200)
+    ) as Query<DocumentData>;          // <- cast explícito
+    attachListener(qRef, tableChunk);
+  });
+});
+
+// --- bloque de numbers ---
+chunksNum.forEach((tableChunkNum) => {
+  TYPE_VARIANTS.forEach((tv) => {
+    const qRef = query(
+      tCol("orders", tenantId),
+      where(tv.field, "==", tv.value),
+      where("orderInfo.table", "in", tableChunkNum as number[]),
+      where("status", "==", st),
+      orderBy("createdAt", "desc"),
+      limit(200)
+    ) as Query<DocumentData>;          // <- cast explícito
+    attachListener(qRef, tableChunkNum as any[]);
+  });
+});
+
+  });
+}
+
 
   // ------------- UI Helpers -------------
   const tables = useMemo(() => Array.from({ length: numTables }, (_, i) => String(i + 1)), [numTables]);
