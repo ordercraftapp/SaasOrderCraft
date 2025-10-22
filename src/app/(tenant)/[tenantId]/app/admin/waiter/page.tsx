@@ -597,11 +597,11 @@ const selectedOrder: OrderDoc | undefined = selectedTable ? activeByTable[select
 export default function WaiterPage() {
   return (
     <Protected>
-        <OnlyWaiter>
+        
           <ToolGate feature="waiter">
             <WaiterPage_Inner />
           </ToolGate>
-        </OnlyWaiter>
+        
       </Protected>
     
   );
