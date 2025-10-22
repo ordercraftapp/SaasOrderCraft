@@ -186,20 +186,28 @@ function useAuthState() {
 }
 
 /* --------------------------------------------
-   Fetch helper con reintento 401
+   Fetch helper con reintento 401/403 + refresh de token
 --------------------------------------------- */
 async function apiFetch(path: string, init?: RequestInit) {
+  // 1) primer intento con el token actual
   let token = await getIdTokenSafe(false);
   let headers: HeadersInit = { ...(init?.headers || {}) };
   if (token) (headers as any)['Authorization'] = `Bearer ${token}`;
   let res = await fetch(path, { ...init, headers });
 
-  if (res.status === 401) {
+  // 2) si el backend dice 401 o 403, forzamos refresh y reintentamos UNA vez
+  if (res.status === 401 || res.status === 403) {
+    // fuerza refresco de claims por-tenant
+    const { getAuth } = await getAuthMod();
+    const auth = getAuth();
+    if (auth.currentUser) await auth.currentUser.getIdToken(true);
+
     token = await getIdTokenSafe(true);
     headers = { ...(init?.headers || {}) };
     if (token) (headers as any)['Authorization'] = `Bearer ${token}`;
     res = await fetch(path, { ...init, headers });
   }
+
   return res;
 }
 

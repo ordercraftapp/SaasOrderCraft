@@ -14,46 +14,105 @@ type PatchBody = {
 };
 
 /* ============================================================================
-   Helpers de autorización por-tenant
+   Helpers de auth/roles robustos por-tenant
    ========================================================================== */
-// ¿El usuario pertenece al tenant?
-function inTenant(decoded: any, tenantId: string) {
-  if (!decoded) return false;
-  if (decoded.tenantId && decoded.tenantId === tenantId) return true;
-  if (decoded.tenants && decoded.tenants[tenantId]) return true;
+
+/** Extrae un objeto de claims desde varios posibles envoltorios */
+function extractClaims(u: any) {
+  // Puede venir como {claims:{...}}, {token:{...}}, o plano
+  return u?.claims ?? u?.token ?? u ?? {};
+}
+
+/** Normaliza un nodo de tenant para aceptar varias formas:
+ *  - plano:        { admin:true, delivery:true }
+ *  - roles:        { roles:{ admin:true, delivery:true } }
+ *  - flags:        { flags:{ admin:true, delivery:true } }
+ *  - rolesNorm:    { rolesNormalized:{ admin:true } }
+ */
+function normalizeTenantNode(node: any): Record<string, boolean> {
+  if (!node || typeof node !== "object") return {};
+  const res: Record<string, boolean> = {};
+  const merge = (src: any) => {
+    if (src && typeof src === "object") {
+      for (const k of Object.keys(src)) {
+        if (typeof src[k] === "boolean") res[k] ||= !!src[k];
+      }
+    }
+  };
+  merge(node); // plano
+  merge(node.roles);
+  merge(node.flags);
+  merge(node.rolesNormalized);
+  return res;
+}
+
+/** Roles globales de compatibilidad (por si existen) */
+function hasRoleGlobal(claims: any, role: string) {
+  return !!(
+    claims?.[role] === true ||
+    (Array.isArray(claims?.roles) && claims.roles.includes(role)) ||
+    claims?.role === role ||
+    (role === "admin" && (claims?.role === "superadmin" || claims?.superadmin === true))
+  );
+}
+
+/** ¿El usuario pertenece al tenant? Acepta forms simples y mapa */
+function inTenant(claims: any, tenantId: string) {
+  if (!claims) return false;
+  if (claims.tenantId && claims.tenantId === tenantId) return true;
+  if (claims.tenants && claims.tenants[tenantId]) return true;
   return false;
 }
 
-// ¿Tiene alguno de estos roles en el tenant? (con fallback global)
-function hasRoleForTenant(decoded: any, tenantId: string, ...roles: string[]) {
-  if (!decoded) return false;
+/** ¿Tiene alguno de los roles pedidos en el tenant? */
+function hasAnyTenantRole(claims: any, tenantId: string, roles: string[]) {
+  const flags = normalizeTenantNode(claims?.tenants?.[tenantId]);
+  return roles.some((r) => !!flags[r]);
+}
 
-  // por-tenant: array
-  const tEntry = decoded.tenants?.[tenantId];
-  const tenantRolesArray: string[] = Array.isArray(tEntry?.roles) ? tEntry.roles : [];
+/** Decodifica el Authorization header y retorna { uid, claimsDecodificados } */
+async function getClaimsFromAuthHeader(req: NextRequest) {
+  const authHeader = req.headers.get("authorization") ?? "";
+  const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : null;
+  if (!token) return null;
 
-  // por-tenant: flags ({ admin: true, delivery: true, ... })
-  const tenantRoleFlags = tEntry && typeof tEntry === "object" ? tEntry : null;
+  try {
+    // Nota: verifyIdToken no "refresca" claims, pero nos da uid confiable
+    const decoded = await adminAuth.verifyIdToken(token, false);
+    return { uid: decoded.uid, claims: extractClaims(decoded) };
+  } catch {
+    return null;
+  }
+}
 
-  // fallback global
-  const globalRole: string | undefined = decoded.role;
-  const globalRolesArray: string[] = Array.isArray(decoded.roles) ? decoded.roles : [];
-  const globalFlags = decoded; // ej.: decoded.admin === true
+/** Si faltan roles por-tenant en claims decodificados, fusiona con customClaims del usuario */
+async function ensureTenantAwareClaims(
+  baseClaims: any,
+  uid: string | null,
+  tenantId: string
+) {
+  let claims = extractClaims(baseClaims);
+  const hasTenantNode = !!claims?.tenants?.[tenantId];
 
-  return roles.some((r) => {
-    if (!r) return false;
-    return (
-      tenantRolesArray.includes(r) ||
-      (tenantRoleFlags && tenantRoleFlags[r] === true) ||
-      globalRolesArray.includes(r) ||
-      globalRole === r ||
-      globalFlags?.[r] === true
-    );
-  });
+  if (!hasTenantNode && uid) {
+    try {
+      const rec = await adminAuth.getUser(uid);
+      const cc = rec?.customClaims || {};
+      // Fusión superficial: preferimos lo más “fresco” de customClaims
+      claims = { ...claims, ...cc };
+    } catch {
+      // ignoramos error; seguiremos con claims base
+    }
+  }
+  return claims;
 }
 
 // 📁 carpeta es [tenant] → params.tenant
 type Ctx = { params: { tenant: string; id: string } };
+
+/* ============================================================================
+   Handler
+   ========================================================================== */
 
 // ---------------------------------------------------------------------------
 // PATCH /api/orders/[id]/delivery
@@ -66,27 +125,27 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
     );
     const db = getAdminDB();
 
-    // ---------- Auth ----------
-    const authHeader = req.headers.get("authorization") ?? "";
-    const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : null;
-    if (!token) {
+    // ---------- Auth (robusto) ----------
+    const authInfo = await getClaimsFromAuthHeader(req);
+    if (!authInfo) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    let decoded: any;
-    try {
-      decoded = await adminAuth.verifyIdToken(token);
-    } catch {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    // Fusiona con customClaims si el token no trae el nodo del tenant
+    const claims = await ensureTenantAwareClaims(authInfo.claims, authInfo.uid, tenantId);
 
-    // Debe pertenecer al tenant del path
-    if (!inTenant(decoded, tenantId)) {
+    // Pertenencia al tenant
+    if (!inTenant(claims, tenantId)) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    // Permite admin o delivery en *este tenant*
-    if (!hasRoleForTenant(decoded, tenantId, "admin", "delivery")) {
+    // Permite admin o delivery en *este* tenant (con fallback global)
+    const allowed =
+      hasAnyTenantRole(claims, tenantId, ["admin", "delivery"]) ||
+      hasRoleGlobal(claims, "admin") ||
+      hasRoleGlobal(claims, "delivery");
+
+    if (!allowed) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
@@ -122,6 +181,12 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
       }
 
       const data = snap.data() || {};
+
+      // (Defensa adicional): valida que el doc pertenezca al tenant
+      if (data.tenantId && data.tenantId !== tenantId) {
+        throw new Error("Order does not belong to tenant");
+      }
+
       const orderInfo = { ...(data.orderInfo || {}) };
       const prevSub: DeliverySubState | undefined = orderInfo.delivery;
       const timeline = { ...(orderInfo.deliveryTimeline || {}) };
@@ -134,7 +199,7 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
         const newName = (courierName ?? null) as string | null;
         if ((orderInfo.courierName ?? null) !== newName) {
           updates["orderInfo.courierName"] = newName;
-          // Opcional: si no hay pendingAt aún, sellarlo al asignar repartidor
+          // Si no hay pendingAt aún, sellarlo al asignar repartidor
           if (!timeline.pendingAt) {
             updates["orderInfo.deliveryTimeline.pendingAt"] = nowTS;
           }
@@ -168,7 +233,7 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
         // Bitácora de eventos (usa Timestamp.now() dentro del array)
         eventsToAdd.push({
           state: delivery,
-          by: decoded.uid,
+          by: claims?.uid || authInfo.uid,
           courierName:
             typeof courierName !== "undefined"
               ? (courierName ?? null)
@@ -202,7 +267,10 @@ export async function PATCH(req: NextRequest, ctx: Ctx) {
   } catch (e: any) {
     console.error("[delivery] PATCH error:", e);
     const msg = e?.message || "Server error";
-    const code = /not found/i.test(msg) ? 404 : 500;
+    const code =
+      /not found/i.test(msg) ? 404 :
+      /does not belong to tenant/i.test(msg) ? 403 :
+      500;
     return NextResponse.json({ error: msg }, { status: code });
   }
 }
