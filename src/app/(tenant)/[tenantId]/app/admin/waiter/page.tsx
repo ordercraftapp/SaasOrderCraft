@@ -30,6 +30,7 @@ import { useTenantSettings } from "@/lib/settings/hooks";
 /** 🧩 Helpers tenant-aware (Web SDK) */
 import { tCol, tDoc } from "@/lib/db";
 import { useTenantId } from "@/lib/tenant/context";
+import { OnlyWaiter } from "../../../components/Only";
 
 /* ===== Firebase Auth helpers (idéntico a Kitchen) ===== */
 async function getAuthMod() {
@@ -646,9 +647,11 @@ function WaiterPage_Inner() {
 export default function WaiterPage() {
   return (
     <Protected>
+      <OnlyWaiter>
       <ToolGate feature="waiter">
         <WaiterPage_Inner />
       </ToolGate>
+      </OnlyWaiter>
     </Protected>
   );
 }
