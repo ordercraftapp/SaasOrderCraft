@@ -242,7 +242,13 @@ export function middleware(req: NextRequest) {
     }
 
     if (role === "waiter") {
-      if (isPath(vForRoles, "/admin/edit-orders")) return withPaypalCsp(nextWithTenant(req, tenantId));
+      if (isPath(vForRoles, "/admin/waiter")) return withPaypalCsp(nextWithTenant(req, tenantId));
+      const to = new URL("/", req.url);
+      return withPaypalCsp(redirectWithTenant(req, to, tenantId));
+    }
+
+    if (role === "delivery") {
+      if (isPath(vForRoles, "/admin/delivery")) return withPaypalCsp(nextWithTenant(req, tenantId));
       const to = new URL("/", req.url);
       return withPaypalCsp(redirectWithTenant(req, to, tenantId));
     }
