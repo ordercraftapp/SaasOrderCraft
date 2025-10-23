@@ -176,28 +176,42 @@ function RolesPage_Inner() {
   }, [user, isTenantAdmin, load]);
 
   const onToggle = async (uid: string, role: RoleKey, value: boolean) => {
-    try {
-      console.log('[roles:page] toggle', { uid, role, value, tenantId });
-      if (!tenantId) throw new Error('Missing tenantId');
-      const idToken = await getIdTokenSafe(true);
-      if (!idToken) throw new Error('Not authenticated');
+  try {
+    console.log("[roles:page] toggle", { uid, role, value, tenantId });
+    if (!tenantId) throw new Error("Missing tenantId");
+    const idToken = await getIdTokenSafe(true);
+    if (!idToken) throw new Error("Not authenticated");
 
-      // Construimos cambios parciales para ese rol
-      const changes: Partial<Record<RoleKey, boolean>> = { [role]: value };
-      await setClaimsAction({ idToken, tenantId, uid, changes });
+    const changes: Partial<Record<RoleKey, boolean>> = { [role]: value };
 
-      await load();
-      alert(
-        tt(
-          'admin.roles.alert.updated',
-          'Roles updated. The user must refresh their session to obtain new permissions.'
-        )
-      );
-    } catch (e: any) {
-      console.error('[roles:page] toggle:error', e);
-      alert(e?.message || tt('admin.roles.alert.updateError', 'Could not update roles'));
-    }
-  };
+    // Llama action (Node runtime) y usa la respuesta para pintar optimista
+    const res = await setClaimsAction({ idToken, tenantId, uid, changes });
+
+    // ✅ UI optimista inmediata con lo que devolvió el server
+    setRows((prev) =>
+      prev.map((u) => {
+        if (u.uid !== uid) return u;
+        const tenants = { ...(u.claims?.tenants || {}) };
+        tenants[tenantId] = res.savedTenantFlags || {};
+        return { ...u, claims: { ...(u.claims || {}), tenants } };
+      })
+    );
+
+    // 🔄 Luego refrescas la lista completa
+    await load();
+
+    alert(
+      tt(
+        "admin.roles.alert.updated",
+        "Roles updated. The user must refresh their session to obtain new permissions."
+      )
+    );
+  } catch (e: any) {
+    console.error("[roles:page] toggle:error", e);
+    alert(e?.message || tt("admin.roles.alert.updateError", "Could not update roles"));
+  }
+};
+
 
   if (!authReady) return <div className="container py-3">{tt('admin.roles.init', 'Initializing…')}</div>;
   if (!user) return <div className="container py-3 text-danger">{tt('admin.common.mustSignIn', 'You must sign in.')}</div>;

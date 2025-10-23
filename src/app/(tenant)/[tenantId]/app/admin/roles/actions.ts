@@ -1,5 +1,9 @@
-// src/app/(tenant)/[tenantId]/app/admin/roles/actions.ts
 "use server";
+
+// Fuerza Node.js (evita Edge) y desactiva cache para acciones de rol
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 /**
  * ✅ Multi-tenant + Plans migration
@@ -11,7 +15,7 @@
  * - Sin helpers externos de planes en server actions: matriz mínima local para validar.
  */
 
-import { adminAuth } from "@/lib/firebase/admin"; // tu bootstrap Admin SDK (auth)
+import { adminAuth } from "@/lib/firebase/admin"; // Admin SDK (auth)
 import { getAdminDB } from "@/lib/firebase/admin"; // Firestore Admin (db)
 
 /** ===== Tipos ===== */
@@ -27,10 +31,7 @@ const FEATURE_MATRIX: Record<PlanKey, Record<string, boolean>> = {
 
 /** ===== Utils de claims namespaced por tenant ===== */
 type TenantedClaims = {
-  tenants?: Record<
-    string,
-    Partial<Record<RoleKey, boolean>>
-  >;
+  tenants?: Record<string, Partial<Record<RoleKey, boolean>>>;
   // Opcionales globales legacy:
   admin?: boolean;
   role?: string; // 'admin' / 'superadmin'
@@ -134,9 +135,10 @@ export async function listUsersAction(args: {
   // Filtrar por tenant (o superadmin/global admin)
   users = users.filter((u) => {
     const c = u.claims || {};
-    const has = hasTenantAdminClaim(c, tenantId) // admins del tenant cuentan como visibles
-      || !!c?.tenants?.[tenantId] // cualquier rol bajo el tenant
-      || c?.role === "superadmin"; // superadmin
+    const has =
+      hasTenantAdminClaim(c, tenantId) || // admins del tenant cuentan como visibles
+      !!c?.tenants?.[tenantId] || // cualquier rol bajo el tenant
+      c?.role === "superadmin"; // superadmin
     return has;
   });
 
@@ -173,12 +175,10 @@ export async function setClaimsAction(args: {
   if (!uid) throw new Error("Missing uid");
   if (!changes || typeof changes !== "object") throw new Error("Missing changes");
 
-  // ⚠️ Evitar que un admin se quite su propio 'admin' y se bloquee (opcional)
-  // Puedes comentar este bloque si no lo deseas.
+  // ⚠️ Opcional: evitar que el actor se quite su propio admin
   try {
     const actor = await adminAuth.verifyIdToken(idToken);
     if (actor.uid === uid && changes.admin === false) {
-      // Permite bajar otros roles, pero no auto-remover admin del actor.
       throw new Error("You cannot remove your own admin role for this tenant.");
     }
   } catch (e) {
@@ -191,5 +191,12 @@ export async function setClaimsAction(args: {
 
   await adminAuth.setCustomUserClaims(uid, next);
 
-  return { ok: true, uid, claims: next };
+  // 🔁 Leer de vuelta lo que quedó en el backend (para UI optimista fiable)
+  const fresh = await adminAuth.getUser(uid);
+  const savedTenantFlags =
+    ((fresh.customClaims as TenantedClaims)?.tenants?.[tenantId] as Partial<
+      Record<RoleKey, boolean>
+    >) || {};
+
+  return { ok: true, uid, claims: fresh.customClaims || {}, savedTenantFlags };
 }
