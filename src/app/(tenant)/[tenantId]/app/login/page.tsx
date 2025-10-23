@@ -96,7 +96,6 @@ function LoginInner() {
   const [err, setErr] = useState<string | null>(null);
   const inFlightRef = useRef(false);
 
-  // 👇 por defecto apunta al área cliente (solo se usa como fallback en el render, ya NO en el redirect de sesión viva)
   const defaultNext = useMemo(() => (tenantId ? `/${tenantId}/app/app` : '/app/app'), [tenantId]);
 
   // Redirigir si ya hay sesión activa (por si vuelve al login con sesión viva)
@@ -118,7 +117,6 @@ function LoginInner() {
         console.log('claims.tenants[tenantId]', (tokenRes.claims as any)?.tenants?.[tenantId] || null);
         console.groupEnd();
 
-        // Refresca rol en cookies (server decide por tenant)
         const resp = await fetch(`/${tenantId}/app/api/auth/refresh-role`, {
           method: 'POST',
           headers: { Authorization: `Bearer ${idToken}` },
@@ -131,13 +129,13 @@ function LoginInner() {
         console.log('data', data);
         console.groupEnd();
 
-        if (!resp.ok || data.ok !== true) return; // se queda en login si algo falla
+        if (!resp.ok || data.ok !== true) return;
 
-        // Marca sesión para el scope del tenant (middleware)
+        // Marca sesión para el scope del tenant
         setCookie('session', '1', `/${tenantId}`);
 
         const role = data.role;
-        const rawNext = search.get('next'); // ⚠️ usar sólo el next crudo aquí
+        const rawNext = search.get('next');
         const target = rawNext || roleToDefaultPath(role);
 
         console.groupCollapsed('[login] session-alive: redirect decision');
@@ -146,16 +144,19 @@ function LoginInner() {
         console.log('target', target);
         console.groupEnd();
 
-        if (!cancelled) router.replace(withTenantPrefix(tenantId, target));
+        if (!cancelled) {
+          const url = withTenantPrefix(tenantId, target);
+          // ⚠️ navegación "full page" para evitar races de SPA con guards
+          window.location.replace(url);
+        }
       } catch (e) {
         console.error('[login] session-alive error', e);
-        /* se queda en login */
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [router, tenantId, search]);
+  }, [tenantId, search]);
 
   const afterSignIn = useCallback(
     async (idToken: string) => {
@@ -209,7 +210,7 @@ function LoginInner() {
       setCookie('session', '1', `/${tenantId}`);
 
       const role = data.role;
-      const rawNext = search.get('next'); // respeta next si viene; si no, ruta por rol
+      const rawNext = search.get('next');
       const target = rawNext || roleToDefaultPath(role);
 
       console.groupCollapsed('[login] afterSignIn: redirect decision');
@@ -218,9 +219,11 @@ function LoginInner() {
       console.log('target', target);
       console.groupEnd();
 
-      router.replace(withTenantPrefix(tenantId!, target));
+      // ⚠️ navegación "full page" para evitar races de SPA con guards
+      const url = withTenantPrefix(tenantId!, target);
+      window.location.replace(url);
     },
-    [router, search, tenantId]
+    [search, tenantId]
   );
 
   async function onSubmit(e: FormEvent) {
