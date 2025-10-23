@@ -101,41 +101,45 @@ function LoginInner() {
   const nextParam = useMemo(() => search.get('next') || defaultNext, [search, defaultNext]);
 
   // Redirigir si ya hay sesión activa (por si vuelve al login con sesión viva)
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      if (!tenantId) return;
-      const u = auth.currentUser;
-      if (!u) return;
+ // Redirigir si ya hay sesión activa (por si vuelve al login con sesión viva)
+useEffect(() => {
+  let cancelled = false;
+  (async () => {
+    if (!tenantId) return;
+    const u = auth.currentUser;
+    if (!u) return;
 
-      try {
-        const idToken = await getIdToken(u, /*forceRefresh*/ true);
+    try {
+      const idToken = await getIdToken(u, /*forceRefresh*/ true);
 
-        // Refresca rol en cookies (server decide por tenant)
-        const resp = await fetch(`/${tenantId}/app/api/auth/refresh-role`, {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${idToken}` },
-          cache: 'no-store',
-        });
-        const data = (await resp.json().catch(() => ({}))) as ApiRefreshRoleResp;
+      // Refresca rol en cookies (server decide por tenant)
+      const resp = await fetch(`/${tenantId}/app/api/auth/refresh-role`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${idToken}` },
+        cache: 'no-store',
+      });
+      const data = (await resp.json().catch(() => ({}))) as ApiRefreshRoleResp;
 
-        if (!resp.ok || data.ok !== true) return; // se queda en login si algo falla
+      if (!resp.ok || data.ok !== true) return; // se queda en login si algo falla
 
-        // Marca sesión para el scope del tenant (middleware)
-        setCookie('session', '1', `/${tenantId}`);
+      // Marca sesión para el scope del tenant (middleware)
+      setCookie('session', '1', `/${tenantId}`);
 
-        const role = data.role;
-        // 👇 Si hay ?next, respétalo; si no, manda a la ruta por defecto del rol
-        const target = nextParam || roleToDefaultPath(role);
-        if (!cancelled) router.replace(withTenantPrefix(tenantId, target));
-      } catch {
-        /* se queda en login */
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [router, tenantId, nextParam]);
+      const role = data.role;
+      // 👇 OJO: usar SOLO el next crudo; si no existe, ruta por defecto del rol
+      const rawNext = search.get('next');
+      const target = rawNext || roleToDefaultPath(role);
+
+      if (!cancelled) router.replace(withTenantPrefix(tenantId, target));
+    } catch {
+      /* se queda en login */
+    }
+  })();
+  return () => {
+    cancelled = true;
+  };
+}, [router, tenantId, search]);
+
 
   const afterSignIn = useCallback(
     async (idToken: string) => {
