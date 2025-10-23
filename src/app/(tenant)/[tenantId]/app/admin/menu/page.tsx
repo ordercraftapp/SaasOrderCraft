@@ -389,7 +389,7 @@ function AdminMenuPage_Inner() {
   };
 
   const addNewEditRow = () => {
-    if (!editGroupId) { alert('Select a group'); return; }
+    if (!editGroupId) { alert(tt('admin.menu.msg.selectGroup', 'Select a group')); return; }
     setEditRows((rows) => [
       ...rows,
       {
@@ -415,7 +415,7 @@ function AdminMenuPage_Inner() {
       active: r.active !== false,
       sortOrder: typeof r.sortOrder === 'number' ? r.sortOrder : undefined,
     };
-    if (!payload.name) { alert('Name is required'); return; }
+    if (!payload.name) { alert(tt('admin.menu.msg.nameRequired', 'Name is required')); return; }
 
     try {
       if (r._isNew) {
@@ -426,7 +426,7 @@ function AdminMenuPage_Inner() {
           return copy;
         });
       } else {
-        if (!r.id) { alert('Option ID is missing'); return; }
+        if (!r.id) { alert(tt('admin.menu.msg.missingOptionId', 'Option ID is missing')); return; }
         await updateDocScoped('option-items', tenantId, r.id, payload);
         setEditRows((rows) => {
           const copy = [...rows];
@@ -435,7 +435,7 @@ function AdminMenuPage_Inner() {
         });
       }
     } catch (e: any) {
-      alert(e?.message || 'Could not save the option');
+      alert(e?.message || tt('admin.menu.msg.couldNotSaveOption', 'Could not save the option'));
     }
   };
 
@@ -446,12 +446,12 @@ function AdminMenuPage_Inner() {
       return;
     }
     if (!r.id) return;
-    if (!confirm('Delete this option?')) return;
+    if (!confirm(tt('admin.menu.msg.deleteThisOption', 'Delete this option?'))) return;
     try {
       await deleteDocScoped('option-items', tenantId, r.id);
       setEditRows((rows) => rows.filter((_, i) => i !== idx));
     } catch (e: any) {
-      alert(e?.message || 'Could not delete the option');
+      alert(e?.message || tt('admin.menu.msg.couldNotDeleteOption', 'Could not delete the option'));
     }
   };
 
@@ -464,7 +464,7 @@ function AdminMenuPage_Inner() {
 
     if (typeof min === 'number' && min < 0) min = 0;
     if (typeof min === 'number' && typeof max === 'number' && min > max) {
-      alert('min cannot be greater than max');
+      alert(tt('admin.menu.msg.minGreaterThanMax', 'min cannot be greater than max'));
       return;
     }
     if (g.type === 'single') {
@@ -474,9 +474,9 @@ function AdminMenuPage_Inner() {
 
     try {
       await updateDocScoped('option-groups', tenantId, g.id, { min, max });
-      alert('Limits saved.');
+      alert(tt('admin.menu.msg.limitsSaved', 'Limits saved.'));
     } catch (e: any) {
-      alert(e?.message || 'Could not save min/max');
+      alert(e?.message || tt('admin.menu.msg.couldNotSaveMinMax', 'Could not save min/max'));
     }
   };
 
@@ -594,7 +594,7 @@ function AdminMenuPage_Inner() {
   const onSaveCategory = async () => {
     try {
       const name = catName.trim();
-      if (!name) { alert('Name is required'); return; }
+      if (!name) { alert(tt('admin.menu.msg.nameRequired', 'Name is required')); return; }
       if (editingCatId) {
         const patch: Partial<Category> = {
           name,
@@ -615,7 +615,7 @@ function AdminMenuPage_Inner() {
       setCatName('');
       setEditingCatId(null);
     } catch (e: any) {
-      alert(e?.message || 'Could not save category');
+      alert(e?.message || tt('admin.menu.msg.couldNotSaveCategory', 'Could not save category'));
     }
   };
 
@@ -624,11 +624,11 @@ function AdminMenuPage_Inner() {
     setCatName(c.name || '');
   };
   const onDeleteCategory = async (id: string) => {
-    if (!confirm('Delete category? (You’ll also need to review related subcategories/dishes)')) return;
+    if (!confirm(tt('admin.menu.msg.deleteCategory', 'Delete category? (You’ll also need to review related subcategories/dishes)'))) return;
     try {
       await deleteDocScoped('categories', tenantId, id);
     } catch (e: any) {
-      alert(e?.message || 'Could not delete');
+      alert(e?.message || tt('admin.menu.msg.couldNotDelete', 'Could not delete'));
     }
   };
 
@@ -645,7 +645,7 @@ function AdminMenuPage_Inner() {
       const up = await uploadMenuImage(tenantId, file, keyPath);
       await updateDocScoped('categories', tenantId, catId, { imageUrl: up.url, imagePath: up.path });
     } catch (e: any) {
-      alert(e?.message || 'Could not upload category image');
+      alert(e?.message || tt('admin.menu.msg.couldNotUploadCategoryImage', 'Could not upload category image'));
     }
   };
 
@@ -663,8 +663,8 @@ function AdminMenuPage_Inner() {
   const onSaveSubcategory = async () => {
     try {
       const name = subName.trim();
-      if (!name) { alert('Name is required'); return; }
-      if (!subCatId) { alert('Select the category'); return; }
+      if (!name) { alert(tt('admin.menu.msg.nameRequired', 'Name is required')); return; }
+      if (!subCatId) { alert(tt('admin.menu.msg.selectCategory', 'Select the category')); return; }
 
       if (editingSubId) {
         await updateDocScoped('subcategories', tenantId, editingSubId, {
@@ -686,7 +686,7 @@ function AdminMenuPage_Inner() {
       setSubCatId('');
       setEditingSubId(null);
     } catch (e: any) {
-      alert(e?.message || 'Could not save subcategory');
+      alert(e?.message || tt('admin.menu.msg.couldNotSaveSubcategory', 'Could not save subcategory'));
     }
   };
 
@@ -696,11 +696,11 @@ function AdminMenuPage_Inner() {
     setSubCatId(s.categoryId || '');
   };
   const onDeleteSubcategory = async (id: string) => {
-    if (!confirm('Delete subcategory? (Check related dishes)')) return;
+    if (!confirm(tt('admin.menu.msg.deleteSubcategory', 'Delete subcategory? (Check related dishes)'))) return;
     try {
       await deleteDocScoped('subcategories', tenantId, id);
     } catch (e: any) {
-      alert(e?.message || 'Could not delete');
+      alert(e?.message || tt('admin.menu.msg.couldNotDelete', 'Could not delete'));
     }
   };
 
@@ -716,7 +716,7 @@ function AdminMenuPage_Inner() {
       const up = await uploadMenuImage(tenantId, file, keyPath);
       await updateDocScoped('subcategories', tenantId, subId, { imageUrl: up.url, imagePath: up.path });
     } catch (e: any) {
-      alert(e?.message || 'Could not upload subcategory image');
+      alert(e?.message || tt('admin.menu.msg.couldNotUploadSubcategoryImage', 'Could not upload subcategory image'));
     }
   };
 
@@ -775,7 +775,7 @@ function AdminMenuPage_Inner() {
   };
 
   const onDeleteItem = async (id: string, imgPath?: string | null) => {
-    if (!confirm('Delete dish?')) return;
+    if (!confirm(tt('admin.menu.msg.deleteDish', 'Delete dish?'))) return;
     try {
       await deleteDocScoped('menuItems', tenantId, id);
       if (imgPath) await deleteImageByPath(imgPath);
@@ -794,17 +794,17 @@ function AdminMenuPage_Inner() {
         setItemDescription('');
       }
     } catch (e: any) {
-      alert(e?.message || 'Could not delete dish');
+      alert(e?.message || tt('admin.menu.msg.couldNotDeleteDish', 'Could not delete dish'));
     }
   };
 
   const onSaveItem = async () => {
     try {
       const priceN = toNumber(itemPrice);
-      if (!itemName.trim()) { alert('Name is required'); return; }
-      if (!priceN || priceN <= 0) { alert('Invalid price'); return; }
-      if (!itemCatId) { alert('Select category'); return; }
-      if (!itemSubId) { alert('Select subcategory'); return; }
+      if (!itemName.trim()) { alert(tt('admin.menu.msg.nameRequired', 'Name is required')); return; }
+      if (!priceN || priceN <= 0) { alert(tt('admin.menu.msg.invalidPrice', 'Invalid price')); return; }
+      if (!itemCatId) { alert(tt('admin.menu.msg.selectCategory', 'Select category')); return; }
+      if (!itemSubId) { alert(tt('admin.menu.msg.selectSubcategory', 'Select subcategory')); return; }
 
       const payloadBase = {
         name: itemName.trim(),
@@ -848,11 +848,99 @@ function AdminMenuPage_Inner() {
       setImageMeta({});
       setItemDescription('');
 
-      alert('Dish saved.');
+      alert(tt('admin.menu.msg.dishSaved', 'Dish saved.'));
     } catch (e: any) {
-      alert(e?.message || 'Could not save dish');
+      alert(e?.message || tt('admin.menu.msg.couldNotSaveDish', 'Could not save dish'));
     }
   };
+
+  /* =============================
+     ⬇️⬇️⬇️  NUEVOS HANDLERS PARA CREAR GRUPO & OPTIONS (i18n)  ⬇️⬇️⬇️
+     ============================= */
+  const addCreatorRow = () => {
+    setOiRows((rows) => [
+      ...rows,
+      { name: '', priceDelta: '', isDefault: false, active: true, sortOrder: '' },
+    ]);
+  };
+  const changeCreatorRow = (idx: number, patch: Partial<typeof oiRows[number]>) => {
+    setOiRows((rows) => {
+      const copy = [...rows];
+      copy[idx] = { ...copy[idx], ...patch };
+      return copy;
+    });
+  };
+  const removeCreatorRow = (idx: number) => {
+    setOiRows((rows) => rows.filter((_, i) => i !== idx));
+  };
+  const resetCreator = () => {
+    setOgName('');
+    setOgType('single');
+    setOgRequired(false);
+    setOgMin('');
+    setOgMax('');
+    setOgActive(true);
+    setOgSortOrder('');
+    setOiRows([]);
+    setShowOGCreator(false);
+  };
+  const saveNewGroupWithOptions = async () => {
+    try {
+      const name = ogName.trim();
+      if (!name) { alert(tt('admin.menu.msg.groupNameRequired', 'Group name is required')); return; }
+
+      let min = ogMin === '' ? undefined : Number(ogMin);
+      let max = ogMax === '' ? undefined : Number(ogMax);
+      if (typeof min === 'number' && min < 0) min = 0;
+      if (typeof min === 'number' && typeof max === 'number' && min > max) {
+        alert(tt('admin.menu.msg.minGreaterThanMax', 'min cannot be greater than max'));
+        return;
+      }
+      if (ogType === 'single') {
+        max = 1;
+        if (ogRequired && (min ?? 0) < 1) min = 1;
+      }
+
+      const groupPayload: Partial<OptionGroup> = {
+        name,
+        type: ogType,
+        required: !!ogRequired,
+        min,
+        max,
+        active: !!ogActive,
+        sortOrder: ogSortOrder === '' ? undefined : Number(ogSortOrder),
+      };
+
+      // 1) crear grupo
+      const newGroupId = await createDocScoped('option-groups', tenantId, groupPayload);
+      await updateDocScoped('option-groups', tenantId, newGroupId, { id: newGroupId });
+
+      // 2) crear option-items (solo filas con name)
+      const rows = oiRows.filter(r => (r.name || '').trim());
+      for (const r of rows) {
+        const itemPayload: Partial<OptionItem> = {
+          groupId: newGroupId,
+          name: r.name.trim(),
+          priceDelta: Number(r.priceDelta || 0),
+          isDefault: !!r.isDefault,
+          active: r.active !== false,
+          sortOrder: r.sortOrder === '' ? undefined : Number(r.sortOrder),
+        };
+        await createDocScoped('option-items', tenantId, itemPayload);
+      }
+
+      // 3) marcar el grupo como seleccionado en el plato actual
+      setItemOptionGroupIds(prev => [...new Set([...(prev || []), newGroupId])]);
+
+      resetCreator();
+      alert(tt('admin.menu.msg.groupCreated', 'Group & options created.'));
+    } catch (e: any) {
+      alert(e?.message || tt('admin.menu.msg.couldNotCreateGroup', 'Could not create group'));
+    }
+  };
+  /* =============================
+     ⬆️⬆️⬆️  FIN NUEVOS HANDLERS  ⬆️⬆️⬆️
+     ============================= */
 
   /* =============================
      UI helpers
@@ -1101,12 +1189,15 @@ function AdminMenuPage_Inner() {
                             className="form-check-input"
                             type="checkbox"
                             id={`g_${g.id}`}
-                            checked={checked}
+                            checked={checked}   // ← en minúscula
                             onChange={(e) => {
                               const v = e.currentTarget.checked;
-                              setItemOptionGroupIds((prev) => v ? [...new Set([...prev, g.id])] : prev.filter((x) => x !== g.id));
+                              setItemOptionGroupIds((prev) =>
+                                v ? [...new Set([...prev, g.id])] : prev.filter((x) => x !== g.id)
+                              );
                             }}
                           />
+
                           <label className="form-check-label" htmlFor={`g_${g.id}`}>
                             {g.name}
                             {g.required ? <span className="badge text-bg-light ms-1">{tt('admin.menu.badge.required', 'required')}</span> : null}
@@ -1116,6 +1207,156 @@ function AdminMenuPage_Inner() {
                       );
                     })}
                   </div>
+
+                  {/* ⬇️⬇️⬇️  NUEVA UI DEL CREADOR INLINE  ⬇️⬇️⬇️ */}
+                  {showOGCreator && (
+                    <div className="border rounded p-3 mt-2">
+                      <div className="fw-semibold mb-2">
+                        {tt('admin.menu.groups.creator.title', 'Create new option group')}
+                      </div>
+
+                      <div className="row g-2">
+                        <div className="col-12 col-md-5">
+                          <label className="form-label">{tt('admin.menu.field.name', 'Name')}</label>
+                          <input className="form-control" value={ogName} onChange={(e) => setOgName(e.target.value)} />
+                        </div>
+                        <div className="col-6 col-md-2">
+                          <label className="form-label">{tt('admin.menu.groups.field.type', 'Type')}</label>
+                          <select className="form-select" value={ogType} onChange={(e) => setOgType(e.target.value as any)}>
+                            <option value="single">{tt('admin.menu.groups.type.single', 'single')}</option>
+                            <option value="multi">{tt('admin.menu.groups.type.multi', 'multi')}</option>
+                          </select>
+                        </div>
+                        <div className="col-6 col-md-2 d-flex align-items-end">
+                          <div className="form-check">
+                            <input className="form-check-input" type="checkbox" id="ogReq" checked={ogRequired} onChange={(e) => setOgRequired(e.target.checked)} />
+                            <label className="form-check-label" htmlFor="ogReq">{tt('admin.menu.groups.field.required', 'Required')}</label>
+                          </div>
+                        </div>
+                        <div className="col-6 col-md-1">
+                          <label className="form-label">{tt('admin.menu.groups.editor.min', 'Min')}</label>
+                          <input
+                            type="number"
+                            className="form-control"
+                            value={ogMin}
+                            onChange={(e) => setOgMin(e.target.value === '' ? '' : Number(e.target.value))}
+                          />
+                        </div>
+                        <div className="col-6 col-md-1">
+                          <label className="form-label">{tt('admin.menu.groups.editor.max', 'Max')}</label>
+                          <input
+                            type="number"
+                            className="form-control"
+                            value={ogMax}
+                            onChange={(e) => setOgMax(e.target.value === '' ? '' : Number(e.target.value))}
+                          />
+                        </div>
+                        <div className="col-6 col-md-1 d-flex align-items-end">
+                          <div className="form-check">
+                            <input className="form-check-input" type="checkbox" id="ogActive" checked={ogActive} onChange={(e) => setOgActive(e.target.checked)} />
+                            <label className="form-check-label" htmlFor="ogActive">{tt('admin.menu.field.activeCk', 'Active')}</label>
+                          </div>
+                        </div>
+                        <div className="col-6 col-md-2">
+                          <label className="form-label">{tt('admin.menu.field.order', 'Order')}</label>
+                          <input
+                            type="number"
+                            className="form-control"
+                            value={ogSortOrder}
+                            onChange={(e) => setOgSortOrder(e.target.value === '' ? '' : Number(e.target.value))}
+                          />
+                        </div>
+                      </div>
+
+                      <hr className="my-3" />
+
+                      <div className="d-flex align-items-center justify-content-between mb-2">
+                        <div className="fw-semibold">
+                          {tt('admin.menu.groups.creator.optionsTitle', 'Options in this group')}
+                        </div>
+                        <button type="button" className="btn btn-sm btn-outline-primary" onClick={addCreatorRow}>
+                          {tt('admin.menu.groups.editor.addOption', '+ Add option')}
+                        </button>
+                      </div>
+
+                      {oiRows.length === 0 && (
+                        <div className="text-muted small">
+                          {tt('admin.menu.groups.editor.noOptions', 'This group has no options.')}
+                        </div>
+                      )}
+
+                      {oiRows.map((r, idx) => (
+                        <div key={idx} className="row g-2 align-items-end mb-2">
+                          <div className="col-12 col-md-4">
+                            <label className="form-label">{tt('admin.menu.field.name', 'Name')}</label>
+                            <input
+                              className="form-control form-control-sm"
+                              value={r.name}
+                              onChange={(e) => changeCreatorRow(idx, { name: e.target.value })}
+                            />
+                          </div>
+                          <div className="col-6 col-md-2">
+                            <label className="form-label">{tt('admin.menu.field.deltaPrice', 'Δ Price')}</label>
+                            <input
+                              type="number"
+                              step="0.01"
+                              className="form-control form-control-sm"
+                              value={r.priceDelta}
+                              onChange={(e) => changeCreatorRow(idx, { priceDelta: e.target.value })}
+                            />
+                          </div>
+                          <div className="col-6 col-md-2">
+                            <label className="form-label">{tt('admin.menu.field.order', 'Order')}</label>
+                            <input
+                              type="number"
+                              className="form-control form-control-sm"
+                              value={r.sortOrder}
+                              onChange={(e) => changeCreatorRow(idx, { sortOrder: e.target.value })}
+                            />
+                          </div>
+                          <div className="col-6 col-md-2">
+                            <div className="form-check">
+                              <input
+                                className="form-check-input"
+                                type="checkbox"
+                                id={`def_${idx}`}
+                                checked={!!r.isDefault}
+                                onChange={(e) => changeCreatorRow(idx, { isDefault: e.target.checked })}
+                              />
+                              <label className="form-check-label" htmlFor={`def_${idx}`}>{tt('admin.menu.field.default', 'Default')}</label>
+                            </div>
+                          </div>
+                          <div className="col-6 col-md-2">
+                            <div className="form-check">
+                              <input
+                                className="form-check-input"
+                                type="checkbox"
+                                id={`act_${idx}`}
+                                checked={r.active !== false}
+                                onChange={(e) => changeCreatorRow(idx, { active: e.target.checked })}
+                              />
+                              <label className="form-check-label" htmlFor={`act_${idx}`}>{tt('admin.menu.field.activeCk', 'Active')}</label>
+                            </div>
+                          </div>
+                          <div className="col-12 d-flex justify-content-end">
+                            <button className="btn btn-outline-danger btn-sm" onClick={() => removeCreatorRow(idx)}>
+                              {tt('admin.menu.btn.delete', 'Delete')}
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+
+                      <div className="d-flex justify-content-end gap-2 mt-3">
+                        <button className="btn btn-outline-secondary btn-sm" onClick={resetCreator}>
+                          {tt('admin.menu.btn.cancel', 'Cancel')}
+                        </button>
+                        <button className="btn btn-primary btn-sm" onClick={saveNewGroupWithOptions}>
+                          {tt('admin.menu.btn.createGroup', 'Create new group & options')}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                  {/* ⬆️⬆️⬆️  FIN NUEVA UI DEL CREADOR INLINE  ⬆️⬆️⬆️ */}
                 </div>
 
                 {/* Descripción del plato */}
@@ -1391,7 +1632,7 @@ function AdminMenuPage_Inner() {
                               )}
                               {!!mi.addons?.length && (
                                 <div className="text-muted small mt-1">
-                                  {tt('admin.menu.addons.short', 'Addons')}: {mi.addons.map(a => `${a.name} (${fmtQ(a.price)})`).join(', ')}
+                                  {tt('admin.menu.addons.short', 'Addons')}: {mi.addons.map(a => `${a.name} ({fmtQ(a.price)})`).join(', ')}
                                 </div>
                               )}
                             </div>
