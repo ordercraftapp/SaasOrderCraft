@@ -5,7 +5,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { adminAuth, adminDb, FieldValue } from '@/lib/firebase/admin';
 import { resolveTenantFromRequest, requireTenantId } from '@/lib/tenant/server';
 
-const OP_ROLES = ['admin', 'kitchen', 'waiter', 'delivery', 'cashier'] as const;
+// Prioridad: admin > kitchen > cashier > waiter > delivery
+const OP_ROLES = ['admin', 'kitchen', 'cashier', 'waiter', 'delivery'] as const;
 type OpRole = typeof OP_ROLES[number];
 
 type MemberDoc = { uid: string; role: string; createdAt?: any; updatedAt?: any };
@@ -15,34 +16,61 @@ function json(d: unknown, s = 200) {
   return NextResponse.json(d, { status: s });
 }
 
-function pickTenantRoleFromClaims(claims: any, tenantId: string): OpRole | 'customer' {
-  try {
-    const t = claims?.tenants?.[tenantId];
-    const rolesMap = t?.roles || {};
-    for (const r of OP_ROLES) {
-      if (rolesMap?.[r] === true) return r;
+/** Normaliza el nodo de tenant (acepta plano, roles, flags, rolesNormalized) */
+function normalizeTenantNode(node: any): Record<string, boolean> {
+  if (!node || typeof node !== 'object') return {};
+  const out: Record<string, boolean> = {};
+  const merge = (src: any) => {
+    if (!src || typeof src !== 'object') return;
+    for (const k of Object.keys(src)) {
+      if (typeof src[k] === 'boolean') out[k] ||= !!src[k];
     }
-  } catch { /* ignore */ }
+  };
+  merge(node);                    // { admin:true }
+  merge(node?.roles);             // { roles:{ admin:true } }
+  merge(node?.flags);             // { flags:{ admin:true } }
+  merge(node?.rolesNormalized);   // { rolesNormalized:{ admin:true } }
+  return out;
+}
+
+/** Elige rol a partir de claims (tenant-aware), con fallback a global */
+function pickTenantRoleFromClaims(claims: any, tenantId: string): OpRole | 'customer' {
+  const flags = normalizeTenantNode(claims?.tenants?.[tenantId] || {});
+  const isGlobalAdmin = claims?.admin === true || claims?.role === 'admin' || claims?.role === 'superadmin';
+  if (isGlobalAdmin) flags.admin = true;
+
+  for (const r of OP_ROLES) {
+    if (flags[r]) return r;
+  }
+
+  // fallback global legacy
+  if (typeof claims?.role === 'string' && (OP_ROLES as readonly string[]).includes(claims.role as OpRole)) {
+    return claims.role as OpRole;
+  }
+  for (const r of OP_ROLES) {
+    if (claims?.[r] === true) return r;
+  }
+
   return 'customer';
 }
 
-// +++ NUEVO: asegura que el usuario tenga customClaims por tenant
+/** Asegura que el usuario tenga customClaims por tenant en formato PLANO */
 async function ensureTenantClaims(uid: string, tenantId: string, resolvedRole: string) {
   const user = await adminAuth.getUser(uid);
   const current = (user.customClaims || {}) as any;
 
   const tenants = { ...(current.tenants || {}) };
-  const currentRoles = { ...((tenants[tenantId]?.roles) || {}) };
+  const prevFlags = normalizeTenantNode(tenants[tenantId] || {});
 
-  // Siempre marcar "customer" en el tenant; si es staff/admin, también su rol
-  const nextRoles: Record<string, boolean> = { ...currentRoles, customer: true };
+  // siempre customer; si corresponde, añade el rol operativo
+  const nextFlags: Record<string, boolean> = { ...prevFlags, customer: true };
   if (['admin','kitchen','cashier','waiter','delivery'].includes(resolvedRole)) {
-    nextRoles[resolvedRole] = true;
+    nextFlags[resolvedRole] = true;
   }
 
-  tenants[tenantId] = { ...(tenants[tenantId] || {}), roles: nextRoles };
+  // guardar **plano**: tenants[tenantId] = { admin:true, ... }
+  tenants[tenantId] = nextFlags;
 
-  // Opcional: claim simple para tu helper inTenant()
   const nextClaims = { ...current, tenantId, tenants };
 
   const changed = JSON.stringify(current) !== JSON.stringify(nextClaims);
@@ -66,8 +94,8 @@ async function handleRefresh(req: NextRequest, params: { tenantId: string }) {
   const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
   if (!token) return json({ ok: false, error: 'Missing Bearer token' }, 401);
 
-  // ✅ Verificar token con Admin SDK
-  const decoded = await adminAuth.verifyIdToken(token);
+  // ✅ Verificar token con claims FRESCOS
+  const decoded = await adminAuth.verifyIdToken(token, true);
   const claims = decoded as any;
   const uid = decoded.uid;
   const emailLower = claims?.email ? String(claims.email).toLowerCase() : null;
@@ -110,20 +138,10 @@ async function handleRefresh(req: NextRequest, params: { tenantId: string }) {
 
   // 3) Fallback a claims por-tenant → global
   if (!role) {
-    let fromClaims = pickTenantRoleFromClaims(claims, tenantId);
-    if (fromClaims === 'customer') {
-      if (typeof claims?.role === 'string' && (OP_ROLES as readonly string[]).includes(claims.role as OpRole)) {
-        fromClaims = claims.role as OpRole;
-      } else {
-        for (const r of OP_ROLES) {
-          if (claims?.[r] === true) { fromClaims = r; break; }
-        }
-      }
-    }
-    role = fromClaims || 'customer';
+    role = pickTenantRoleFromClaims(claims, tenantId);
   }
 
-  // +++ NUEVO: asegurar customClaims por tenant
+  // ✅ Asegurar customClaims por tenant (formato plano)
   const claimsUpdated = await ensureTenantClaims(uid, tenantId, role);
 
   // 🍪 Cookies legibles por middleware (no httpOnly) — scopiadas al TENANT

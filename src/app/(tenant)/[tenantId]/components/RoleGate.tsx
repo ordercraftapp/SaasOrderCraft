@@ -1,3 +1,4 @@
+// src/app/(tenant)/[tenantId]/components/RoleGate.tsx
 "use client";
 
 import { ReactNode, useEffect, useMemo, useState } from "react";
