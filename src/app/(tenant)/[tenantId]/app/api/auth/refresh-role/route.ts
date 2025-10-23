@@ -5,6 +5,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { adminAuth, adminDb, FieldValue } from '@/lib/firebase/admin';
 import { resolveTenantFromRequest, requireTenantId } from '@/lib/tenant/server';
 
+// ⚠️ Mantengo tu orden original para minimizar cambios:
+// admin > kitchen > waiter > delivery > cashier
 const OP_ROLES = ['admin', 'kitchen', 'waiter', 'delivery', 'cashier'] as const;
 type OpRole = typeof OP_ROLES[number];
 
@@ -15,18 +17,55 @@ function json(d: unknown, s = 200) {
   return NextResponse.json(d, { status: s });
 }
 
+/** Compat: normaliza nodo del tenant pero sin cambiar el formato que escribimos */
+function normalizeTenantNode(node: any): Record<string, boolean> {
+  if (!node || typeof node !== 'object') return {};
+  const out: Record<string, boolean> = {};
+  const merge = (src: any) => {
+    if (!src || typeof src !== 'object') return;
+    for (const k of Object.keys(src)) {
+      if (typeof src[k] === 'boolean') out[k] ||= !!src[k];
+    }
+  };
+  merge(node);                    // { admin:true }
+  merge(node?.roles);             // { roles:{ admin:true } }
+  merge(node?.flags);             // { flags:{ admin:true } }
+  merge(node?.rolesNormalized);   // { rolesNormalized:{ admin:true } }
+  return out;
+}
+
+/** Compat: primero intenta roles map, pero acepta plano/flags si existieran */
 function pickTenantRoleFromClaims(claims: any, tenantId: string): OpRole | 'customer' {
+  // 1) si existe roles map, respétalo (comportamiento original)
   try {
-    const t = claims?.tenants?.[tenantId];
-    const rolesMap = t?.roles || {};
+    const rolesMap = claims?.tenants?.[tenantId]?.roles || {};
     for (const r of OP_ROLES) {
       if (rolesMap?.[r] === true) return r;
     }
   } catch { /* ignore */ }
+
+  // 2) fallback flexible (plano/flags/rolesNormalized)
+  const flags = normalizeTenantNode(claims?.tenants?.[tenantId] || {});
+  // admin global/superadmin cuenta como admin
+  if (claims?.admin === true || claims?.role === 'admin' || claims?.role === 'superadmin') {
+    flags.admin = true;
+  }
+  for (const r of OP_ROLES) {
+    if (flags[r]) return r;
+  }
+
+  // 3) último fallback: global legacy
+  if (typeof claims?.role === 'string' && (OP_ROLES as readonly string[]).includes(claims.role as OpRole)) {
+    return claims.role as OpRole;
+  }
+  for (const r of OP_ROLES) {
+    if (claims?.[r] === true) return r;
+  }
+
   return 'customer';
 }
 
-// +++ NUEVO: asegura que el usuario tenga customClaims por tenant
+/** Compat: conservamos escritura bajo tenants[tenantId].roles (no aplanamos) */
 async function ensureTenantClaims(uid: string, tenantId: string, resolvedRole: string) {
   const user = await adminAuth.getUser(uid);
   const current = (user.customClaims || {}) as any;
@@ -34,7 +73,7 @@ async function ensureTenantClaims(uid: string, tenantId: string, resolvedRole: s
   const tenants = { ...(current.tenants || {}) };
   const currentRoles = { ...((tenants[tenantId]?.roles) || {}) };
 
-  // Siempre marcar "customer" en el tenant; si es staff/admin, también su rol
+  // siempre marcar customer; si es staff/admin, también su rol
   const nextRoles: Record<string, boolean> = { ...currentRoles, customer: true };
   if (['admin','kitchen','cashier','waiter','delivery'].includes(resolvedRole)) {
     nextRoles[resolvedRole] = true;
@@ -42,8 +81,8 @@ async function ensureTenantClaims(uid: string, tenantId: string, resolvedRole: s
 
   tenants[tenantId] = { ...(tenants[tenantId] || {}), roles: nextRoles };
 
-  // Opcional: claim simple para tu helper inTenant()
-  const nextClaims = { ...current, tenantId, tenants };
+  // ⚠️ Compat: no añadimos otros campos nuevos en claims; mantenemos lo que ya usabas
+  const nextClaims = { ...current, tenants };
 
   const changed = JSON.stringify(current) !== JSON.stringify(nextClaims);
   if (changed) {
@@ -66,8 +105,8 @@ async function handleRefresh(req: NextRequest, params: { tenantId: string }) {
   const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
   if (!token) return json({ ok: false, error: 'Missing Bearer token' }, 401);
 
-  // ✅ Verificar token con Admin SDK
-  const decoded = await adminAuth.verifyIdToken(token);
+  // ✅ Claims FRESCOS (único cambio funcional imprescindible)
+  const decoded = await adminAuth.verifyIdToken(token, true);
   const claims = decoded as any;
   const uid = decoded.uid;
   const emailLower = claims?.email ? String(claims.email).toLowerCase() : null;
@@ -85,7 +124,7 @@ async function handleRefresh(req: NextRequest, params: { tenantId: string }) {
     }
   }
 
-  // 2) 🪄 Auto-seed si es el OWNER del tenant (por email o uid) y no hay membresía
+  // 2) 🪄 Auto-seed si es owner del tenant y no hay membresía
   if (!role) {
     const tRef = adminDb.doc(`tenants/${tenantId}`);
     const tSnap = await tRef.get();
@@ -110,23 +149,13 @@ async function handleRefresh(req: NextRequest, params: { tenantId: string }) {
 
   // 3) Fallback a claims por-tenant → global
   if (!role) {
-    let fromClaims = pickTenantRoleFromClaims(claims, tenantId);
-    if (fromClaims === 'customer') {
-      if (typeof claims?.role === 'string' && (OP_ROLES as readonly string[]).includes(claims.role as OpRole)) {
-        fromClaims = claims.role as OpRole;
-      } else {
-        for (const r of OP_ROLES) {
-          if (claims?.[r] === true) { fromClaims = r; break; }
-        }
-      }
-    }
-    role = fromClaims || 'customer';
+    role = pickTenantRoleFromClaims(claims, tenantId);
   }
 
-  // +++ NUEVO: asegurar customClaims por tenant
+  // 4) Compat: mantener escritura bajo tenants[tenantId].roles
   const claimsUpdated = await ensureTenantClaims(uid, tenantId, role);
 
-  // 🍪 Cookies legibles por middleware (no httpOnly) — scopiadas al TENANT
+  // 🍪 Cookies legibles por middleware — scopiadas al TENANT
   const res = json({ ok: true, tenantId, role, claimsUpdated });
 
   res.cookies.set('appRole', role, {
@@ -148,7 +177,7 @@ async function handleRefresh(req: NextRequest, params: { tenantId: string }) {
   return res;
 }
 
-// ✅ Soporta POST y GET (algunos clientes hacían GET → 405)
+// ✅ Soporta POST y GET
 export async function POST(req: NextRequest, ctx: { params: { tenantId: string } }) {
   try { return await handleRefresh(req, ctx.params); }
   catch (err: any) { return json({ ok: false, error: err?.message || 'verifyIdToken failed' }, 401); }
