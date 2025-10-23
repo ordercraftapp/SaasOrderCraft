@@ -2,7 +2,7 @@
 
 import React from 'react';
 import Protected from '@/app/(tenant)/[tenantId]/components/Protected';
-import AdminOnly from '@/app/(tenant)/[tenantId]/components/AdminOnly';
+import { OnlyWaiter } from '@/app/(tenant)/[tenantId]/components/Only';
 import ToolGate from '@/components/ToolGate';
 import { useTenantId } from '@/lib/tenant/context';
 
@@ -304,9 +304,9 @@ export default function RolesPage() {
   return (
     <ToolGate feature="roles">
       <Protected>
-        <AdminOnly>
+        <OnlyWaiter>
           <RolesPage_Inner />
-        </AdminOnly>
+        </OnlyWaiter>
       </Protected>
     </ToolGate>
   );

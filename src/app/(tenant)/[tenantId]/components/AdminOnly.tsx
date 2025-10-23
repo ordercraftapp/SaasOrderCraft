@@ -1,3 +1,4 @@
+// src/app/(tenant)/[tenantId]/components/AdminOnly.tsx
 "use client";
 
 import { useEffect, useState } from "react";
