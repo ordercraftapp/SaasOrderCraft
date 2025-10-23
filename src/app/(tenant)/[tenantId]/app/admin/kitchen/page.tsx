@@ -717,10 +717,16 @@ function KitchenBoardPage_Inner() {
     return normalizeTenantNode(node);
   }, [claimsLocal, tenantId, normalizeTenantNode]);
 
-  // ✅ canAct contempla kitchen, admin global (providers) o admin por-tenant (claims token)
-  const canAct = (isKitchen || isAdmin || !!tenantFlags.admin);
-
-
+  // ✅ permite actuar si:
+  // - el provider ya marcó isKitchen
+  // - o es admin (global o por-tenant)
+  // - o el token por-tenant indica kitchen
+  const canAct = (
+    isKitchen ||
+    isAdmin ||
+    !!tenantFlags.admin ||
+    !!tenantFlags.kitchen
+  );
   
   const [soundOn, setSoundOn] = useState(true);
   const beep = useBeep(soundOn);
