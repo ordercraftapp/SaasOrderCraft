@@ -188,14 +188,17 @@ export async function listUsersAction(args: {
       claims: (u.customClaims as TenantedClaims) || {},
     }));
 
-    // visibles si:
+    // ✅ Solo mostrar:
+    //   - superadmin
+    //   - admin global
+    //   - o quien tenga AL MENOS UN rol bajo el tenant actual
     users = users.filter((u) => {
       const c = u.claims || {};
-      return (
-        c?.role === "superadmin" ||
-        c?.admin === true ||
-        !!normalizeTenantNode(c?.tenants?.[tenantId]) // cualquier rol bajo el tenant
-      );
+      const tenantFlags = normalizeTenantNode(c?.tenants?.[tenantId]);
+      const hasTenantAny = Object.keys(tenantFlags).length > 0; // 👈 ¡la clave!
+      const isSuper = c?.role === "superadmin";
+      const isGlobalAdmin = hasRoleGlobal(c, "admin") || c?.admin === true;
+      return isSuper || isGlobalAdmin || hasTenantAny;
     });
 
     const q = search.trim().toLowerCase();
@@ -218,6 +221,7 @@ export async function listUsersAction(args: {
     throw new Error(`roles_list_failed: ${e?.message || "unknown"}`);
   }
 }
+
 
 /**
  * Setea claims por-tenant (plano), limpiando falsos y preservando otros tenants.
