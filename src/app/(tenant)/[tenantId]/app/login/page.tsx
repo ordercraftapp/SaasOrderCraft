@@ -46,6 +46,17 @@ function mapFirebaseErrorToMsg(code?: string): string {
   }
 }
 
+function roleToDefaultPath(role: 'admin' | 'kitchen' | 'cashier' | 'waiter' | 'delivery' | 'customer'): string {
+  switch (role) {
+    case 'admin':    return '/app/admin';
+    case 'kitchen':  return '/app/admin/kitchen';
+    case 'cashier':  return '/app/admin/cashier';
+    case 'waiter':   return '/app/admin/waiter';
+    case 'delivery': return '/app/admin/delivery';
+    default:         return '/app/app'; // portal cliente
+  }
+}
+
 function Fallback() {
   return (
     <main className="container py-4" style={{ maxWidth: 480 }}>
@@ -104,6 +115,7 @@ function LoginInner() {
         const resp = await fetch(`/${tenantId}/app/api/auth/refresh-role`, {
           method: 'POST',
           headers: { Authorization: `Bearer ${idToken}` },
+          cache: 'no-store',
         });
         const data = (await resp.json().catch(() => ({}))) as ApiRefreshRoleResp;
 
@@ -113,8 +125,8 @@ function LoginInner() {
         setCookie('session', '1', `/${tenantId}`);
 
         const role = data.role;
-        // 👇 admin → /app/admin; resto → área cliente
-        const target = role === 'admin' ? '/app/admin' : nextParam || '/app/app';
+        // 👇 Si hay ?next, respétalo; si no, manda a la ruta por defecto del rol
+        const target = nextParam || roleToDefaultPath(role);
         if (!cancelled) router.replace(withTenantPrefix(tenantId, target));
       } catch {
         /* se queda en login */
@@ -130,17 +142,19 @@ function LoginInner() {
       const resp = await fetch(`/${tenantId}/app/api/auth/refresh-role`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${idToken}` },
+        cache: 'no-store',
       });
       const data = (await resp.json().catch(() => ({}))) as ApiRefreshRoleResp;
 
       if (!resp.ok || data.ok !== true) {
-        const errorMsg = (!data.ok && 'error' in data && data.error)
-          ? data.error
-          : 'Could not validate your role.';
+        const errorMsg =
+          (!data.ok && 'error' in data && data.error)
+            ? data.error
+            : 'Could not validate your role.';
         throw new Error(errorMsg);
       }
 
-      // +++ NUEVO: si el server actualizó claims, fuerza un refresh local del token
+      // Si el server actualizó claims, fuerza un refresh local del token
       if (data.claimsUpdated) {
         const u = auth.currentUser;
         if (u) { await u.getIdToken(true); }
@@ -149,7 +163,7 @@ function LoginInner() {
       setCookie('session', '1', `/${tenantId}`);
 
       const role = data.role;
-      const target = role === 'admin' ? '/app/admin' : (search.get('next') || '/app/app');
+      const target = (search.get('next') || roleToDefaultPath(role));
       router.replace(withTenantPrefix(tenantId!, target));
     },
     [router, search, tenantId]
