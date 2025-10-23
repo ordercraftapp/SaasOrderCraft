@@ -26,7 +26,7 @@ async function ensureFirebaseApp() {
     if (cfg.apiKey && cfg.authDomain && cfg.projectId && cfg.appId) {
       app.initializeApp(cfg);
     } else {
-      console.warn('[Firebase] Faltan variables NEXT_PUBLIC_* para inicializar el cliente.');
+      console.warn('[Firebase] faltan NEXT_PUBLIC_* para inicializar el cliente.');
     }
   }
 }
@@ -46,17 +46,28 @@ async function getIdTokenSafe(forceRefresh = false): Promise<string | null> {
   }
 }
 
-/** Normaliza el nodo del tenant (soporta {roles:{...}} o plano) */
+/** Normaliza el nodo del tenant (roles/flags/plano) */
 function normalizeTenantNode(node: any): Record<string, any> {
-  if (!node) return {};
-  if (node.roles && typeof node.roles === 'object') return { ...node.roles };
-  return { ...node };
+  if (!node || typeof node !== 'object') return {};
+  const out: Record<string, boolean> = {};
+  const merge = (src: any) => {
+    if (!src || typeof src !== 'object') return;
+    for (const k of Object.keys(src)) {
+      if (typeof (src as any)[k] === 'boolean') out[k] ||= !!(src as any)[k];
+    }
+  };
+  merge(node);
+  merge(node.roles);
+  merge(node.flags);
+  merge(node.rolesNormalized);
+  return out;
 }
 
 function useAuthClaims() {
   const [authReady, setAuthReady] = React.useState(false);
   const [user, setUser] = React.useState<any | null>(null);
   const [claims, setClaims] = React.useState<any | null>(null);
+
   React.useEffect(() => {
     let alive = true;
     (async () => {
@@ -66,7 +77,7 @@ function useAuthClaims() {
         if (!alive) return;
         setUser(u ?? null);
         if (u) {
-          // Forzar refresh para traer claims actualizados
+          // token fresco para traer claims por-tenant actualizados
           const res = await getIdTokenResult(u, true);
           setClaims(res.claims || null);
         } else {
@@ -78,13 +89,14 @@ function useAuthClaims() {
     })();
     return () => { alive = false; };
   }, []);
+
   return { authReady, user, claims } as const;
 }
 
-/* ---- Server actions (import) ---- */
-import { listUsersAction, setClaimsAction } from './actions';
+/* ---- Actions (server) ---- */
+import { listUsersAction, setClaimsAction, type RoleKey } from './actions';
 
-/* ---- Tipos ---- */
+/* ---- Tipos UI ---- */
 type UserRow = {
   uid: string;
   email?: string | null;
@@ -94,30 +106,28 @@ type UserRow = {
   metadata?: { creationTime?: string; lastSignInTime?: string };
 };
 
-type RoleKey = 'admin' | 'kitchen' | 'waiter' | 'delivery' | 'cashier';
-
-/* ✅ Incluimos cashier */
+/* ✅ Matriz de roles a mostrar (incluye cashier) */
 const ROLES: Array<{ key: RoleKey; label: string }> = [
-  { key: 'admin', label: 'Admin' },
-  { key: 'kitchen', label: 'Kitchen' },
-  { key: 'waiter', label: 'Waiter' },
+  { key: 'admin',    label: 'Admin' },
+  { key: 'kitchen',  label: 'Kitchen' },
+  { key: 'waiter',   label: 'Waiter' },
   { key: 'delivery', label: 'Delivery' },
-  { key: 'cashier', label: 'Cashier' },
+  { key: 'cashier',  label: 'Cashier' },
 ];
 
 function RolesPage_Inner() {
   const tenantId = useTenantId();
   const { authReady, user, claims } = useAuthClaims();
 
-  // ¿Es admin del tenant actual? (tolerante a {roles:{...}} y plano)
+  // ¿es admin del tenant actual?
   const isTenantAdmin = React.useMemo(() => {
     if (!tenantId) return false;
     const node = claims?.tenants?.[tenantId];
     const flags = normalizeTenantNode(node);
-    return !!(flags?.admin || claims?.role === 'superadmin' || claims?.admin === true);
+    return !!(flags?.admin || claims?.admin === true || claims?.role === 'superadmin');
   }, [claims, tenantId]);
 
-  // 🔎 Log de diagnóstico (puedes quitar en prod)
+  // logs de contexto (puedes quitar en prod)
   React.useEffect(() => {
     if (tenantId) {
       const raw = claims?.tenants?.[tenantId];
@@ -132,7 +142,7 @@ function RolesPage_Inner() {
     }
   }, [tenantId, claims, isTenantAdmin]);
 
-  // idioma del tenant
+  // i18n
   const { settings } = useTenantSettings();
   const lang = React.useMemo(() => {
     try {
@@ -160,9 +170,10 @@ function RolesPage_Inner() {
       console.log('[roles:page] load:start', { tenantId });
       const idToken = await getIdTokenSafe(true);
       if (!idToken) throw new Error('Not authenticated');
+
       const data = await listUsersAction({ idToken, tenantId, pageSize: 200 });
-      console.log('[roles:page] load:success', { count: (data.users || []).length });
       setRows(data.users || []);
+      console.log('[roles:page] load:success', { count: (data.users || []).length });
     } catch (e: any) {
       console.error('[roles:page] load:error', e);
       setErr(e?.message || 'Error');
@@ -176,42 +187,39 @@ function RolesPage_Inner() {
   }, [user, isTenantAdmin, load]);
 
   const onToggle = async (uid: string, role: RoleKey, value: boolean) => {
-  try {
-    console.log("[roles:page] toggle", { uid, role, value, tenantId });
-    if (!tenantId) throw new Error("Missing tenantId");
-    const idToken = await getIdTokenSafe(true);
-    if (!idToken) throw new Error("Not authenticated");
+    try {
+      console.log('[roles:page] toggle', { uid, role, value, tenantId });
+      if (!tenantId) throw new Error('Missing tenantId');
+      const idToken = await getIdTokenSafe(true);
+      if (!idToken) throw new Error('Not authenticated');
 
-    const changes: Partial<Record<RoleKey, boolean>> = { [role]: value };
+      const changes: Partial<Record<RoleKey, boolean>> = { [role]: value };
+      const res = await setClaimsAction({ idToken, tenantId, uid, changes });
 
-    // Llama action (Node runtime) y usa la respuesta para pintar optimista
-    const res = await setClaimsAction({ idToken, tenantId, uid, changes });
+      // UI optimista con lo que devolvió el server
+      setRows((prev) =>
+        prev.map((u) => {
+          if (u.uid !== uid) return u;
+          const tenants = { ...(u.claims?.tenants || {}) };
+          tenants[tenantId] = res.savedTenantFlags || {};
+          return { ...u, claims: { ...(u.claims || {}), tenants } };
+        })
+      );
 
-    // ✅ UI optimista inmediata con lo que devolvió el server
-    setRows((prev) =>
-      prev.map((u) => {
-        if (u.uid !== uid) return u;
-        const tenants = { ...(u.claims?.tenants || {}) };
-        tenants[tenantId] = res.savedTenantFlags || {};
-        return { ...u, claims: { ...(u.claims || {}), tenants } };
-      })
-    );
+      // refresco completo (opcional)
+      await load();
 
-    // 🔄 Luego refrescas la lista completa
-    await load();
-
-    alert(
-      tt(
-        "admin.roles.alert.updated",
-        "Roles updated. The user must refresh their session to obtain new permissions."
-      )
-    );
-  } catch (e: any) {
-    console.error("[roles:page] toggle:error", e);
-    alert(e?.message || tt("admin.roles.alert.updateError", "Could not update roles"));
-  }
-};
-
+      alert(
+        tt(
+          'admin.roles.alert.updated',
+          'Roles updated. The user must refresh their session to obtain new permissions.'
+        )
+      );
+    } catch (e: any) {
+      console.error('[roles:page] toggle:error', e);
+      alert(e?.message || tt('admin.roles.alert.updateError', 'Could not update roles'));
+    }
+  };
 
   if (!authReady) return <div className="container py-3">{tt('admin.roles.init', 'Initializing…')}</div>;
   if (!user) return <div className="container py-3 text-danger">{tt('admin.common.mustSignIn', 'You must sign in.')}</div>;
@@ -241,8 +249,7 @@ function RolesPage_Inner() {
           </thead>
           <tbody>
             {rows.map((u) => {
-              const raw = u.claims?.tenants?.[tenantId];
-              const flags = normalizeTenantNode(raw);
+              const flags = normalizeTenantNode(u.claims?.tenants?.[tenantId]);
               return (
                 <tr key={u.uid}>
                   <td>
