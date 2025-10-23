@@ -15,8 +15,13 @@ if (USE_EMULATORS) {
   if (!process.env.FIRESTORE_EMULATOR_HOST) {
     process.env.FIRESTORE_EMULATOR_HOST = "localhost:8080"; // Firestore → "host:port"
   }
+  // 🔧 FIX: Admin SDK de Auth espera host **sin protocolo**
   if (!process.env.FIREBASE_AUTH_EMULATOR_HOST) {
-    process.env.FIREBASE_AUTH_EMULATOR_HOST = "http://localhost:9099"; // Auth → "http://host:port"
+    process.env.FIREBASE_AUTH_EMULATOR_HOST = "localhost:9099"; // NO "http://..."
+  } else {
+    // normaliza por si venía con http://
+    process.env.FIREBASE_AUTH_EMULATOR_HOST =
+      process.env.FIREBASE_AUTH_EMULATOR_HOST.replace(/^https?:\/\//, "");
   }
   // Si usas emulador, asegúrate de tener un projectId consistente:
   process.env.FIREBASE_PROJECT_ID =
@@ -33,18 +38,18 @@ if (USE_EMULATORS) {
  *  2) variables sueltas (PROJECT_ID, CLIENT_EMAIL, PRIVATE_KEY / PRIVATE_KEY_BASE64)
  *  3) (evitamos) ADC en Vercel; tiramos error claro si falta
  */
-function getAdminCredential(): admin.credential.Credential {
+function getAdminCredential() {
   // 1) JSON completo (service account)
   const json = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
   if (json) {
     try {
       const parsed = JSON.parse(json);
-      if (!parsed.project_id || !parsed.client_email || !parsed.private_key) {
+      if (parsed.project_id && parsed.client_email && parsed.private_key) {
+        return admin.credential.cert(parsed);
+      } else {
         console.warn(
           "[firebase-admin] FIREBASE_SERVICE_ACCOUNT_JSON presente pero incompleto (falta project_id/client_email/private_key)"
         );
-      } else {
-        return admin.credential.cert(parsed);
       }
     } catch {
       console.warn(
@@ -92,7 +97,6 @@ function getAdminCredential(): admin.credential.Credential {
   // 3) ADC: en Vercel normalmente NO existe ADC → mejor ser explícitos
   const onVercel = Boolean(process.env.VERCEL);
   if (!onVercel) {
-    // Local: intentar ADC
     try {
       return admin.credential.applicationDefault();
     } catch {
@@ -112,6 +116,8 @@ function getAdminCredential(): admin.credential.Credential {
 declare global {
   // eslint-disable-next-line no-var
   var __FIREBASE_ADMIN_APP__: admin.app.App | undefined;
+  // 🔧 Evita log duplicado
+  var __FIREBASE_ADMIN_LOGGED__: boolean | undefined;
 }
 
 let adminApp: admin.app.App;
@@ -119,7 +125,7 @@ if (!global.__FIREBASE_ADMIN_APP__) {
   if (!admin.apps.length) {
     adminApp = admin.initializeApp({
       credential: getAdminCredential(),
-      // databaseURL (si usas RTDB), storageBucket (si usas Storage) pueden ir aquí
+      // databaseURL / storageBucket si aplica
     });
   } else {
     adminApp = admin.app();
@@ -137,6 +143,30 @@ const db = admin.firestore(adminApp);
 try {
   // @ts-ignore (según versión)
   db.settings?.({ ignoreUndefinedProperties: true });
+} catch {
+  /* no-op */
+}
+
+/* 🔎 Log de diagnóstico (una sola vez) */
+try {
+  if (!global.__FIREBASE_ADMIN_LOGGED__) {
+    const usingEmu = Boolean(USE_EMULATORS);
+    const projectId =
+      admin.app().options.projectId ||
+      process.env.FIREBASE_PROJECT_ID ||
+      process.env.GCLOUD_PROJECT ||
+      process.env.GOOGLE_CLOUD_PROJECT;
+
+    console.log("[admin:init]", {
+      projectId,
+      useEmulators: usingEmu,
+      FIRESTORE_EMULATOR_HOST: process.env.FIRESTORE_EMULATOR_HOST || null,
+      FIREBASE_AUTH_EMULATOR_HOST: process.env.FIREBASE_AUTH_EMULATOR_HOST || null,
+      onVercel: Boolean(process.env.VERCEL),
+      nodeVersion: process.version,
+    });
+    global.__FIREBASE_ADMIN_LOGGED__ = true;
+  }
 } catch {
   /* no-op */
 }
@@ -167,11 +197,10 @@ export function getAdminDB() {
 }
 
 /** ========= Helpers multi-tenant ========= */
-// tenancyUpdate: colecciones bajo tenants/{tenantId}/<subcol>
-export function tColAdmin(subcol: string, tenantId: string) {           // tenancyUpdate (nuevo)
+export function tColAdmin(subcol: string, tenantId: string) {
   return db.collection("tenants").doc(tenantId).collection(subcol);
 }
 
-export function tDocAdmin(subcol: string, tenantId: string, id: string) { // tenancyUpdate (nuevo)
+export function tDocAdmin(subcol: string, tenantId: string, id: string) {
   return tColAdmin(subcol, tenantId).doc(id);
 }

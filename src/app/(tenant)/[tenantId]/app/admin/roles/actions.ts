@@ -1,5 +1,6 @@
 "use server";
-
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
 /**
  * ✅ Multi-tenant + Plans migration
  * - Ubicación: dentro de (tenant)/[tenantId]/...
