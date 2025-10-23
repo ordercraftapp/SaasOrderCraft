@@ -1,9 +1,9 @@
 // src/app/(tenant)/[tenantId]/app/login/page.tsx
 'use client';
 
-import { Suspense, FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter, useSearchParams, useParams } from 'next/navigation';
-import { signInWithEmailAndPassword, getIdToken, getIdTokenResult } from 'firebase/auth';
+import { signInWithEmailAndPassword, getIdToken } from 'firebase/auth';
 import { auth } from '@/lib/firebase/client';
 import AuthNavbar from '@/app/(tenant)/[tenantId]/components/AuthNavbar';
 
@@ -96,8 +96,6 @@ function LoginInner() {
   const [err, setErr] = useState<string | null>(null);
   const inFlightRef = useRef(false);
 
-  const defaultNext = useMemo(() => (tenantId ? `/${tenantId}/app/app` : '/app/app'), [tenantId]);
-
   // Redirigir si ya hay sesión activa (por si vuelve al login con sesión viva)
   useEffect(() => {
     let cancelled = false;
@@ -108,26 +106,12 @@ function LoginInner() {
 
       try {
         const idToken = await getIdToken(u, /*forceRefresh*/ true);
-        const tokenRes = await getIdTokenResult(u, /*forceRefresh*/ true);
-
-        console.groupCollapsed('[login] session-alive: pre-refresh-role');
-        console.log('tenantId', tenantId);
-        console.log('uid', u.uid);
-        console.log('raw next (search.get("next"))', search.get('next'));
-        console.log('claims.tenants[tenantId]', (tokenRes.claims as any)?.tenants?.[tenantId] || null);
-        console.groupEnd();
-
         const resp = await fetch(`/${tenantId}/app/api/auth/refresh-role`, {
           method: 'POST',
           headers: { Authorization: `Bearer ${idToken}` },
           cache: 'no-store',
         });
         const data = (await resp.json().catch(() => ({}))) as ApiRefreshRoleResp;
-
-        console.groupCollapsed('[login] session-alive: refresh-role response');
-        console.log('status', resp.status, 'ok', resp.ok);
-        console.log('data', data);
-        console.groupEnd();
 
         if (!resp.ok || data.ok !== true) return;
 
@@ -138,19 +122,13 @@ function LoginInner() {
         const rawNext = search.get('next');
         const target = rawNext || roleToDefaultPath(role);
 
-        console.groupCollapsed('[login] session-alive: redirect decision');
-        console.log('role', role);
-        console.log('rawNext', rawNext);
-        console.log('target', target);
-        console.groupEnd();
-
         if (!cancelled) {
           const url = withTenantPrefix(tenantId, target);
-          // ⚠️ navegación "full page" para evitar races de SPA con guards
+          // navegación "full page" para evitar races de SPA con guards
           window.location.replace(url);
         }
-      } catch (e) {
-        console.error('[login] session-alive error', e);
+      } catch {
+        // silencioso
       }
     })();
     return () => {
@@ -160,30 +138,12 @@ function LoginInner() {
 
   const afterSignIn = useCallback(
     async (idToken: string) => {
-      // log pre-refresh claims
-      try {
-        const u = auth.currentUser;
-        if (u) {
-          const tokenResBefore = await getIdTokenResult(u, /*forceRefresh*/ true);
-          console.groupCollapsed('[login] afterSignIn: pre refresh-role claims');
-          console.log('tenantId', tenantId);
-          console.log('uid', u.uid);
-          console.log('claims.tenants[tenantId]', (tokenResBefore.claims as any)?.tenants?.[tenantId] || null);
-          console.groupEnd();
-        }
-      } catch {}
-
       const resp = await fetch(`/${tenantId}/app/api/auth/refresh-role`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${idToken}` },
         cache: 'no-store',
       });
       const data = (await resp.json().catch(() => ({}))) as ApiRefreshRoleResp;
-
-      console.groupCollapsed('[login] afterSignIn: refresh-role response');
-      console.log('status', resp.status, 'ok', resp.ok);
-      console.log('data', data);
-      console.groupEnd();
 
       if (!resp.ok || data.ok !== true) {
         const errorMsg =
@@ -193,18 +153,10 @@ function LoginInner() {
         throw new Error(errorMsg);
       }
 
-      // Si el server actualizó claims, fuerza un refresh local del token y vuelve a loguear claims
+      // Si el server actualizó claims, fuerza un refresh local del token
       if (data.claimsUpdated) {
         const u = auth.currentUser;
-        if (u) {
-          await u.getIdToken(true);
-          const tokenResAfter = await getIdTokenResult(u, /*forceRefresh*/ true);
-          console.groupCollapsed('[login] afterSignIn: post refresh-role claims (forced refresh)');
-          console.log('tenantId', tenantId);
-          console.log('uid', u.uid);
-          console.log('claims.tenants[tenantId]', (tokenResAfter.claims as any)?.tenants?.[tenantId] || null);
-          console.groupEnd();
-        }
+        if (u) { await u.getIdToken(true); }
       }
 
       setCookie('session', '1', `/${tenantId}`);
@@ -213,13 +165,7 @@ function LoginInner() {
       const rawNext = search.get('next');
       const target = rawNext || roleToDefaultPath(role);
 
-      console.groupCollapsed('[login] afterSignIn: redirect decision');
-      console.log('role', role);
-      console.log('rawNext', rawNext);
-      console.log('target', target);
-      console.groupEnd();
-
-      // ⚠️ navegación "full page" para evitar races de SPA con guards
+      // navegación "full page" para evitar races de SPA con guards
       const url = withTenantPrefix(tenantId!, target);
       window.location.replace(url);
     },
@@ -235,18 +181,12 @@ function LoginInner() {
     inFlightRef.current = true;
 
     try {
-      console.groupCollapsed('[login] onSubmit');
-      console.log('email', email);
-      console.groupEnd();
-
       const cred = await signInWithEmailAndPassword(auth, email.trim(), password);
       const idToken = await getIdToken(cred.user, /*forceRefresh*/ true);
-
       await afterSignIn(idToken);
     } catch (e: any) {
       const code = e?.code as string | undefined;
       const msg = mapFirebaseErrorToMsg(code);
-      console.error('[login] signIn error', { code, msg, raw: e });
       setErr(msg);
     } finally {
       inFlightRef.current = false;
@@ -299,12 +239,6 @@ function LoginInner() {
           Sign up
         </a>
       </p>
-
-      {/* Debug visual mínimo */}
-      <pre className="mt-3 small text-muted">
-        tenantId: {String(tenantId)}{"\n"}
-        defaultNext: {defaultNext}
-      </pre>
     </main>
   );
 }
