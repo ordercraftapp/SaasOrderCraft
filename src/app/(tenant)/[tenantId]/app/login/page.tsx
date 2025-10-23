@@ -3,7 +3,7 @@
 
 import { Suspense, FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams, useParams } from 'next/navigation';
-import { signInWithEmailAndPassword, getIdToken } from 'firebase/auth';
+import { signInWithEmailAndPassword, getIdToken, getIdTokenResult } from 'firebase/auth';
 import { auth } from '@/lib/firebase/client';
 import AuthNavbar from '@/app/(tenant)/[tenantId]/components/AuthNavbar';
 
@@ -96,59 +96,93 @@ function LoginInner() {
   const [err, setErr] = useState<string | null>(null);
   const inFlightRef = useRef(false);
 
-  // 👇 por defecto apunta al área cliente
+  // 👇 por defecto apunta al área cliente (solo se usa como fallback en el render, ya NO en el redirect de sesión viva)
   const defaultNext = useMemo(() => (tenantId ? `/${tenantId}/app/app` : '/app/app'), [tenantId]);
-  const nextParam = useMemo(() => search.get('next') || defaultNext, [search, defaultNext]);
 
   // Redirigir si ya hay sesión activa (por si vuelve al login con sesión viva)
- // Redirigir si ya hay sesión activa (por si vuelve al login con sesión viva)
-useEffect(() => {
-  let cancelled = false;
-  (async () => {
-    if (!tenantId) return;
-    const u = auth.currentUser;
-    if (!u) return;
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!tenantId) return;
+      const u = auth.currentUser;
+      if (!u) return;
 
-    try {
-      const idToken = await getIdToken(u, /*forceRefresh*/ true);
+      try {
+        const idToken = await getIdToken(u, /*forceRefresh*/ true);
+        const tokenRes = await getIdTokenResult(u, /*forceRefresh*/ true);
 
-      // Refresca rol en cookies (server decide por tenant)
-      const resp = await fetch(`/${tenantId}/app/api/auth/refresh-role`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${idToken}` },
-        cache: 'no-store',
-      });
-      const data = (await resp.json().catch(() => ({}))) as ApiRefreshRoleResp;
+        console.groupCollapsed('[login] session-alive: pre-refresh-role');
+        console.log('tenantId', tenantId);
+        console.log('uid', u.uid);
+        console.log('raw next (search.get("next"))', search.get('next'));
+        console.log('claims.tenants[tenantId]', (tokenRes.claims as any)?.tenants?.[tenantId] || null);
+        console.groupEnd();
 
-      if (!resp.ok || data.ok !== true) return; // se queda en login si algo falla
+        // Refresca rol en cookies (server decide por tenant)
+        const resp = await fetch(`/${tenantId}/app/api/auth/refresh-role`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${idToken}` },
+          cache: 'no-store',
+        });
+        const data = (await resp.json().catch(() => ({}))) as ApiRefreshRoleResp;
 
-      // Marca sesión para el scope del tenant (middleware)
-      setCookie('session', '1', `/${tenantId}`);
+        console.groupCollapsed('[login] session-alive: refresh-role response');
+        console.log('status', resp.status, 'ok', resp.ok);
+        console.log('data', data);
+        console.groupEnd();
 
-      const role = data.role;
-      // 👇 OJO: usar SOLO el next crudo; si no existe, ruta por defecto del rol
-      const rawNext = search.get('next');
-      const target = rawNext || roleToDefaultPath(role);
+        if (!resp.ok || data.ok !== true) return; // se queda en login si algo falla
 
-      if (!cancelled) router.replace(withTenantPrefix(tenantId, target));
-    } catch {
-      /* se queda en login */
-    }
-  })();
-  return () => {
-    cancelled = true;
-  };
-}, [router, tenantId, search]);
+        // Marca sesión para el scope del tenant (middleware)
+        setCookie('session', '1', `/${tenantId}`);
 
+        const role = data.role;
+        const rawNext = search.get('next'); // ⚠️ usar sólo el next crudo aquí
+        const target = rawNext || roleToDefaultPath(role);
+
+        console.groupCollapsed('[login] session-alive: redirect decision');
+        console.log('role', role);
+        console.log('rawNext', rawNext);
+        console.log('target', target);
+        console.groupEnd();
+
+        if (!cancelled) router.replace(withTenantPrefix(tenantId, target));
+      } catch (e) {
+        console.error('[login] session-alive error', e);
+        /* se queda en login */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [router, tenantId, search]);
 
   const afterSignIn = useCallback(
     async (idToken: string) => {
+      // log pre-refresh claims
+      try {
+        const u = auth.currentUser;
+        if (u) {
+          const tokenResBefore = await getIdTokenResult(u, /*forceRefresh*/ true);
+          console.groupCollapsed('[login] afterSignIn: pre refresh-role claims');
+          console.log('tenantId', tenantId);
+          console.log('uid', u.uid);
+          console.log('claims.tenants[tenantId]', (tokenResBefore.claims as any)?.tenants?.[tenantId] || null);
+          console.groupEnd();
+        }
+      } catch {}
+
       const resp = await fetch(`/${tenantId}/app/api/auth/refresh-role`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${idToken}` },
         cache: 'no-store',
       });
       const data = (await resp.json().catch(() => ({}))) as ApiRefreshRoleResp;
+
+      console.groupCollapsed('[login] afterSignIn: refresh-role response');
+      console.log('status', resp.status, 'ok', resp.ok);
+      console.log('data', data);
+      console.groupEnd();
 
       if (!resp.ok || data.ok !== true) {
         const errorMsg =
@@ -158,16 +192,32 @@ useEffect(() => {
         throw new Error(errorMsg);
       }
 
-      // Si el server actualizó claims, fuerza un refresh local del token
+      // Si el server actualizó claims, fuerza un refresh local del token y vuelve a loguear claims
       if (data.claimsUpdated) {
         const u = auth.currentUser;
-        if (u) { await u.getIdToken(true); }
+        if (u) {
+          await u.getIdToken(true);
+          const tokenResAfter = await getIdTokenResult(u, /*forceRefresh*/ true);
+          console.groupCollapsed('[login] afterSignIn: post refresh-role claims (forced refresh)');
+          console.log('tenantId', tenantId);
+          console.log('uid', u.uid);
+          console.log('claims.tenants[tenantId]', (tokenResAfter.claims as any)?.tenants?.[tenantId] || null);
+          console.groupEnd();
+        }
       }
 
       setCookie('session', '1', `/${tenantId}`);
 
       const role = data.role;
-      const target = (search.get('next') || roleToDefaultPath(role));
+      const rawNext = search.get('next'); // respeta next si viene; si no, ruta por rol
+      const target = rawNext || roleToDefaultPath(role);
+
+      console.groupCollapsed('[login] afterSignIn: redirect decision');
+      console.log('role', role);
+      console.log('rawNext', rawNext);
+      console.log('target', target);
+      console.groupEnd();
+
       router.replace(withTenantPrefix(tenantId!, target));
     },
     [router, search, tenantId]
@@ -182,12 +232,19 @@ useEffect(() => {
     inFlightRef.current = true;
 
     try {
+      console.groupCollapsed('[login] onSubmit');
+      console.log('email', email);
+      console.groupEnd();
+
       const cred = await signInWithEmailAndPassword(auth, email.trim(), password);
       const idToken = await getIdToken(cred.user, /*forceRefresh*/ true);
+
       await afterSignIn(idToken);
     } catch (e: any) {
       const code = e?.code as string | undefined;
-      setErr(mapFirebaseErrorToMsg(code));
+      const msg = mapFirebaseErrorToMsg(code);
+      console.error('[login] signIn error', { code, msg, raw: e });
+      setErr(msg);
     } finally {
       inFlightRef.current = false;
       setBusy(false);
@@ -239,6 +296,12 @@ useEffect(() => {
           Sign up
         </a>
       </p>
+
+      {/* Debug visual mínimo */}
+      <pre className="mt-3 small text-muted">
+        tenantId: {String(tenantId)}{"\n"}
+        defaultNext: {defaultNext}
+      </pre>
     </main>
   );
 }
