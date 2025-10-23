@@ -1,9 +1,5 @@
 "use server";
 
-// Fuerza Node.js (evita Edge) y desactiva cache para acciones de rol
-export const runtime = "nodejs";
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
 
 /**
  * ✅ Multi-tenant + Plans migration
