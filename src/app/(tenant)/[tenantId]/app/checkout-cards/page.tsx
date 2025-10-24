@@ -441,18 +441,76 @@ function useCheckoutState() {
     return Number(opt?.price || 0);
   }, [mode, deliveryOptions, selectedDeliveryOptionId]);
 
-  useEffect(() => {
+  // 👇 IMPORTANTE: ya tienes estos helpers más arriba en el archivo.
+//   - userHasTenantClaim(u, tenantId)
+//   - getClaims(u)
+//   - useTenantId()
+//   - getActiveTaxProfileForTenant(tenantId)
+
+useEffect(() => {
   if (!tenantId) return;
+  let cancelled = false;
+
   (async () => {
     try {
+      const auth = getAuth();
+      const u = auth.currentUser;
+
+      if (!u) {
+        console.warn('[TAX] No auth user – saltando lectura de perfil.');
+        if (!cancelled) setActiveProfile(null);
+        return;
+      }
+
+      // 1) Refresca token
+      const idToken = await u.getIdToken(true);
+
+      // 2) Pide al backend refrescar claims por-tenant (tu endpoint)
+      try {
+        const resp = await fetch(`/${tenantId}/app/api/auth/refresh-role`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${idToken}` },
+          cache: 'no-store',
+          credentials: 'same-origin',
+        });
+        if (resp?.ok) {
+          // 3) Forzar recarga del token local para incorporar los nuevos claims
+          await u.getIdToken(true);
+        }
+      } catch (e) {
+        console.warn('[TAX] refresh-role falló (continuo):', e);
+      }
+
+      // 4) Log de claims y verificación explícita del claim del tenant
+      const claims: any = await getClaims(u);
+      const has = await userHasTenantClaim(u, tenantId);
+
+      console.log('[TAX] Claims preview ▶', {
+        tenantId,
+        inTenant: has,
+        tenantId_simple: claims?.tenantId ?? null,
+        tenants_keys: claims?.tenants ? Object.keys(claims.tenants) : [],
+        roles_at_tenant: claims?.tenants?.[tenantId]?.roles || null,
+      });
+
+      if (!has) {
+        console.warn('[TAX] Usuario NO tiene claim para este tenant — reglas bloquearán la lectura.');
+        if (!cancelled) setActiveProfile(null);
+        return;
+      }
+
+      // 5) Ahora sí, lee el perfil (reglas: tenants/{tenantId}/taxProfiles)
       const p = await getActiveTaxProfileForTenant(tenantId);
-      setActiveProfile(p || null);
+      if (!cancelled) setActiveProfile(p || null);
     } catch (e) {
       console.warn('tax profile read failed:', e);
-      setActiveProfile(null);
+      if (!cancelled) setActiveProfile(null);
     }
   })();
+
+  return () => { cancelled = true; };
 }, [tenantId]);
+
 
   // Impuestos/total
   useEffect(() => {
