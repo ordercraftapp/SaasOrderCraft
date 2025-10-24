@@ -80,11 +80,6 @@ async function userHasTenantClaim(u: any, tenantId: string) {
   return !!t[tenantId];
 }
 
-async function getClaims(u: any) {
-  const tok = await u.getIdTokenResult(true);
-  return tok?.claims || {};
-}
-
 /* --------------------------------------------
    🔧 /paymentProfile/default (por tenant)
    >>> CAMBIADO: ahora refresca claims con refresh-role antes de leer el doc
@@ -443,7 +438,6 @@ function useCheckoutState() {
 
   // 👇 IMPORTANTE: ya tienes estos helpers más arriba en el archivo.
 //   - userHasTenantClaim(u, tenantId)
-//   - getClaims(u)
 //   - useTenantId()
 //   - getActiveTaxProfileForTenant(tenantId)
 
@@ -457,7 +451,6 @@ useEffect(() => {
       const u = auth.currentUser;
 
       if (!u) {
-        console.warn('[TAX] No auth user – saltando lectura de perfil.');
         if (!cancelled) setActiveProfile(null);
         return;
       }
@@ -465,7 +458,7 @@ useEffect(() => {
       // 1) Refresca token
       const idToken = await u.getIdToken(true);
 
-      // 2) Pide al backend refrescar claims por-tenant (tu endpoint)
+      // 2) Pide al backend refrescar claims por-tenant
       try {
         const resp = await fetch(`/${tenantId}/app/api/auth/refresh-role`, {
           method: 'POST',
@@ -474,42 +467,30 @@ useEffect(() => {
           credentials: 'same-origin',
         });
         if (resp?.ok) {
-          // 3) Forzar recarga del token local para incorporar los nuevos claims
+          // fuerza recarga local del token para traer los nuevos claims
           await u.getIdToken(true);
         }
       } catch (e) {
-        console.warn('[TAX] refresh-role falló (continuo):', e);
+        // opcionalmente podrías loguear, pero lo dejamos silencioso
       }
 
-      // 4) Log de claims y verificación explícita del claim del tenant
-      const claims: any = await getClaims(u);
-      const has = await userHasTenantClaim(u, tenantId);
-
-      console.log('[TAX] Claims preview ▶', {
-        tenantId,
-        inTenant: has,
-        tenantId_simple: claims?.tenantId ?? null,
-        tenants_keys: claims?.tenants ? Object.keys(claims.tenants) : [],
-        roles_at_tenant: claims?.tenants?.[tenantId]?.roles || null,
-      });
-
-      if (!has) {
-        console.warn('[TAX] Usuario NO tiene claim para este tenant — reglas bloquearán la lectura.');
+      // ✅ Guard de claim antes de leer Firestore
+      if (!(await userHasTenantClaim(u, tenantId))) {
         if (!cancelled) setActiveProfile(null);
         return;
       }
 
-      // 5) Ahora sí, lee el perfil (reglas: tenants/{tenantId}/taxProfiles)
+      // 5) Ahora sí, lee el perfil activo de impuestos
       const p = await getActiveTaxProfileForTenant(tenantId);
       if (!cancelled) setActiveProfile(p || null);
     } catch (e) {
-      console.warn('tax profile read failed:', e);
       if (!cancelled) setActiveProfile(null);
     }
   })();
 
   return () => { cancelled = true; };
 }, [tenantId]);
+
 
 
   // Impuestos/total
@@ -899,7 +880,7 @@ function CheckoutUI(props: {
     setSelectedDeliveryOptionId, setTip, setTipEdited, setSaving, setPayMethod,
     onChangeAddressLabel, setPromoCode, applyPromo, clearPromo,
   } = actions;
-  const tenantId = useTenantId(); // quitarrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr
+  const tenantId = useTenantId(); 
   // ⚠️ Ejecuta TODOS los hooks antes de cualquier return condicional
   const { tt, ready } = useLangTT();
   const fmtQ = useFmtQ();
@@ -1329,14 +1310,6 @@ function CheckoutCoreNoStripe() {
   const enabledPaypal = corePayFlags.paypal && !pfLoading;
 
   // Efectivo (Firestore namespaced + navegación tenant)
-// Pon este helper en el archivo (arriba, donde definiste el otro helper)
-async function userHasTenantClaim(u: any, tenantId: string) {
-  const tok = await u.getIdTokenResult(true);
-  const t = (tok?.claims as any)?.tenants || {};
-  return !!t[tenantId];
-}
-
-// ⬇️ Reemplaza COMPLETO tu onSubmitCash por este:
 // ⬇️ Reemplaza COMPLETO por este:
 const onSubmitCash = async () => {
   try {
@@ -1375,61 +1348,7 @@ const onSubmitCash = async () => {
     const base = await buildOrderPayload();
 
     // ⚠️ Importante: agrega tenantId DENTRO del payload ANTES del pre-flight
-    const payload = { ...base, tenantId };
-
-    // D) PRE-FLIGHT (siempre imprime)
-    const claims: any = await getClaims(u);
-    const simpleTenantClaim = claims?.tenantId === tenantId;
-    const mapTenantClaim = !!(claims?.tenants && claims?.tenants[tenantId!]);
-
-    const preflight = {
-      tenantIdResolved: tenantId,
-      authUid: u.uid,
-      email: u.email || null,
-      inTenant_simple: simpleTenantClaim,
-      inTenant_map: mapTenantClaim,
-      tenantIdPropInPayload: (payload as any)?.tenantId === tenantId,
-      createdByUidMatches: (payload as any)?.createdBy?.uid === u.uid,
-      statusPlaced: (payload as any)?.status === 'placed',
-      orderTypeAllowed: ['dine-in', 'delivery', 'pickup'].includes((payload as any)?.orderInfo?.type),
-      claimsPreview: {
-        tenantId: claims?.tenantId ?? null,
-        tenantsKeys: claims?.tenants ? Object.keys(claims.tenants) : [],
-        rolesAtTenant: claims?.tenants?.[tenantId!]?.roles || null,
-      },
-    };
-
-    // 👉 SIEMPRE imprime el preflight para depurar
-    if (process.env.NODE_ENV !== 'production') {
-  console.log('PRE-FLIGHT ▶', preflight);
-}
-    console.log('PRE-FLIGHT ▶', preflight);
-
-    // E) Cortes claros si algo no cumple
-    if (!tenantId) {
-      console.warn('PRE-FLIGHT ❌ tenantId missing', preflight);
-      alert('No se pudo determinar el tenant. Vuelve a cargar la página.');
-      actions.setSaving(false);
-      return;
-    }
-    if (!preflight.inTenant_simple && !preflight.inTenant_map) {
-      console.warn('PRE-FLIGHT ❌ inTenant fail', preflight);
-      alert('Tu sesión no tiene acceso a este tenant. Cierra sesión y vuelve a entrar.');
-      actions.setSaving(false);
-      return;
-    }
-    if (!preflight.tenantIdPropInPayload) {
-      console.warn('PRE-FLIGHT ❌ payload.tenantId != path tenantId', preflight, payload);
-      alert('El payload no incluye el tenantId correcto.');
-      actions.setSaving(false);
-      return;
-    }
-    if (!preflight.createdByUidMatches || !preflight.statusPlaced || !preflight.orderTypeAllowed) {
-      console.warn('PRE-FLIGHT ❌ payload no cumple reglas', preflight, payload);
-      alert('Datos de la orden inválidos para las reglas. Revisa consola.');
-      actions.setSaving(false);
-      return;
-    }
+    const payload = { ...base, tenantId };    
 
     // F) Escribir en Firestore (usa el payload que YA trae tenantId)
     try {
@@ -1452,24 +1371,14 @@ const onSubmitCash = async () => {
       alert('Order created (cash) ✓');
     } catch (err: any) {
       // 🔎 Captura y muestra el error real de Firestore
-      console.error('addDoc error ▶', {
-        code: err?.code,
-        message: err?.message,
-        name: err?.name,
-        stack: err?.stack,
-      });
       alert('No se pudo crear la orden (Firestore): ' + (err?.message || 'Missing or insufficient permissions.'));
     }
   } catch (e: any) {
-    console.error('onSubmitCash error ▶', e);
     alert('No se pudo crear la orden: ' + (e?.message || 'permiso denegado'));
   } finally {
     actions.setSaving(false);
   }
 };
-
-
-
   // PayPal: carga SDK sólo si está habilitado
   const [paypalReady, setPaypalReady] = useState(false);
   const paypalButtonsRef = useRef<any>(null);
