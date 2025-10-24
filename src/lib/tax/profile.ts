@@ -15,6 +15,7 @@ import {
   onSnapshot,
   type Unsubscribe,
 } from 'firebase/firestore';
+import { tCol } from '@/lib/db';
 
 export type OrderType = 'dine-in' | 'delivery' | 'pickup';
 
@@ -109,6 +110,7 @@ function mapRates(arr: any[] | undefined): TaxRateRule[] {
   }));
 }
 
+
 function mapSurcharges(arr: any[] | undefined): SurchargeRule[] | undefined {
   if (!Array.isArray(arr)) return undefined;
   return arr.map((s: any) => ({
@@ -192,55 +194,13 @@ function mapRawToProfile(raw: any, id?: string): TaxProfile {
 
 /** Lee el perfil activo del tenant desde tenants/{tenantId}/taxProfiles/active */
 // 👇 NUEVO: perfil activo por tenant (respeta tus reglas)
-export async function getActiveTaxProfileForTenant(tenantId: string): Promise<TaxProfile | null> {
+export async function getActiveTaxProfileForTenant(tenantId: string) {
   const db = getFirestore();
-  const qRef = query(
-    collection(db, `tenants/${tenantId}/taxProfiles`),
-    where('active', '==', true),
-    limit(1)
-  );
-  const snap = await getDocs(qRef);
-  const docSnap = snap.docs[0];
-  if (!docSnap) return null;
-  const raw = docSnap.data() as any;
-
-  // Reusa el mismo mapeo que ya haces en getActiveTaxProfile:
-  const profile: TaxProfile = {
-    id: docSnap.id,
-    country: String(raw.country || 'GT'),
-    currency: String(raw.currency || 'USD'),
-    pricesIncludeTax: Boolean(raw.pricesIncludeTax ?? true),
-    rounding: (raw.rounding === 'half_even' ? 'half_even' : 'half_up'),
-    rates: Array.isArray(raw.rates) ? raw.rates.map((r: any) => ({
-      code: String(r.code),
-      label: r.label ? String(r.label) : undefined,
-      rateBps: Number(r.rateBps || 0),
-      appliesTo: r.appliesTo === 'all' ? 'all' : undefined,
-      itemCategoryIn: Array.isArray(r.itemCategoryIn) ? r.itemCategoryIn.map(String) : undefined,
-      itemTagIn: Array.isArray(r.itemTagIn) ? r.itemTagIn.map(String) : undefined,
-      excludeItemTagIn: Array.isArray(r.excludeItemTagIn) ? r.excludeItemTagIn.map(String) : undefined,
-      orderTypeIn: Array.isArray(r.orderTypeIn) ? r.orderTypeIn as OrderType[] : undefined,
-      zeroRated: Boolean(r.zeroRated ?? false),
-      exempt: Boolean(r.exempt ?? false),
-    })) : [],
-    surcharges: Array.isArray(raw.surcharges) ? raw.surcharges.map((s: any) => ({
-      code: String(s.code),
-      label: s.label ? String(s.label) : undefined,
-      percentBps: Number(s.percentBps || 0),
-      applyWhenOrderTypeIn: Array.isArray(s.applyWhenOrderTypeIn) ? s.applyWhenOrderTypeIn as OrderType[] : undefined,
-      taxable: Boolean(s.taxable ?? false),
-      taxCode: s.taxCode ? String(s.taxCode) : undefined,
-    })) : [],
-    delivery: raw.delivery ? {
-      mode: (raw.delivery.mode === 'out_of_scope' ? 'out_of_scope' : 'as_line'),
-      taxable: Boolean(raw.delivery.taxable ?? false),
-      taxCode: raw.delivery.taxCode ? String(raw.delivery.taxCode) : undefined,
-    } : undefined,
-    jurisdictions: undefined, // agrega si lo usas
-    b2bConfig: raw.b2bConfig || undefined,
-  };
-
-  return profile;
+  const ref = doc(tCol('taxProfiles', tenantId), 'active'); // /tenants/{tenantId}/taxProfiles/active
+  const snap = await getDoc(ref);
+  if (!snap.exists()) return null;
+  const raw = snap.data() as any;
+  return { id: snap.id, ...raw };
 }
 
 
