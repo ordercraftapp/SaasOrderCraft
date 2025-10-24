@@ -71,8 +71,11 @@ async function getFirestoreMod() {
   return await import('firebase/firestore');
 }
 
-/* ===== Tax profile (para numeración de factura) ===== */
-import { getActiveTaxProfile } from '@/lib/tax/profile';
+/* ===== Tax profile (tenant-scoped) ===== */
+import { 
+  getInvoiceNumberingConfigForTenant,
+  getActiveTaxProfileForTenant
+} from '@/lib/tax/profile';
 
 /* ============ Tipos & utils ============ */
 type StatusSnake =
@@ -383,23 +386,16 @@ async function ensureInvoiceNumber(orderId: string, tenantId: string): Promise<s
   const { getFirestore, doc, runTransaction, serverTimestamp } = await getFirestoreMod();
   const db = getFirestore();
 
-  // Lee configuración del perfil activo (b2bConfig.invoiceNumbering por diseño)
-  let numberingCfg: any = null;
-  try {
-    const profile = await getActiveTaxProfile();
-    numberingCfg =
-      (profile as any)?.b2bConfig?.invoiceNumbering ??
-      (profile as any)?.invoiceNumbering ??
-      null;
-  } catch {
-    numberingCfg = null;
-  }
+  // Lee configuración del perfil activo (tenant-scoped)
+  const numberingCfg = await getInvoiceNumberingConfigForTenant(tenantId);
 
   const enabled: boolean = !!(numberingCfg?.enabled ?? true);
   const prefix: string = typeof numberingCfg?.prefix === 'string' ? numberingCfg.prefix : '';
   const series: string = typeof numberingCfg?.series === 'string' ? numberingCfg.series : '';
   const suffix: string = typeof numberingCfg?.suffix === 'string' ? numberingCfg.suffix : '';
-  const padding: number = Number.isFinite(Number(numberingCfg?.padding)) ? Math.max(1, Number(numberingCfg.padding)) : 8;
+  const padding = Number.isFinite(Number(numberingCfg?.padding))
+  ? Math.max(1, Number(numberingCfg?.padding))
+  : 8;
 
   if (!enabled) return null;
 
@@ -492,6 +488,61 @@ function ReceiptPage_Inner() {
           }
         } catch {
           // si falla, continuamos para no bloquear el ticket
+        }
+
+        /* 🔁 Fallback taxSnapshot: si la orden no trae snapshot, lo calculamos en cliente
+             usando el tax profile ACTIVO del tenant + tu engine.
+             (No persistimos; solo para mostrar correctamente el desglose en el ticket) */
+        try {
+          if (!o.taxSnapshot && tenantId) {
+            const profile = await getActiveTaxProfileForTenant(tenantId);
+            if (profile) {
+              const { calculateTaxSnapshot } = await import('@/lib/tax/engine');
+
+              // Determinar tipo de orden (alineado al render)
+              const rawType = o?.orderInfo?.type?.toLowerCase?.();
+              const orderType: 'dine-in' | 'delivery' | 'pickup' =
+                rawType === 'delivery' ? 'delivery' :
+                rawType === 'pickup' ? 'pickup' :
+                (o?.orderInfo?.address || o?.deliveryAddress ? 'delivery' : 'dine-in');
+
+              // Construir líneas mínimas para el engine (centavos)
+              const linesSrc = preferredLines(o);
+              const lines = linesSrc.map((l, i) => {
+                const qty = getLineQty(l);
+                const baseQ = baseUnitPriceQ(l);      // Q
+                const addonsQ = perUnitAddonsQ(l);    // Q
+                return {
+                  lineId: String(i + 1),
+                  quantity: qty,
+                  unitPriceCents: Math.round((baseQ || 0) * 100),
+                  addonsCents: Math.round((addonsQ || 0) * 100),
+                };
+              });
+
+              // Cliente si existe
+              const customer = {
+                taxId: (o as any)?.customer?.taxId || undefined,
+                name: (o as any)?.customer?.name || (o as any)?.customer?.names || undefined,
+              };
+
+              const snapshot = calculateTaxSnapshot(
+                {
+                  currency: profile.currency,
+                  orderType,
+                  lines,
+                  customer,
+                },
+                profile
+              );
+
+              if (snapshot) {
+                (o as any).taxSnapshot = snapshot; // ✅ inyectamos para mostrar desglose
+              }
+            }
+          }
+        } catch {
+          // si falla, seguimos sin bloquear el ticket
         }
 
         setOrder(o);

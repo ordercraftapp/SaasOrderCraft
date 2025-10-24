@@ -867,7 +867,12 @@ function CheckoutUI(props: {
    : mode === 'delivery' ? !(address && phone && selectedDeliveryOptionId)
    : !phone);
 
-  const grandToShow = (taxUI?.grandPayableQ ?? grandTotal);
+  const grandToShow = (() => {
+  // base: subtotal + delivery + tip - promo (lo que ya calculas como grandTotal)
+  if (!taxUI) return grandTotal;
+  // si los precios NO incluyen impuesto, lo sumamos explícitamente al total mostrado
+  return taxUI.pricesIncludeTax ? grandTotal : (grandTotal + (taxUI.taxQ || 0));
+})();
 
   const promoErrorText = promoError === 'Enter the coupon.'
     ? tt('checkout.promo.error.enter', 'Enter the coupon.')
