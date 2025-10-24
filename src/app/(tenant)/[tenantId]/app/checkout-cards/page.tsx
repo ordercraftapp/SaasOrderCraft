@@ -21,7 +21,7 @@ import {
 } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
 
-import { getActiveTaxProfile } from '@/lib/tax/profile';
+import { getActiveTaxProfileForTenant } from '@/lib/tax/profile';
 import { calculateTaxSnapshot } from '@/lib/tax/engine';
 import { useFmtQ } from '@/lib/settings/money';
 import { useAvailableTables } from '@/lib/tables/useAvailableTables';
@@ -442,11 +442,17 @@ function useCheckoutState() {
   }, [mode, deliveryOptions, selectedDeliveryOptionId]);
 
   useEffect(() => {
-    (async () => {
-      const p = await getActiveTaxProfile(); // asume profile por tenant (si no, ajústalo)
+  if (!tenantId) return;
+  (async () => {
+    try {
+      const p = await getActiveTaxProfileForTenant(tenantId);
       setActiveProfile(p || null);
-    })();
-  }, []);
+    } catch (e) {
+      console.warn('tax profile read failed:', e);
+      setActiveProfile(null);
+    }
+  })();
+}, [tenantId]);
 
   // Impuestos/total
   useEffect(() => {
