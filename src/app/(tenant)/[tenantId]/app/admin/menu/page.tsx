@@ -1632,7 +1632,9 @@ function AdminMenuPage_Inner() {
                               )}
                               {!!mi.addons?.length && (
                                 <div className="text-muted small mt-1">
-                                  {tt('admin.menu.addons.short', 'Addons')}: {mi.addons.map(a => `${a.name} ({fmtQ(a.price)})`).join(', ')}
+                                  {tt('admin.menu.addons.short', 'Addons')}:
+                                  {' '}
+                                  {mi.addons.map(a => `${a.name} (${fmtQ(a.price)})`).join(', ')}
                                 </div>
                               )}
                             </div>
