@@ -1,15 +1,13 @@
-// src/app/(tenant)/[tenant]/app/admin/ai-studio/page.tsx
+/* src/app/(tenant)/[tenantId]/app/admin/ai-studio/page.tsx */
 "use client";
 
 import { useEffect, useRef, useState, useMemo } from "react";
 import Protected from "@/app/(tenant)/[tenantId]/components/Protected";
 import AdminOnly from "@/app/(tenant)/[tenantId]/components/AdminOnly";
 import "@/lib/firebase/client";
-import { getFirestore, addDoc, collection, serverTimestamp } from "firebase/firestore";
+import { getFirestore, addDoc, serverTimestamp } from "firebase/firestore";
 import { getAuth, onAuthStateChanged, User } from "firebase/auth";
 import TurnstileWidget, { TurnstileWidgetHandle } from "@/app/(tenant)/[tenantId]/components/TurnstileWidget";
-
-// 🔐 Plan gating (Full) + tenantId para Firestore
 import ToolGate from "@/components/ToolGate";
 import { useTenantId } from "@/lib/tenant/context";
 import { tCol } from "@/lib/db";
@@ -32,18 +30,10 @@ type ImagePromptsPayload = { items: ImagePromptItem[] };
 function InputHelp({ text }: { text: string }) {
   return <div className="form-text">{text}</div>;
 }
-// Helper: asegura un string y centraliza el mensaje de error
-function requireTid(tid?: string | null): string {
-  if (!tid) {
-    throw new Error("Tenant no resuelto");
-  }
-  return tid;
-}
-
 
 export default function AIStudioPage() {
   const db = getFirestore();
-  const tenantId = useTenantId(); // ✅ tenant para Firestore scopiado
+  const tenantId = useTenantId(); // ✅ tenant scopiado para rutas y Firestore
 
   // Feature flag (ON/OFF)
   const [flagEnabled, setFlagEnabled] = useState<boolean>(true);
@@ -92,6 +82,12 @@ export default function AIStudioPage() {
     return s === key ? fallback : s;
   };
 
+  // Helper: asegura un tenantId (para evitar strings en rojo/undefined)
+  const requireTid = () => {
+    if (!tenantId) throw new Error("Tenant no resuelto");
+    return tenantId;
+  };
+
   // --- Esperar a que Auth esté listo (evita 401 por token vacío) ---
   useEffect(() => {
     const auth = getAuth();
@@ -102,53 +98,61 @@ export default function AIStudioPage() {
     return () => unsub();
   }, []);
 
-  // --- Cargar flag SOLO cuando Auth está listo y hay usuario ---
+  // --- Cargar flag SOLO cuando Auth + tenant están listos ---
   useEffect(() => {
-  (async () => {
-    if (!authReady || !user || !tenantId) return;   // ⬅️ evita /undefined y bucles
-    try {
-      const idToken = await user.getIdToken(true);
-      const url = `/${tenantId}/app/api/admin/ai-studio/flag`; // ⬅️ backticks!
-      const r = await fetch(url, { headers: { authorization: `Bearer ${idToken}` } });
-      const text = await r.text();
-      let j: any;
-      try { j = JSON.parse(text); } catch { throw new Error(text.slice(0, 180)); }
-      if (j?.ok) setFlagEnabled(!!j.data?.enabled);
-      else throw new Error(j?.error || "Flag read failed");
-    } catch (e: any) {
-      console.error("Flag load error:", e?.message || e);
-    }
-  })();
-}, [authReady, user, tenantId]); 
+    (async () => {
+      if (!authReady || !user || !tenantId) return;
+      try {
+        const idToken = await user.getIdToken(/* forceRefresh */ true);
+        const url = `/${tenantId}/app/api/admin/ai-studio/flag`;
+        const r = await fetch(url, {
+          headers: { authorization: `Bearer ${idToken}` },
+        });
+        const text = await r.text();
+        let j: any;
+        try {
+          j = JSON.parse(text);
+        } catch {
+          throw new Error(text.slice(0, 180));
+        }
+        if (j?.ok) setFlagEnabled(!!j.data?.enabled);
+        else throw new Error(j?.error || "Flag read failed");
+      } catch (e: any) {
+        console.error("Flag load error:", e?.message || e);
+      }
+    })();
+  }, [authReady, user, tenantId]);
 
   async function toggleFlag() {
-  try {
-    if (!user) throw new Error("No user");
-    if (!tenantId) throw new Error("No tenantId");
-    const idToken = await user.getIdToken(true);
-    const url = `/${tenantId}/app/api/admin/ai-studio/flag`; // ⬅️ backticks!
-    const r = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        authorization: `Bearer ${idToken}`,
-      },
-      body: JSON.stringify({ enabled: !flagEnabled }),
-    });
-    const j = await r.json();
-    if (j.ok) setFlagEnabled(!!j.data.enabled);
-    else throw new Error(j?.error || "Toggle failed");
-  } catch (e: any) {
-    setErr(e?.message || "Failed to toggle feature");
+    try {
+      if (!user) throw new Error("No user");
+      const tid = requireTid();
+      const idToken = await user.getIdToken(true);
+      const url = `/${tid}/app/api/admin/ai-studio/flag`;
+      const r = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({ enabled: !flagEnabled }),
+      });
+      const j = await r.json();
+      if (j.ok) setFlagEnabled(!!j.data.enabled);
+      else throw new Error(j?.error || "Toggle failed");
+    } catch (e: any) {
+      setErr(e?.message || "Failed to toggle feature");
+    }
   }
-}
 
   // --- Captcha helpers ---
   async function getFreshCaptchaToken(maxMs = 2500): Promise<string> {
     const started = Date.now();
+    // intenta leer el token actual del widget
     let token = tRef.current?.getToken() || "";
     if (token) return token;
 
+    // resetea y espera a que emita un token
     tRef.current?.reset();
     while (!token && Date.now() - started < maxMs) {
       await new Promise((r) => setTimeout(r, 200));
@@ -157,9 +161,10 @@ export default function AIStudioPage() {
     return token;
   }
 
-  // --- callAPI ---
+  // --- callAPI: auth + captcha + header x-tenant-id; muestra errores reales ---
   async function callAPI<T>(url: string, payload: any, tid?: string): Promise<T> {
-    setBusy(true); setErr(null);
+    setBusy(true);
+    setErr(null);
     try {
       if (!authReady || !user) throw new Error(tt("admin.aistudio.err.authNotReady", "Auth not ready"));
       let idToken = await user.getIdToken(/* forceRefresh */ false);
@@ -168,7 +173,6 @@ export default function AIStudioPage() {
       if (!token) {
         tRef.current?.reset();
         token = await getFreshCaptchaToken();
-        if (!token) throw new Error(tt("admin.aistudio.err.captchaMissing", "CAPTCHA no resuelto"));
       }
 
       let r = await fetch(url, {
@@ -182,6 +186,7 @@ export default function AIStudioPage() {
         body: JSON.stringify(payload),
       });
 
+      // si 401/403, refrescar auth + captcha y reintentar UNA vez
       if (r.status === 401 || r.status === 403) {
         idToken = await user.getIdToken(true);
         tRef.current?.reset();
@@ -200,10 +205,21 @@ export default function AIStudioPage() {
 
       const text = await r.text();
       let j: any;
-      try { j = JSON.parse(text); } catch {
-        throw new Error(tt("admin.aistudio.err.nonJson", "Non-JSON response ({code}): {body}", { code: String(r.status), body: text.slice(0, 200) }));
+      try {
+        j = JSON.parse(text);
+      } catch {
+        // Muestra respuesta cruda si no es JSON (útil para distinguir captcha vs auth)
+        throw new Error(
+          tt("admin.aistudio.err.nonJson", "Non-JSON response ({code}): {body}", {
+            code: String(r.status),
+            body: text.slice(0, 200),
+          })
+        );
       }
-      if (!j.ok) throw new Error(j.error || tt("admin.aistudio.err.requestFailed", "Request failed ({code})", { code: String(r.status) }));
+      if (!j.ok)
+        throw new Error(
+          j.error || tt("admin.aistudio.err.requestFailed", "Request failed ({code})", { code: String(r.status) })
+        );
       return j.data as T;
     } finally {
       setBusy(false);
@@ -211,70 +227,97 @@ export default function AIStudioPage() {
   }
 
   async function onGenerateNames() {
-  let tid: string;
-  try { tid = requireTid(tenantId); } catch (e:any) { setErr(e.message); return; }
-    const payload = {
-      category, cuisine, tone, audience,
-      baseIngredients: splitCsv(baseIngredients),
-      avoidAllergens: splitCsv(avoidAllergens),
-      count,
-      language,
-    };
     try {
-    const data = await callAPI<NamesPayload>(`/${tid}/app/api/ai/generate-names`, payload, tid);
-    setNames(data.items || []);
-    setSelectedName(null);
-    setCopy([]); setImgPrompts([]);
-  } catch (e:any) { setErr(e.message); }
-}
+      const tid = requireTid();
+      const payload = {
+        category,
+        cuisine,
+        tone,
+        audience,
+        baseIngredients: splitCsv(baseIngredients),
+        avoidAllergens: splitCsv(avoidAllergens),
+        count,
+        language,
+      };
+      const data = await callAPI<NamesPayload>(`/${tid}/app/api/ai/generate-names`, payload, tid);
+      setNames(data.items || []);
+      setSelectedName(null);
+      setCopy([]);
+      setImgPrompts([]);
+    } catch (e: any) {
+      setErr(e.message);
+    }
+  }
 
-async function onGenerateCopySelected() {
-  if (!selectedName) { setErr(tt("admin.aistudio.err.pickNameFirst", "Select a name first")); return; }
-  let tid: string;
-  try { tid = requireTid(tenantId); } catch (e:any) { setErr(e.message); return; }
-    const payload = {
-      names: [selectedName],
-      tone,
-      language,
-      seoKeywords: splitCsv(seoKeywords),
-    };
+  // Descripción + SEO SOLO para el nombre seleccionado
+  async function onGenerateCopySelected() {
+    if (!selectedName) {
+      setErr(tt("admin.aistudio.err.pickNameFirst", "Select a name first"));
+      return;
+    }
     try {
-    const data = await callAPI<CopyPayload>(`/${tid}/app/api/ai/generate-copy`, payload, tid);
-    setCopy(data.items || []);
-    setImgPrompts([]);
-  } catch (e:any) { setErr(e.message); }
-}
+      const tid = requireTid();
+      const payload = {
+        names: [selectedName],
+        tone,
+        language,
+        seoKeywords: splitCsv(seoKeywords),
+      };
+      const data = await callAPI<CopyPayload>(`/${tid}/app/api/ai/generate-copy`, payload, tid);
+      setCopy(data.items || []);
+      setImgPrompts([]);
+    } catch (e: any) {
+      setErr(e.message);
+    }
+  }
 
-async function onGenerateImgPromptSelected() {
-  if (!selectedName) { setErr(tt("admin.aistudio.err.pickNameFirst", "Select a name first")); return; }
-  let tid: string;
-  try { tid = requireTid(tenantId); } catch (e:any) { setErr(e.message); return; }
-
-  const payload = { items: [{ name: selectedName }], language };
-  try {
-    const data = await callAPI<ImagePromptsPayload>(`/${tid}/app/api/ai/generate-image-prompts`, payload, tid);
-    setImgPrompts(data.items || []);
-  } catch (e:any) { setErr(e.message); }
-}
+  // Prompt de imagen SOLO para el nombre seleccionado
+  async function onGenerateImgPromptSelected() {
+    if (!selectedName) {
+      setErr(tt("admin.aistudio.err.pickNameFirst", "Select a name first"));
+      return;
+    }
+    try {
+      const tid = requireTid();
+      const payload = { items: [{ name: selectedName }], language };
+      const data = await callAPI<ImagePromptsPayload>(`/${tid}/app/api/ai/generate-image-prompts`, payload, tid);
+      setImgPrompts(data.items || []);
+    } catch (e: any) {
+      setErr(e.message);
+    }
+  }
 
   async function saveDraft() {
-    const docData = {
-      type: "ai_studio_batch",
-      createdAt: serverTimestamp(),
-      inputs: {
-        language, category, cuisine, tone, audience,
-        baseIngredients, avoidAllergens, count, seoKeywords
-      },
-      outputs: {
-        names, copy, imgPrompts
-      },
-      status: "draft",
-      tenantId, // ✅ siempre escribir tenantId
-    };
-    // ❌ antes: addDoc(collection(db, "ai_drafts"), docData);
-    // ✅ ahora, scopiado por tenant: tenants/{tenantId}/ai_drafts
-    await addDoc(tCol("ai_drafts", tenantId!), docData);
-    alert(tt("admin.aistudio.saved", "Saved to ai_drafts ✅"));
+    try {
+      const tid = requireTid();
+      const docData = {
+        type: "ai_studio_batch",
+        createdAt: serverTimestamp(),
+        inputs: {
+          language,
+          category,
+          cuisine,
+          tone,
+          audience,
+          baseIngredients,
+          avoidAllergens,
+          count,
+          seoKeywords,
+        },
+        outputs: {
+          names,
+          copy,
+          imgPrompts,
+        },
+        status: "draft",
+        tenantId: tid, // ✅ siempre escribir tenantId
+      };
+      // tenants/{tenantId}/ai_drafts (scopiado)
+      await addDoc(tCol("ai_drafts", tid), docData);
+      alert(tt("admin.aistudio.saved", "Saved to ai_drafts ✅"));
+    } catch (e: any) {
+      setErr(e.message || "Save failed");
+    }
   }
 
   const controlsDisabled = busy || !flagEnabled || !authReady || !user;
@@ -321,7 +364,7 @@ async function onGenerateImgPromptSelected() {
                     <div className="row g-3">
                       <div className="col-4">
                         <label className="form-label">{tt("admin.aistudio.lang", "Language")}</label>
-                        <select className="form-select" value={language} onChange={e => setLanguage(e.target.value as any)}>
+                        <select className="form-select" value={language} onChange={(e) => setLanguage(e.target.value as any)}>
                           <option value="es">{tt("admin.aistudio.lang.es", "Spanish")}</option>
                           <option value="en">{tt("admin.aistudio.lang.en", "English")}</option>
                         </select>
@@ -329,35 +372,35 @@ async function onGenerateImgPromptSelected() {
                       </div>
                       <div className="col-4">
                         <label className="form-label">{tt("admin.aistudio.category", "Category")}</label>
-                        <input className="form-control" value={category} onChange={e => setCategory(e.target.value)} />
+                        <input className="form-control" value={category} onChange={(e) => setCategory(e.target.value)} />
                       </div>
                       <div className="col-4">
                         <label className="form-label">{tt("admin.aistudio.cuisine", "Cuisine")}</label>
-                        <input className="form-control" value={cuisine} onChange={e => setCuisine(e.target.value)} />
+                        <input className="form-control" value={cuisine} onChange={(e) => setCuisine(e.target.value)} />
                       </div>
 
                       <div className="col-6">
                         <label className="form-label">{tt("admin.aistudio.tone", "Tone")}</label>
-                        <input className="form-control" value={tone} onChange={e => setTone(e.target.value)} />
+                        <input className="form-control" value={tone} onChange={(e) => setTone(e.target.value)} />
                         <InputHelp text={tt("admin.aistudio.toneHelp", 'e.g., "family-friendly", "gourmet", "fun", "corporate"')} />
                       </div>
                       <div className="col-6">
                         <label className="form-label">{tt("admin.aistudio.audience", "Audience")}</label>
-                        <input className="form-control" value={audience} onChange={e => setAudience(e.target.value)} />
+                        <input className="form-control" value={audience} onChange={(e) => setAudience(e.target.value)} />
                       </div>
 
                       <div className="col-6">
                         <label className="form-label">{tt("admin.aistudio.baseIng", "Base ingredients (CSV)")}</label>
-                        <input className="form-control" value={baseIngredients} onChange={e => setBaseIngredients(e.target.value)} />
+                        <input className="form-control" value={baseIngredients} onChange={(e) => setBaseIngredients(e.target.value)} />
                       </div>
                       <div className="col-6">
                         <label className="form-label">{tt("admin.aistudio.avoidAll", "Avoid allergens (CSV)")}</label>
-                        <input className="form-control" value={avoidAllergens} onChange={e => setAvoidAllergens(e.target.value)} />
+                        <input className="form-control" value={avoidAllergens} onChange={(e) => setAvoidAllergens(e.target.value)} />
                       </div>
 
                       <div className="col-8">
                         <label className="form-label">{tt("admin.aistudio.seoKeywords", "SEO keywords (CSV)")}</label>
-                        <input className="form-control" value={seoKeywords} onChange={e => setSeoKeywords(e.target.value)} />
+                        <input className="form-control" value={seoKeywords} onChange={(e) => setSeoKeywords(e.target.value)} />
                       </div>
                       <div className="col-4">
                         <label className="form-label">{tt("admin.aistudio.count", "Count")}</label>
@@ -367,7 +410,7 @@ async function onGenerateImgPromptSelected() {
                           max={20}
                           className="form-control"
                           value={count}
-                          onChange={e => setCount(parseInt(e.target.value || "1"))}
+                          onChange={(e) => setCount(parseInt(e.target.value || "1"))}
                         />
                       </div>
                     </div>
@@ -378,7 +421,8 @@ async function onGenerateImgPromptSelected() {
                         <TurnstileWidget ref={tRef} siteKey={TURNSTILE_SITE_KEY} onToken={setCaptchaToken} />
                       ) : (
                         <div className="alert alert-warning py-2">
-                          {tt("admin.aistudio.turnstileMissing", "Missing")} <code>NEXT_PUBLIC_TURNSTILE_SITE_KEY</code> {tt("admin.aistudio.envVar", "env var.")}
+                          {tt("admin.aistudio.turnstileMissing", "Missing")} <code>NEXT_PUBLIC_TURNSTILE_SITE_KEY</code>{" "}
+                          {tt("admin.aistudio.envVar", "env var.")}
                         </div>
                       )}
                     </div>
@@ -418,7 +462,9 @@ async function onGenerateImgPromptSelected() {
                           {names.map((n, i) => (
                             <li
                               key={i}
-                              className={`list-group-item d-flex justify-content-between align-items-center ${selectedName === n.name ? "active" : ""}`}
+                              className={`list-group-item d-flex justify-content-between align-items-center ${
+                                selectedName === n.name ? "active" : ""
+                              }`}
                               style={{ cursor: "pointer" }}
                               onClick={() => setSelectedName(n.name)}
                             >
@@ -446,10 +492,15 @@ async function onGenerateImgPromptSelected() {
                             <div key={i} className="border rounded p-2">
                               <div className="fw-semibold">{c.name}</div>
                               <div className="text-muted small my-1">{c.description}</div>
-                              <div><span className="badge text-bg-secondary me-2">SEO</span>{c.seoTitle}</div>
+                              <div>
+                                <span className="badge text-bg-secondary me-2">SEO</span>
+                                {c.seoTitle}
+                              </div>
                               <div className="mt-1">
                                 {c.keywords.map((k, kidx) => (
-                                  <span key={kidx} className="badge text-bg-light me-1">{k}</span>
+                                  <span key={kidx} className="badge text-bg-light me-1">
+                                    {k}
+                                  </span>
                                 ))}
                               </div>
                             </div>
@@ -488,6 +539,6 @@ async function onGenerateImgPromptSelected() {
 function splitCsv(s: string): string[] {
   return s
     .split(",")
-    .map(x => x.trim())
+    .map((x) => x.trim())
     .filter(Boolean);
 }
