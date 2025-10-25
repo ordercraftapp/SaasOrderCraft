@@ -32,6 +32,14 @@ type ImagePromptsPayload = { items: ImagePromptItem[] };
 function InputHelp({ text }: { text: string }) {
   return <div className="form-text">{text}</div>;
 }
+// Helper: asegura un string y centraliza el mensaje de error
+function requireTid(tid?: string | null): string {
+  if (!tid) {
+    throw new Error("Tenant no resuelto");
+  }
+  return tid;
+}
+
 
 export default function AIStudioPage() {
   const db = getFirestore();
@@ -203,7 +211,8 @@ export default function AIStudioPage() {
   }
 
   async function onGenerateNames() {
-    if (!tenantId) { setErr("Tenant no resuelto"); return; }
+  let tid: string;
+  try { tid = requireTid(tenantId); } catch (e:any) { setErr(e.message); return; }
     const payload = {
       category, cuisine, tone, audience,
       baseIngredients: splitCsv(baseIngredients),
@@ -212,14 +221,17 @@ export default function AIStudioPage() {
       language,
     };
     try {
-     const data = await callAPI<NamesPayload>(`/${tenantId}/app/api/ai/generate-names`, payload, tenantId);
-      setSelectedName(null);
-      setCopy([]); setImgPrompts([]);
-    } catch (e: any) { setErr(e.message); }
-  }
+    const data = await callAPI<NamesPayload>(`/${tid}/app/api/ai/generate-names`, payload, tid);
+    setNames(data.items || []);
+    setSelectedName(null);
+    setCopy([]); setImgPrompts([]);
+  } catch (e:any) { setErr(e.message); }
+}
 
-  async function onGenerateCopySelected() {
-    if (!selectedName) { setErr(tt("admin.aistudio.err.pickNameFirst", "Select a name first")); return; }
+async function onGenerateCopySelected() {
+  if (!selectedName) { setErr(tt("admin.aistudio.err.pickNameFirst", "Select a name first")); return; }
+  let tid: string;
+  try { tid = requireTid(tenantId); } catch (e:any) { setErr(e.message); return; }
     const payload = {
       names: [selectedName],
       tone,
@@ -227,20 +239,23 @@ export default function AIStudioPage() {
       seoKeywords: splitCsv(seoKeywords),
     };
     try {
-      const data = await callAPI<CopyPayload>(`/${tenantId}/app/api/ai/generate-copy`, payload);
-      setCopy(data.items || []);
-      setImgPrompts([]);
-    } catch (e: any) { setErr(e.message); }
-  }
+    const data = await callAPI<CopyPayload>(`/${tid}/app/api/ai/generate-copy`, payload, tid);
+    setCopy(data.items || []);
+    setImgPrompts([]);
+  } catch (e:any) { setErr(e.message); }
+}
 
-  async function onGenerateImgPromptSelected() {
-    if (!selectedName) { setErr(tt("admin.aistudio.err.pickNameFirst", "Select a name first")); return; }
-    const payload = { items: [{ name: selectedName }], language };
-    try {
-      const data = await callAPI<ImagePromptsPayload>(`/${tenantId}/app/api/ai/generate-image-prompts`, payload);
-      setImgPrompts(data.items || []);
-    } catch (e: any) { setErr(e.message); }
-  }
+async function onGenerateImgPromptSelected() {
+  if (!selectedName) { setErr(tt("admin.aistudio.err.pickNameFirst", "Select a name first")); return; }
+  let tid: string;
+  try { tid = requireTid(tenantId); } catch (e:any) { setErr(e.message); return; }
+
+  const payload = { items: [{ name: selectedName }], language };
+  try {
+    const data = await callAPI<ImagePromptsPayload>(`/${tid}/app/api/ai/generate-image-prompts`, payload, tid);
+    setImgPrompts(data.items || []);
+  } catch (e:any) { setErr(e.message); }
+}
 
   async function saveDraft() {
     const docData = {

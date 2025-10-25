@@ -20,7 +20,7 @@ export async function POST(req: NextRequest, { params }: { params: { tenantId: s
       'api:ai/generate-copy:POST'
     );
 
-    // 🚩 Feature flag por tenant: tenants/{tenantId}/system_flags/ai_studio
+    // 🚩 Feature flag por tenant
     const flagRef = tDocAdmin('system_flags', tenantId, 'ai_studio');
     const flagSnap = await flagRef.get();
     const aiStudioEnabled = flagSnap.exists ? !!(flagSnap.data() as any)?.enabled : true;
@@ -79,17 +79,32 @@ export async function POST(req: NextRequest, { params }: { params: { tenantId: s
       seoKeywords: (seoKeywords || []).slice(0, 40),
     });
 
-    // 🔮 OpenAI
-    const resp = await openai.chat.completions.create({
-      model: OPENAI_MODEL_ID,
-      messages: [
-        { role: 'system', content: 'You are a helpful assistant that ONLY outputs valid single JSON objects.' },
-        { role: 'user', content: prompt },
-      ],
-      response_format: { type: 'json_object' },
-      max_tokens: 1600,
-      temperature: 0.8,
-    } as any);
+    // 🔮 OpenAI (con manejo explícito de errores)
+    let resp: any;
+    try {
+      resp = await openai.chat.completions.create({
+        model: OPENAI_MODEL_ID,
+        messages: [
+          { role: 'system', content: 'You are a helpful assistant that ONLY outputs valid single JSON objects.' },
+          { role: 'user', content: prompt },
+        ],
+        response_format: { type: 'json_object' },
+        max_tokens: 1600,
+        temperature: 0.8,
+      } as any);
+    } catch (err: any) {
+      const status = err?.status || err?.response?.status || 500;
+      const detail =
+        err?.error?.message ||
+        err?.response?.data?.error?.message ||
+        err?.message ||
+        'OpenAI error';
+      console.error('[openai] generate-copy error', { status, detail });
+      return NextResponse.json(
+        { ok: false, error: `OpenAI: ${detail}` },
+        { status: [401,403,404,408,409,422,429,500].includes(status) ? status : 500, headers: { 'Cache-Control': 'no-store' } }
+      );
+    }
 
     const content = resp.choices?.[0]?.message?.content || '{}';
     const data = safeJsonParse<CopyPayload>(content) || { items: [] };
@@ -106,8 +121,8 @@ export async function POST(req: NextRequest, { params }: { params: { tenantId: s
       /rate|quota|exceed|429/.test(msg) ? 429 :
       500;
     return NextResponse.json(
-      { ok: false, error: msg },
-      { status, headers: { 'Cache-Control': 'no-store' } }
+        { ok: false, error: msg },
+        { status, headers: { 'Cache-Control': 'no-store' } }
     );
   }
 }
