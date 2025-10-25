@@ -124,15 +124,20 @@ function tsToDate(x: TimestampLike): Date | null {
   return null;
 }
 
-async function getHomeConfig(): Promise<HomeConfig | null> {
-  const snap = await db.collection('settings').doc('homeConfig').get();
-  if (!snap.exists) return null;
-  return snap.data() as HomeConfig;
+async function getHomeConfig(tenantId: string): Promise<HomeConfig | null> {
+  const snap = await db
+    .collection('tenants').doc(tenantId)
+    .collection('settings').doc('homeConfig')
+    .get();
+  return snap.exists ? (snap.data() as HomeConfig) : null;
 }
 
-async function getUiLanguage(): Promise<string> {
+async function getUiLanguage(tenantId: string): Promise<string> {
   try {
-    const s = await db.collection('settings').doc('general').get();
+    const s = await db
+      .collection('tenants').doc(tenantId)
+      .collection('settings').doc('general')
+      .get();
     const lang = (s.exists && (s.data() as any)?.language) || 'es';
     return typeof lang === 'string' ? lang : 'es';
   } catch {
@@ -154,26 +159,24 @@ type MenuItem = {
   // ... otros campos que no enviaremos al cliente
 };
 
-async function fetchCategories(ids?: string[]): Promise<Category[]> {
-  const s = await db.collection('categories').get();
+// ===== Catálogo (Admin SDK: OK listar aunque las reglas del cliente bloqueen list)
+async function fetchCategories(tenantId: string, ids?: string[]): Promise<Category[]> {
+  const s = await db.collection('tenants').doc(tenantId).collection('categories').get();
   const all = s.docs.map((d) => ({ id: d.id, ...(d.data() as any) })) as Category[];
-  if (!ids?.length) return all;
-  return all.filter((c) => ids.includes(c.id));
+  return ids?.length ? all.filter((c) => ids.includes(c.id)) : all;
 }
-async function fetchSubcategories(ids?: string[]): Promise<Subcategory[]> {
-  const s = await db.collection('subcategories').get();
+async function fetchSubcategories(tenantId: string, ids?: string[]): Promise<Subcategory[]> {
+  const s = await db.collection('tenants').doc(tenantId).collection('subcategories').get();
   const all = s.docs.map((d) => ({ id: d.id, ...(d.data() as any) })) as Subcategory[];
-  if (!ids?.length) return all;
-  return all.filter((sc) => ids.includes(sc.id));
+  return ids?.length ? all.filter((sc) => ids.includes(sc.id)) : all;
 }
-async function fetchAllMenuItems(): Promise<MenuItem[]> {
-  const s = await db.collection('menuItems').get();
+async function fetchAllMenuItems(tenantId: string): Promise<MenuItem[]> {
+  const s = await db.collection('tenants').doc(tenantId).collection('menuItems').get();
   return s.docs.map((d) => ({ id: d.id, ...(d.data() as any) })) as MenuItem[];
 }
-
-/** 🔎 Leer cupones (id -> code) desde `promotions` */
-async function fetchCouponsMap(): Promise<Map<string, string>> {
-  const snap = await db.collection('promotions').get();
+/** 🔎 Cupones desde `tenants/{tenantId}/promotions` */
+async function fetchCouponsMap(tenantId: string): Promise<Map<string, string>> {
+  const snap = await db.collection('tenants').doc(tenantId).collection('promotions').get();
   const map = new Map<string, string>();
   snap.docs.forEach((d) => {
     const data = d.data() as any;
@@ -205,17 +208,16 @@ function filterMenuItems(
 }
 
 // ====== SEO
-export async function generateMetadata(): Promise<Metadata> {
-  const cfg = await getHomeConfig();
+export async function generateMetadata({ params }: { params: { tenantId: string } }): Promise<Metadata> {
+  const tenantId = params.tenantId;
+  const cfg = await getHomeConfig(tenantId);
   const title = cfg?.seo?.title || 'OrderCraft — Fresh & Fast';
   const description = cfg?.seo?.description || 'Order your favorite dishes online. Fast delivery, fresh taste.';
   const ogImage = cfg?.seo?.ogImage || '/og-default.png';
   const keywords = (cfg?.seo?.keywords || ['restaurant', 'delivery', 'food', 'menu']).join(', ');
   return {
     metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || 'https://ordercraft.datacraftcoders.com'),
-    title,
-    description,
-    keywords,
+    title, description, keywords,
     alternates: { canonical: '/' },
     openGraph: { title, description, type: 'website', url: '/', images: [{ url: ogImage }] },
     twitter: { card: 'summary_large_image', title, description, images: [ogImage] },
@@ -266,10 +268,11 @@ function normalizeContact(c?: ContactCfg): ContactCfg | undefined {
   return { ...c, branches };
 }
 
-export default async function HomePage() {
-  const serverLang = await getUiLanguage();
+export default async function HomePage({ params }: { params: { tenantId: string } }) {
+  const tenantId = params.tenantId;
 
-  const cfg = (await getHomeConfig()) || {
+  const serverLang = await getUiLanguage(tenantId);
+  const cfg = (await getHomeConfig(tenantId)) || {
     hero: { variant: 'image', slides: [] },
     promos: [],
     featuredMenu: { title: 'Featured', categoryIds: [], subcategoryIds: [], itemIds: [], items: [] },
@@ -298,21 +301,19 @@ export default async function HomePage() {
 
   // Promos activas
   const now = new Date();
-  const activePromos = (cfg.promos || []).filter((p) => {
-    if (!p.active) return false;
-    const start = tsToDate(p.startAt);
-    const end = tsToDate(p.endAt);
-    if (start && start > now) return false;
-    if (end && end < now) return false;
-    return true;
-  });
-
-  // Catálogo base + cupones
-  const [allCats, , allItems, couponsMap] = await Promise.all([
-    fetchCategories(),
-    fetchSubcategories(),
-    fetchAllMenuItems(),
-    fetchCouponsMap(), // ← id -> code
+const activePromos = (cfg.promos || []).filter((p) => {
+  if (!p.active) return false;
+  const start = tsToDate(p.startAt);
+  const end   = tsToDate(p.endAt);
+  if (start && start > now) return false;
+  if (end && end < now) return false;
+  return true;
+});
+  const [allCats, /* allSubs no usado aquí */, allItems, couponsMap] = await Promise.all([
+    fetchCategories(tenantId),
+    fetchSubcategories(tenantId),
+    fetchAllMenuItems(tenantId),
+    fetchCouponsMap(tenantId),
   ]);
 
   // Featured items (sanear SIEMPRE a {id,name,price,imageUrl})
