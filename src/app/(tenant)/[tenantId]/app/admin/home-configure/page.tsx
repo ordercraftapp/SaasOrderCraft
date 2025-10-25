@@ -1,5 +1,5 @@
 'use client';
-
+import { getAuth } from 'firebase/auth';
 import React, { useEffect, useRef, useState } from 'react';
 import { useParams } from 'next/navigation';
 import Protected from '@/app/(tenant)/[tenantId]/components/Protected';
@@ -149,7 +149,12 @@ async function compressImageFile(
 async function uploadToStorage(path: string, file: File): Promise<string> {
   const storage = getStorage();
   const ref = storageRef(storage, path);
-  await uploadBytes(ref, file);
+  // ✅ fuerza contentType y buen cacheado para imágenes/videos públicos
+  const meta = {
+    contentType: file.type || (file.name.endsWith('.mp4') ? 'video/mp4' : 'image/jpeg'),
+    cacheControl: 'public, max-age=31536000, immutable',
+  };
+  await uploadBytes(ref, file, meta as any);
   return getDownloadURL(ref);
 }
 
@@ -380,46 +385,63 @@ export default function AdminHomeConfigurePage() {
      =========================== */
 
   async function saveDraft() {
-    if (!tenantId) return;
-    setSaving(true);
-    try {
-      const db = getFirestore();
-      const ref = doc(db, `tenants/${tenantId}/settings/homeConfig`);
-      const next: HomeConfig = {
-        ...cfg,
-        updatedAt: serverTimestamp(),
-        publish: { ...(cfg.publish || { version: 1, status: 'draft' }), status: 'draft' },
-      };
-      await setDoc(ref, next, { merge: true });
-      setCfg(next);
-    } catch (e) {
-      console.error('[home-configure] saveDraft error', e);
-      alert(tt('admin.home.err.saveDraft', 'Error saving draft'));
-    } finally {
-      setSaving(false);
-    }
-  }
+  if (!tenantId) return;
+  setSaving(true);
+  try {
+    await getAuth().currentUser?.getIdToken(true); // refresca claims
 
-  async function publishNow() {
-    if (!tenantId) return;
-    setSaving(true);
-    try {
-      const db = getFirestore();
-      const ref = doc(db, `tenants/${tenantId}/settings/homeConfig`);
-      const next: HomeConfig = {
-        ...cfg,
-        updatedAt: serverTimestamp(),
-        publish: { version: (cfg.publish?.version || 0) + 1, status: 'published' },
-      };
-      await setDoc(ref, next, { merge: true });
-      setCfg(next);
-    } catch (e) {
-      console.error('[home-configure] publish error', e);
-      alert(tt('admin.home.err.publish', 'Error publishing'));
-    } finally {
-      setSaving(false);
-    }
+    const db = getFirestore();
+    const ref = doc(db, `tenants/${tenantId}/settings/homeConfig`);
+    const existing = await getDoc(ref);
+
+    const base: any = { tenantId, updatedAt: serverTimestamp() };
+    if (!existing.exists()) base.createdAt = serverTimestamp();
+
+    const next: HomeConfig = {
+      ...cfg,
+      ...base,
+      publish: { ...(cfg.publish || { version: 1, status: 'draft' }), status: 'draft' },
+    };
+
+    await setDoc(ref, next, { merge: true });
+    setCfg(next);
+  } catch (e) {
+    console.error('[home-configure] saveDraft error', e);
+    alert(tt('admin.home.err.saveDraft', 'Error saving draft'));
+  } finally {
+    setSaving(false);
   }
+}
+
+async function publishNow() {
+  if (!tenantId) return;
+  setSaving(true);
+  try {
+    await getAuth().currentUser?.getIdToken(true); // refresca claims
+
+    const db = getFirestore();
+    const ref = doc(db, `tenants/${tenantId}/settings/homeConfig`);
+    const existing = await getDoc(ref);
+
+    const base: any = { tenantId, updatedAt: serverTimestamp() };
+    if (!existing.exists()) base.createdAt = serverTimestamp();
+
+    const next: HomeConfig = {
+      ...cfg,
+      ...base,
+      publish: { version: (cfg.publish?.version || 0) + 1, status: 'published' },
+    };
+
+    await setDoc(ref, next, { merge: true });
+    setCfg(next);
+  } catch (e) {
+    console.error('[home-configure] publish error', e);
+    alert(tt('admin.home.err.publish', 'Error publishing'));
+  } finally {
+    setSaving(false);
+  }
+}
+
 
   /* ===========================
      Subidas de imágenes (prefijo por tenant)
