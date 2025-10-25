@@ -1,6 +1,6 @@
 'use client';
 import { getAuth } from 'firebase/auth';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { useParams } from 'next/navigation';
 import Protected from '@/app/(tenant)/[tenantId]/components/Protected';
 import { OnlyAdmin } from '@/app/(tenant)/[tenantId]/components/Only';
@@ -246,10 +246,13 @@ export default function AdminHomeConfigurePage() {
     } catch {}
     return (settings as any)?.language;
   }, [settings]);
-  const tt = (key: string, fallback: string, vars?: Record<string, unknown>) => {
+  const tt = useCallback(
+  (key: string, fallback: string, vars?: Record<string, unknown>) => {
     const s = translate(lang, key, vars);
     return s === key ? fallback : s;
-  };
+  },
+  [lang]
+);
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -284,27 +287,27 @@ export default function AdminHomeConfigurePage() {
   const [tab, setTab] = useState<'hero' | 'promos' | 'featured' | 'gallery' | 'about' | 'newsletter' | 'contact' | 'seo' | 'publish'>('hero');
 
   useEffect(() => {
-    if (!tenantId) return;
-    (async () => {
-      try {
-        const db = getFirestore();
-        const ref = doc(db, `tenants/${tenantId}/settings/homeConfig`);
-        const snap = await getDoc(ref);
+  if (!tenantId) return;
+  (async () => {
+    try {
+      const db = getFirestore();
+      const ref = doc(db, `tenants/${tenantId}/settings/homeConfig`);
+      const snap = await getDoc(ref);
 
-        const [cats, subs, items, coups] = await Promise.all([
-          fetchCategories(tenantId),
-          fetchSubcategories(tenantId),
-          fetchMenuItems(tenantId),
-          fetchCoupons(tenantId),
-        ]);
+      const [cats, subs, items, coups] = await Promise.all([
+        fetchCategories(tenantId),
+        fetchSubcategories(tenantId),
+        fetchMenuItems(tenantId),
+        fetchCoupons(tenantId),
+      ]);
 
-        setCategories(cats);
-        setSubcategories(subs);
-        setMenuItems(items);
-        setCoupons(coups);
+      setCategories(cats);
+      setSubcategories(subs);
+      setMenuItems(items);
+      setCoupons(coups);
 
-        if (snap.exists()) {
-          const data = snap.data() as HomeConfig;
+      if (snap.exists()) {
+        const data = snap.data() as HomeConfig;
 
           data.featuredMenu = {
             title: data.featuredMenu?.title ?? tt('admin.home.featured.titleDefault', 'Featured'),
@@ -351,14 +354,14 @@ export default function AdminHomeConfigurePage() {
           };
 
           setCfg(data);
-        }
-      } catch (e) {
-        console.error('[home-configure] load error', e);
-      } finally {
-        setLoading(false);
       }
-    })();
-  }, [tenantId, tt]);
+    } catch (e) {
+      console.error('[home-configure] load error', e);
+    } finally {
+      setLoading(false);
+    }
+  })();
+}, [tenantId, lang]);
 
   /* ===========================
      Setters
