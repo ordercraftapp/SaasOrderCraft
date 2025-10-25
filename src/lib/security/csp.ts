@@ -1,3 +1,4 @@
+/*src/lib/security/csp.ts */
 /**
  * CSP utils para site + tenant (Next.js + Vercel)
  * - buildCSP(): genera una CSP base (dev/prod) para poner en next.config.ts (headers()).
@@ -38,6 +39,9 @@ export function buildCSP({ isDev = false, includeBrevo = true }: { isDev?: boole
     "https://player.vimeo.com",
     // ✅ Turnstile
     "https://challenges.cloudflare.com",
+    // ✅ App Check (añadidos)
+    "https://firebaseappcheck.googleapis.com",
+    "https://content-firebaseappcheck.googleapis.com",
   ]);
 
   if (includeBrevo) {
@@ -164,8 +168,7 @@ export function addPaypalToCsp(existingHeader: string): string {
 }
 
 // ----------------------------------------------------------------
-// 3) Extras para video (YouTube/Vimeo) sin tocar lo ya configurado
-// ----------------------------------------------------------------
+/* 3) Extras para video (YouTube/Vimeo) sin tocar lo ya configurado */
 export function addVideoEmbedsToCsp(existingHeader: string): string {
   const EXTRAS: Record<string, string[]> = {
     "frame-src": ["https://www.youtube.com", "https://www.youtube-nocookie.com", "https://player.vimeo.com"],
