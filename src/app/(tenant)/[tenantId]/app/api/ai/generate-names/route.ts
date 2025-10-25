@@ -67,22 +67,22 @@ export async function POST(req: NextRequest, { params }: { params: { tenantId: s
     }
 
     // ⛔ Rate limit
-    try {
-      const lim = await limitRequest(req);
-      stepLog("ratelimit", lim);
-      if (!lim.success) {
-        return NextResponse.json(
-          { ok: false, error: "Too many requests", step: "ratelimit" },
-          { status: 429, headers: { "Cache-Control": "no-store" } }
-        );
-      }
-    } catch (e) {
-      stepLog("ratelimit.error", j(e));
-      return NextResponse.json(
-        { ok: false, error: "Rate limit error", step: "ratelimit", detail: j(e) },
-        { status: 500, headers: { "Cache-Control": "no-store" } }
-      );
-    }
+    // ⛔ Rate limit (suave si falla infra)
+try {
+  const lim = await limitRequest(req);
+  stepLog("ratelimit", lim);
+  if (!lim.success) {
+    return NextResponse.json(
+      { ok: false, error: "Too many requests", step: "ratelimit" },
+      { status: 429, headers: { "Cache-Control": "no-store" } }
+    );
+  }
+} catch (e) {
+  // Si el limitador explota (fetch failed, etc.), NO bloqueamos.
+  stepLog("ratelimit.error.bypass", j(e));
+  // seguimos sin return
+}
+
 
     // 🤖 Turnstile
     try {
