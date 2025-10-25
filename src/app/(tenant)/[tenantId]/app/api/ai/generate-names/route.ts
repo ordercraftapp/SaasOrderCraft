@@ -1,10 +1,11 @@
+// src/app/(tenant)/[tenantId]/app/api/ai/generate-names/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { openai, OPENAI_MODEL_ID } from "@/lib/ai/openai";
 import { safeJsonParse } from "@/lib/ai/json";
 import { buildNamesPrompt } from "@/lib/ai/prompts";
 import { verifyTurnstile } from "@/lib/security/turnstile";
 import { limitRequest } from "@/lib/security/ratelimit";
-import { requireAdmin } from "@/lib/security/authz";
+import { requireAdmin, getUserFromRequest } from "@/lib/security/authz";
 import type { NamesPayload } from "@/lib/ai/schemas";
 
 import { resolveTenantFromRequest, requireTenantId } from "@/lib/tenant/server";
@@ -12,65 +13,125 @@ import { tDocAdmin } from "@/lib/db_admin";
 
 export const runtime = "nodejs";
 
-export async function POST(
-  req: NextRequest,
-  { params }: { params: { tenantId: string } }
-) {
+function isDebug(req: NextRequest) {
+  return req.headers.get("x-debug") === "1" || process.env.DEBUG_AI === "1";
+}
+
+function j(err: unknown) {
+  const e: any = err || {};
+  return {
+    name: e.name,
+    message: e.message,
+    status: e?.status ?? e?.response?.status,
+    code: e?.code,
+    data: e?.response?.data,
+    stack: e?.stack,
+  };
+}
+
+export async function POST(req: NextRequest, { params }: { params: { tenantId: string } }) {
+  const debug = isDebug(req);
+  const stepLog = (step: string, extra?: any) => {
+    if (debug) {
+      console.log(`[ai/generate-names] step=${step}`, extra ?? "");
+    }
+  };
+
   try {
-    // 🔐 Tenant (URL/cabecera)
+    // 🔐 Tenant
     const tenantId = requireTenantId(
       resolveTenantFromRequest(req, params),
       "api:ai/generate-names:POST"
     );
+    stepLog("tenant.resolve", { tenantId });
 
     // 🚩 Feature flag por tenant
-    const flagRef = tDocAdmin("system_flags", tenantId, "ai_studio");
-    const flagSnap = await flagRef.get();
-    const aiStudioEnabled = flagSnap.exists ? !!(flagSnap.data() as any)?.enabled : true;
-    if (!aiStudioEnabled) {
+    try {
+      const flagRef = tDocAdmin("system_flags", tenantId, "ai_studio");
+      const flagSnap = await flagRef.get();
+      const aiStudioEnabled = flagSnap.exists ? !!(flagSnap.data() as any)?.enabled : true;
+      stepLog("flag.read", { enabled: aiStudioEnabled });
+      if (!aiStudioEnabled) {
+        return NextResponse.json(
+          { ok: false, error: "AI Studio is disabled", step: "flag" },
+          { status: 503, headers: { "Cache-Control": "no-store" } }
+        );
+      }
+    } catch (e) {
+      stepLog("flag.error", j(e));
+      // No detengas por flag si prefieres, pero mejor explícito:
       return NextResponse.json(
-        { ok: false, error: "AI Studio is disabled", tenantId },
-        { status: 503, headers: { "Cache-Control": "no-store" } }
+        { ok: false, error: "Flag read failed", step: "flag", detail: j(e) },
+        { status: 500, headers: { "Cache-Control": "no-store" } }
       );
     }
 
     // ⛔ Rate limit
-    const lim = await limitRequest(req);
-    if (!lim.success) {
+    try {
+      const lim = await limitRequest(req);
+      stepLog("ratelimit", lim);
+      if (!lim.success) {
+        return NextResponse.json(
+          { ok: false, error: "Too many requests", step: "ratelimit" },
+          { status: 429, headers: { "Cache-Control": "no-store" } }
+        );
+      }
+    } catch (e) {
+      stepLog("ratelimit.error", j(e));
       return NextResponse.json(
-        { ok: false, error: "Too many requests" },
-        { status: 429, headers: { "Cache-Control": "no-store" } }
-      );
-    }
-
-    // 🧩 Turnstile
-    const token = req.headers.get("x-captcha-token") || "";
-    if (!(await verifyTurnstile(token))) {
-      return NextResponse.json(
-        { ok: false, error: "Captcha failed" },
-        { status: 403, headers: { "Cache-Control": "no-store" } }
-      );
-    }
-
-    // 👮 Admin (retrocompatible)
-    await requireAdmin(req); // o await requireAdmin(req, tenantId) si tu helper lo soporta
-
-    // 🔑 Entorno
-    if (!process.env.OPENAI_API_KEY) {
-      return NextResponse.json(
-        { ok: false, error: "Missing OPENAI_API_KEY on server", tenantId },
+        { ok: false, error: "Rate limit error", step: "ratelimit", detail: j(e) },
         { status: 500, headers: { "Cache-Control": "no-store" } }
       );
     }
-    if (!OPENAI_MODEL_ID) {
+
+    // 🤖 Turnstile
+    try {
+      const token = req.headers.get("x-captcha-token") || "";
+      const ok = await verifyTurnstile(token);
+      stepLog("captcha.verify", { ok, hasToken: !!token });
+      if (!ok) {
+        return NextResponse.json(
+          { ok: false, error: "Captcha failed", step: "captcha" },
+          { status: 403, headers: { "Cache-Control": "no-store" } }
+        );
+      }
+    } catch (e) {
+      stepLog("captcha.error", j(e));
       return NextResponse.json(
-        { ok: false, error: "Missing OPENAI_MODEL_ID on server", tenantId },
+        { ok: false, error: "Captcha verification error", step: "captcha", detail: j(e) },
         { status: 500, headers: { "Cache-Control": "no-store" } }
+      );
+    }
+
+    // 👮 Admin
+    try {
+      const rawUser = await getUserFromRequest(req);
+      stepLog("auth.peek", { hasUser: !!rawUser, roles: rawUser?.roles });
+      await requireAdmin(req); // tira 401/403 si no
+      stepLog("auth.requireAdmin.ok");
+    } catch (e) {
+      stepLog("auth.requireAdmin.error", j(e));
+      const msg = (e as any)?.message || "Unauthorized";
+      const code = /unauthor/i.test(msg) ? 401 : /forbid/i.test(msg) ? 403 : 500;
+      return NextResponse.json(
+        { ok: false, error: msg, step: "auth" },
+        { status: code, headers: { "Cache-Control": "no-store" } }
       );
     }
 
     // 📦 Payload
-    const body = await req.json().catch(() => ({}));
+    let body: any = {};
+    try {
+      body = await req.json();
+      stepLog("body", body);
+    } catch (e) {
+      stepLog("body.error", j(e));
+      return NextResponse.json(
+        { ok: false, error: "Invalid JSON body", step: "body", detail: j(e) },
+        { status: 400, headers: { "Cache-Control": "no-store" } }
+      );
+    }
+
     const {
       category = "Desayunos",
       cuisine = "Latinoamericana",
@@ -80,30 +141,23 @@ export async function POST(
       avoidAllergens = [],
       count = 6,
       language = "es",
-    } = (body || {}) as {
-      category?: string;
-      cuisine?: string;
-      tone?: string;
-      audience?: string;
-      baseIngredients?: string[];
-      avoidAllergens?: string[];
-      count?: number;
-      language?: "es" | "en";
-    };
+    } = body || {};
 
+    // 🧠 Prompt
     const prompt = buildNamesPrompt({
       category,
       cuisine,
       tone,
       audience,
-      baseIngredients: Array.isArray(baseIngredients) ? baseIngredients : [],
-      avoidAllergens: Array.isArray(avoidAllergens) ? avoidAllergens : [],
-      count: Math.min(20, Math.max(1, Number(count) || 6)),
+      baseIngredients,
+      avoidAllergens,
+      count,
       language,
     });
+    stepLog("prompt.ready", { model: OPENAI_MODEL_ID });
 
-    // 🔮 OpenAI (manejo de errores explícito)
-    let resp: any;
+    // 🔮 OpenAI con manejo fino de errores
+    let resp;
     try {
       resp = await openai.chat.completions.create({
         model: OPENAI_MODEL_ID,
@@ -115,6 +169,7 @@ export async function POST(
         max_tokens: 800,
         temperature: 0.9,
       } as any);
+      stepLog("openai.ok");
     } catch (err: any) {
       const status = err?.status || err?.response?.status || 500;
       const detail =
@@ -122,32 +177,29 @@ export async function POST(
         err?.response?.data?.error?.message ||
         err?.message ||
         "OpenAI error";
-      const cause = err?.cause || {};
-      console.error("[openai] generate-names error", {
-        status,
-        detail,
-        net: { type: err?.type, code: cause?.code, errno: cause?.errno, syscall: cause?.syscall },
-      });
+      stepLog("openai.error", { status, detail, raw: j(err) });
+
       return NextResponse.json(
-        { ok: false, error: `OpenAI: ${detail}`, tenantId },
-        { status: [401,403,404,408,409,422,429,500].includes(status) ? status : 500, headers: { "Cache-Control": "no-store" } }
+        { ok: false, error: `OpenAI: ${detail}`, step: "openai", detail: debug ? j(err) : undefined },
+        { status: [401, 403, 404, 408, 409, 422, 429, 500].includes(status) ? status : 500,
+          headers: { "Cache-Control": "no-store" } }
       );
     }
 
     const content = resp.choices?.[0]?.message?.content || "{}";
     const data = safeJsonParse<NamesPayload>(content);
+    stepLog("parse.ok", { items: data?.items?.length });
 
     return NextResponse.json(
-      { ok: true, data, tenantId },
+      { ok: true, tenantId, data },
       { status: 200, headers: { "Cache-Control": "no-store" } }
     );
   } catch (e: any) {
+    console.error("[ai/generate-names] fatal", j(e));
     const msg = e?.message || "Server error";
-    const code =
-      /unauthor/i.test(msg) ? 401 :
-      /forbid/i.test(msg) ? 403 : 500;
+    const code = /unauthor/i.test(msg) ? 401 : /forbid/i.test(msg) ? 403 : 500;
     return NextResponse.json(
-      { ok: false, error: msg },
+      { ok: false, error: msg, step: "fatal", detail: isDebug(req) ? j(e) : undefined },
       { status: code, headers: { "Cache-Control": "no-store" } }
     );
   }

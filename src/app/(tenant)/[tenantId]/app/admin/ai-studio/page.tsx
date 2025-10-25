@@ -181,7 +181,8 @@ export default function AIStudioPage() {
           "Content-Type": "application/json",
           authorization: `Bearer ${idToken}`,
           "x-captcha-token": token || "",
-          ...(tid ? { "x-tenant-id": tid } : {}),
+          "x-tenant-id": tid || "",
+          "x-debug": "1", // ⬅️ activa respuesta detallada desde el server
         },
         body: JSON.stringify(payload),
       });
@@ -204,6 +205,8 @@ export default function AIStudioPage() {
       }
 
       const text = await r.text();
+      console.warn("[AIStudio callAPI] status=", r.status, "url=", url);
+if (text) console.warn("[AIStudio callAPI] raw body:", text); // ⬅️ verás step+detail si viene 500/4xx
       let j: any;
       try {
         j = JSON.parse(text);
