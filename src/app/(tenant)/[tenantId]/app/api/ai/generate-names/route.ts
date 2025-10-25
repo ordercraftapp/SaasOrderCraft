@@ -1,4 +1,3 @@
-// src/app/(tenant)/[tenantId]/app/api/ai/generate-names/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { openai, OPENAI_MODEL_ID } from '@/lib/ai/openai';
 import { safeJsonParse } from '@/lib/ai/json';
@@ -26,23 +25,34 @@ export async function POST(req: NextRequest, { params }: { params: { tenantId: s
     const flagSnap = await flagRef.get();
     const aiStudioEnabled = flagSnap.exists ? !!(flagSnap.data() as any)?.enabled : true;
     if (!aiStudioEnabled) {
-      return NextResponse.json({ ok: false, error: 'AI Studio is disabled', tenantId }, { status: 503 });
+      return NextResponse.json(
+        { ok: false, error: 'AI Studio is disabled', tenantId },
+        { status: 503, headers: { 'Cache-Control': 'no-store' } }
+      );
     }
 
     // ⛔ Rate limit + Turnstile + admin
     const lim = await limitRequest(req);
-    if (!lim.success) return NextResponse.json({ ok: false, error: 'Too many requests' }, { status: 429 });
+    if (!lim.success) {
+      return NextResponse.json(
+        { ok: false, error: 'Too many requests' },
+        { status: 429, headers: { 'Cache-Control': 'no-store' } }
+      );
+    }
 
     const token = req.headers.get('x-captcha-token') || '';
     if (!(await verifyTurnstile(token))) {
-      return NextResponse.json({ ok: false, error: 'Captcha failed' }, { status: 403 });
+      return NextResponse.json(
+        { ok: false, error: 'Captcha failed' },
+        { status: 403, headers: { 'Cache-Control': 'no-store' } }
+      );
     }
 
     await requireAdmin(req);
 
     // 📦 Payload
-    const body = await req.json();
-    const {
+    const body = await req.json().catch(() => ({}));
+    let {
       category = 'Desayunos',
       cuisine = 'Latinoamericana',
       tone = 'family-friendly',
@@ -51,7 +61,21 @@ export async function POST(req: NextRequest, { params }: { params: { tenantId: s
       avoidAllergens = [],
       count = 6,
       language = 'es',
-    } = body || {};
+    } = (body || {}) as Partial<{
+      category: string;
+      cuisine: string;
+      tone: string;
+      audience: string;
+      baseIngredients: string[];
+      avoidAllergens: string[];
+      count: number;
+      language: 'es' | 'en';
+    }>;
+
+    // ✅ Normalizaciones / límites
+    count = Math.min(20, Math.max(1, Number.isFinite(count as number) ? (count as number) : 6));
+    baseIngredients = Array.isArray(baseIngredients) ? baseIngredients.slice(0, 30) : [];
+    avoidAllergens = Array.isArray(avoidAllergens) ? avoidAllergens.slice(0, 30) : [];
 
     // 🧠 Prompt
     const prompt = buildNamesPrompt({
@@ -78,12 +102,22 @@ export async function POST(req: NextRequest, { params }: { params: { tenantId: s
     } as any);
 
     const content = resp.choices?.[0]?.message?.content || '{}';
-    const data = safeJsonParse<NamesPayload>(content);
+    const data = safeJsonParse<NamesPayload>(content) || { items: [] };
 
-    return NextResponse.json({ ok: true, tenantId, data });
+    return NextResponse.json(
+      { ok: true, tenantId, data },
+      { status: 200, headers: { 'Cache-Control': 'no-store' } }
+    );
   } catch (e: any) {
     const msg = e?.message || 'Server error';
-    const code = /unauthorized/i.test(msg) ? 401 : /forbidden/i.test(msg) ? 403 : 500;
-    return NextResponse.json({ ok: false, error: msg }, { status: code });
+    const status =
+      /unauthor/i.test(msg) ? 401 :
+      /forbid|insufficient/i.test(msg) ? 403 :
+      /rate|quota|exceed|429/.test(msg) ? 429 :
+      500;
+    return NextResponse.json(
+      { ok: false, error: msg },
+      { status, headers: { 'Cache-Control': 'no-store' } }
+    );
   }
 }

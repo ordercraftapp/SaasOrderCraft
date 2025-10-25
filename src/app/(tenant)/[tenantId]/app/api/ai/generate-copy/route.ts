@@ -1,4 +1,3 @@
-// src/app/(tenant)/[tenantId]/app/api/ai/generate-copy/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { openai, OPENAI_MODEL_ID } from '@/lib/ai/openai';
 import { safeJsonParse } from '@/lib/ai/json';
@@ -26,34 +25,59 @@ export async function POST(req: NextRequest, { params }: { params: { tenantId: s
     const flagSnap = await flagRef.get();
     const aiStudioEnabled = flagSnap.exists ? !!(flagSnap.data() as any)?.enabled : true;
     if (!aiStudioEnabled) {
-      return NextResponse.json({ ok: false, error: 'AI Studio is disabled', tenantId }, { status: 503 });
+      return NextResponse.json(
+        { ok: false, error: 'AI Studio is disabled', tenantId },
+        { status: 503, headers: { 'Cache-Control': 'no-store' } }
+      );
     }
 
     // ⛔ Rate limit + Turnstile + auth admin
     const lim = await limitRequest(req);
-    if (!lim.success) return NextResponse.json({ ok: false, error: 'Too many requests' }, { status: 429 });
+    if (!lim.success) {
+      return NextResponse.json(
+        { ok: false, error: 'Too many requests' },
+        { status: 429, headers: { 'Cache-Control': 'no-store' } }
+      );
+    }
 
     const token = req.headers.get('x-captcha-token') || '';
     if (!(await verifyTurnstile(token))) {
-      return NextResponse.json({ ok: false, error: 'Captcha failed' }, { status: 403 });
+      return NextResponse.json(
+        { ok: false, error: 'Captcha failed' },
+        { status: 403, headers: { 'Cache-Control': 'no-store' } }
+      );
     }
 
     await requireAdmin(req);
 
     // 📦 Payload
-    const body = await req.json();
+    const body = await req.json().catch(() => ({}));
     const {
       names = [] as string[],
       tone = 'family-friendly',
       language = 'es',
       seoKeywords = [] as string[],
-    } = body || {};
+    } = (body || {}) as {
+      names?: string[];
+      tone?: string;
+      language?: 'es' | 'en';
+      seoKeywords?: string[];
+    };
+
     if (!names.length) {
-      return NextResponse.json({ ok: false, error: 'names[] required' }, { status: 400 });
+      return NextResponse.json(
+        { ok: false, error: 'names[] required' },
+        { status: 400, headers: { 'Cache-Control': 'no-store' } }
+      );
     }
 
     // 🧠 Prompt
-    const prompt = buildCopyPrompt({ names, tone, language, seoKeywords });
+    const prompt = buildCopyPrompt({
+      names: names.slice(0, 20),
+      tone,
+      language,
+      seoKeywords: (seoKeywords || []).slice(0, 40),
+    });
 
     // 🔮 OpenAI
     const resp = await openai.chat.completions.create({
@@ -68,12 +92,22 @@ export async function POST(req: NextRequest, { params }: { params: { tenantId: s
     } as any);
 
     const content = resp.choices?.[0]?.message?.content || '{}';
-    const data = safeJsonParse<CopyPayload>(content);
+    const data = safeJsonParse<CopyPayload>(content) || { items: [] };
 
-    return NextResponse.json({ ok: true, tenantId, data });
+    return NextResponse.json(
+      { ok: true, tenantId, data },
+      { status: 200, headers: { 'Cache-Control': 'no-store' } }
+    );
   } catch (e: any) {
     const msg = e?.message || 'Server error';
-    const code = /unauthorized/i.test(msg) ? 401 : /forbidden/i.test(msg) ? 403 : 500;
-    return NextResponse.json({ ok: false, error: msg }, { status: code });
+    const status =
+      /unauthor/i.test(msg) ? 401 :
+      /forbid|insufficient/i.test(msg) ? 403 :
+      /rate|quota|exceed|429/.test(msg) ? 429 :
+      500;
+    return NextResponse.json(
+      { ok: false, error: msg },
+      { status, headers: { 'Cache-Control': 'no-store' } }
+    );
   }
 }
