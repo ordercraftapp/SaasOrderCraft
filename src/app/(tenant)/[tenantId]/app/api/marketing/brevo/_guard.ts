@@ -1,9 +1,6 @@
 // src/app/(tenant)/[tenant]/app/api/marketing/brevo/_guard.ts
-
 import { NextRequest, NextResponse } from "next/server";
-import { getAdminDB } from "@/lib/firebase/admin";
-// Importa la implementación original y la envolvemos para normalizar headers
-import { getUserFromRequest as _getUserFromRequest } from "@/lib/server/auth";
+import { getAdminDB, adminAuth } from "@/lib/firebase/admin";
 
 /** JSON helper (respuesta tipada) */
 export function json(data: any, status = 200) {
@@ -16,42 +13,8 @@ export function json(data: any, status = 200) {
 /** Exponemos una instancia lista del Admin DB para compatibilidad */
 export const db = getAdminDB();
 
-/** Normaliza el token desde Authorization: Bearer <idToken> o x-id-token: <idToken> */
-function extractToken(req: NextRequest): string | null {
-  const auth = req.headers.get("authorization") || req.headers.get("x-id-token") || "";
-  if (!auth) return null;
-  return auth.startsWith("Bearer ") ? auth.slice(7).trim() : auth.trim();
-}
-
-/**
- * Wrapper que garantiza que _getUserFromRequest reciba un header Authorization normalizado.
- * Si solo llega x-id-token, lo transformamos a Authorization: Bearer <token>.
- */
-async function getUserFromRequest(req: NextRequest): Promise<any | null> {
-  try {
-    const token = extractToken(req);
-
-    // Construimos un Request "plano" con los mismos headers y método,
-    // inyectando Authorization si hace falta.
-    const headers = new Headers(req.headers);
-    if (token && !headers.get("authorization")) {
-      headers.set("authorization", `Bearer ${token}`);
-    }
-
-    // Importante: NextRequest.body es un ReadableStream; no lo releemos aquí.
-    // _getUserFromRequest usualmente solo consulta headers/cookies.
-    const fake = new Request(req.url, {
-      method: req.method,
-      headers,
-      // Nota: no pasamos body porque muchas implementaciones no lo requieren para auth
-      // y reusar el stream puede romper el request original en Next.
-    });
-
-    return await _getUserFromRequest(fake as any);
-  } catch {
-    return null;
-  }
-}
+/** Roles por defecto aceptados (ajústalos si hace falta) */
+const DEFAULT_ADMIN_ROLES = ["admin", "owner", "superadmin"] as const;
 
 /** Opciones para autorización por rol (global o por tenant) */
 type RequireAdminOptions = {
@@ -59,13 +22,76 @@ type RequireAdminOptions = {
   roles?: string[]; // default ampliado
 };
 
-/** Roles por defecto aceptados (puedes ajustar esta lista si lo necesitas) */
-const DEFAULT_ADMIN_ROLES = ["admin", "owner", "superadmin"] as const;
+/** Estructura mínima que esperamos de "me" */
+type MeUser = {
+  uid: string;
+  email?: string | null;
+  role?: string | null; // rol global
+  tenants?: Record<
+    string,
+    {
+      role?: string | null;
+      [k: string]: any;
+    }
+  > | null;
+  [k: string]: any;
+};
+
+/** Lee idToken desde Authorization: Bearer <token> o x-id-token */
+function extractToken(req: NextRequest): string | null {
+  const auth = req.headers.get("authorization") || req.headers.get("x-id-token") || "";
+  if (!auth) return null;
+  return auth.startsWith("Bearer ") ? auth.slice(7).trim() : auth.trim();
+}
 
 /**
- * Autorización mínima:
- * - Si opts.tenantId existe e implementaste roles por tenant en `me.tenants[tenantId].role`,
- *   valida contra esa fuente.
+ * Verifica el idToken con Firebase Admin y arma un objeto "me".
+ * - Si existe doc en `users/{uid}`, se fusiona para tomar `role` global y `tenants`.
+ * - Si no existe doc, al menos retorna uid/email del token.
+ */
+async function resolveMeFromToken(req: NextRequest): Promise<MeUser | null> {
+  try {
+    const token = extractToken(req);
+    if (!token) return null;
+
+    // Verifica idToken (NO cookies). Lanza si es inválido/expirado.
+    const decoded = await adminAuth.verifyIdToken(token, true);
+    const uid = decoded.uid;
+    const email = (decoded.email || "").toLowerCase() || null;
+
+    // Intentar enriquecer desde Firestore: users/{uid}
+    let role: string | null = null;
+    let tenants: MeUser["tenants"] = null;
+
+    try {
+      const userDoc = await db.doc(`users/${uid}`).get();
+      if (userDoc.exists) {
+        const data = userDoc.data() as any;
+        role = data?.role ?? null;
+        tenants = data?.tenants && typeof data.tenants === "object" ? data.tenants : null;
+      }
+    } catch {
+      // Si falla Firestore, continuamos con datos del token
+    }
+
+    const me: MeUser = {
+      uid,
+      email,
+      role,
+      tenants,
+      // Puedes incluir claims del token si te interesa auditarlos:
+      // claims: decoded,
+    };
+
+    return me;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Autorización mínima con verificación directa de idToken:
+ * - Si opts.tenantId existe y hay rol por tenant en `me.tenants[tenantId].role`, se valida.
  * - Si no, cae a `me.role` global.
  * Retorna el usuario si está autorizado; si no, `null`.
  */
@@ -73,15 +99,15 @@ export async function requireAdmin(
   req: NextRequest,
   opts: RequireAdminOptions = {}
 ) {
-  const me: any = await getUserFromRequest(req);
+  const me = await resolveMeFromToken(req);
   if (!me) return null;
 
   const roles = opts.roles ?? Array.from(DEFAULT_ADMIN_ROLES);
   const tId = opts.tenantId;
 
-  // 1) Intentar autorización scopiada al tenant (si tu objeto usuario la trae)
+  // 1) Intentar autorización scopiada al tenant
   if (tId && me.tenants && typeof me.tenants === "object") {
-    const tenantRole = me.tenants?.[tId]?.role;
+    const tenantRole = (me.tenants as any)?.[tId]?.role;
     if (tenantRole && roles.includes(tenantRole)) return me;
   }
 
@@ -94,8 +120,9 @@ export async function requireAdmin(
 /**
  * Helper opcional para devolver 403 con pista en dev.
  * Úsalo en rutas si quieres más diagnóstico:
- *
  *   if (!me) return forbidden(req, { tenantId });
+ *
+ * En el cliente, agrega el header x-debug-auth: 1 para ver pistas.
  */
 export function forbidden(req: NextRequest, extra?: Record<string, any>) {
   const debug = req.headers.get("x-debug-auth") === "1";
@@ -103,7 +130,8 @@ export function forbidden(req: NextRequest, extra?: Record<string, any>) {
     return json(
       {
         error: "Forbidden",
-        hint: "Missing role or invalid token for this tenant.",
+        hint:
+          "No rol autorizado para este tenant o token inválido/expirado. Verifica Authorization: Bearer <idToken> y roles.",
         ...(extra || {}),
       },
       403
