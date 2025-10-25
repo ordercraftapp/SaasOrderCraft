@@ -1090,7 +1090,7 @@ function CheckoutUI(props: {
                   )}
                 </div>
                 {promo && (
-                  <div className="text-success small mt-1">✓ {tt('checkout.promo.applied', 'Coupon applied: {code}', { code: <strong>{promo.code}</strong> as any })}</div>
+                  <div className="text-success small mt-1">✓ {tt('checkout.promo.applied', 'Coupon applied', { code: <strong>{promo.code}</strong> as any })}</div>
                 )}
                 {promoErrorText && (
                   <div className="text-danger small mt-1">{promoErrorText}</div>

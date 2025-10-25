@@ -100,7 +100,7 @@ export default function AIStudioPage() {
       if (!authReady || !user) return;
       try {
         const idToken = await user.getIdToken(/* forceRefresh */ true);
-        const r = await fetch("/api/admin/ai-studio/flag", {
+        const r = await fetch("/${tenantId}/app/api/admin/ai-studio/flag", {
           headers: { authorization: `Bearer ${idToken}` },
         });
         const text = await r.text();
@@ -118,7 +118,7 @@ export default function AIStudioPage() {
     try {
       if (!user) throw new Error("No user");
       const idToken = await user.getIdToken(true);
-      const r = await fetch("/api/admin/ai-studio/flag", {
+      const r = await fetch("/${tenantId}/app/api/admin/ai-studio/flag", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
