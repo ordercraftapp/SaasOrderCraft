@@ -14,13 +14,11 @@ export const runtime = 'nodejs';
 
 export async function POST(req: NextRequest, { params }: { params: { tenantId: string } }) {
   try {
-    // 🔐 Tenant
     const tenantId = requireTenantId(
       resolveTenantFromRequest(req, params),
       'api:ai/generate-names:POST'
     );
 
-    // 🚩 Feature flag por tenant
     const flagRef = tDocAdmin('system_flags', tenantId, 'ai_studio');
     const flagSnap = await flagRef.get();
     const aiStudioEnabled = flagSnap.exists ? !!(flagSnap.data() as any)?.enabled : true;
@@ -31,7 +29,6 @@ export async function POST(req: NextRequest, { params }: { params: { tenantId: s
       );
     }
 
-    // ⛔ Rate limit + Turnstile + admin
     const lim = await limitRequest(req);
     if (!lim.success) {
       return NextResponse.json(
@@ -50,7 +47,20 @@ export async function POST(req: NextRequest, { params }: { params: { tenantId: s
 
     await requireAdmin(req);
 
-    // 📦 Payload
+    // 🔑 Guard env (mensaje claro si falta la key o el modelo)
+    if (!process.env.OPENAI_API_KEY) {
+      return NextResponse.json(
+        { ok: false, error: 'Missing OPENAI_API_KEY on server' },
+        { status: 500, headers: { 'Cache-Control': 'no-store' } }
+      );
+    }
+    if (!OPENAI_MODEL_ID) {
+      return NextResponse.json(
+        { ok: false, error: 'Missing OPENAI_MODEL_ID on server' },
+        { status: 500, headers: { 'Cache-Control': 'no-store' } }
+      );
+    }
+
     const body = await req.json().catch(() => ({}));
     let {
       category = 'Desayunos',
@@ -72,12 +82,10 @@ export async function POST(req: NextRequest, { params }: { params: { tenantId: s
       language: 'es' | 'en';
     }>;
 
-    // ✅ Normalizaciones
     count = Math.min(20, Math.max(1, Number.isFinite(count as number) ? (count as number) : 6));
     baseIngredients = Array.isArray(baseIngredients) ? baseIngredients.slice(0, 30) : [];
     avoidAllergens = Array.isArray(avoidAllergens) ? avoidAllergens.slice(0, 30) : [];
 
-    // 🧠 Prompt
     const prompt = buildNamesPrompt({
       category,
       cuisine,

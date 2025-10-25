@@ -14,13 +14,11 @@ export const runtime = 'nodejs';
 
 export async function POST(req: NextRequest, { params }: { params: { tenantId: string } }) {
   try {
-    // 🔐 Tenant
     const tenantId = requireTenantId(
       resolveTenantFromRequest(req, params),
       'api:ai/generate-copy:POST'
     );
 
-    // 🚩 Feature flag por tenant
     const flagRef = tDocAdmin('system_flags', tenantId, 'ai_studio');
     const flagSnap = await flagRef.get();
     const aiStudioEnabled = flagSnap.exists ? !!(flagSnap.data() as any)?.enabled : true;
@@ -31,7 +29,6 @@ export async function POST(req: NextRequest, { params }: { params: { tenantId: s
       );
     }
 
-    // ⛔ Rate limit + Turnstile + auth admin
     const lim = await limitRequest(req);
     if (!lim.success) {
       return NextResponse.json(
@@ -50,7 +47,20 @@ export async function POST(req: NextRequest, { params }: { params: { tenantId: s
 
     await requireAdmin(req);
 
-    // 📦 Payload
+    // 🔑 Guard env
+    if (!process.env.OPENAI_API_KEY) {
+      return NextResponse.json(
+        { ok: false, error: 'Missing OPENAI_API_KEY on server' },
+        { status: 500, headers: { 'Cache-Control': 'no-store' } }
+      );
+    }
+    if (!OPENAI_MODEL_ID) {
+      return NextResponse.json(
+        { ok: false, error: 'Missing OPENAI_MODEL_ID on server' },
+        { status: 500, headers: { 'Cache-Control': 'no-store' } }
+      );
+    }
+
     const body = await req.json().catch(() => ({}));
     const {
       names = [] as string[],
@@ -71,7 +81,6 @@ export async function POST(req: NextRequest, { params }: { params: { tenantId: s
       );
     }
 
-    // 🧠 Prompt
     const prompt = buildCopyPrompt({
       names: names.slice(0, 20),
       tone,
@@ -79,7 +88,6 @@ export async function POST(req: NextRequest, { params }: { params: { tenantId: s
       seoKeywords: (seoKeywords || []).slice(0, 40),
     });
 
-    // 🔮 OpenAI (con manejo explícito de errores)
     let resp: any;
     try {
       resp = await openai.chat.completions.create({
@@ -121,8 +129,8 @@ export async function POST(req: NextRequest, { params }: { params: { tenantId: s
       /rate|quota|exceed|429/.test(msg) ? 429 :
       500;
     return NextResponse.json(
-        { ok: false, error: msg },
-        { status, headers: { 'Cache-Control': 'no-store' } }
+      { ok: false, error: msg },
+      { status, headers: { 'Cache-Control': 'no-store' } }
     );
   }
 }
