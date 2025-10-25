@@ -96,43 +96,44 @@ export default function AIStudioPage() {
 
   // --- Cargar flag SOLO cuando Auth está listo y hay usuario ---
   useEffect(() => {
-    (async () => {
-      if (!authReady || !user) return;
-      try {
-        const idToken = await user.getIdToken(/* forceRefresh */ true);
-        const r = await fetch("/${tenantId}/app/api/admin/ai-studio/flag", {
-          headers: { authorization: `Bearer ${idToken}` },
-        });
-        const text = await r.text();
-        let j: any;
-        try { j = JSON.parse(text); } catch { throw new Error(text.slice(0, 180)); }
-        if (j?.ok) setFlagEnabled(!!j.data?.enabled);
-        else throw new Error(j?.error || "Flag read failed");
-      } catch (e: any) {
-        console.error("Flag load error:", e?.message || e);
-      }
-    })();
-  }, [authReady, user]);
+  (async () => {
+    if (!authReady || !user || !tenantId) return;   // ⬅️ evita /undefined y bucles
+    try {
+      const idToken = await user.getIdToken(true);
+      const url = `/${tenantId}/app/api/admin/ai-studio/flag`; // ⬅️ backticks!
+      const r = await fetch(url, { headers: { authorization: `Bearer ${idToken}` } });
+      const text = await r.text();
+      let j: any;
+      try { j = JSON.parse(text); } catch { throw new Error(text.slice(0, 180)); }
+      if (j?.ok) setFlagEnabled(!!j.data?.enabled);
+      else throw new Error(j?.error || "Flag read failed");
+    } catch (e: any) {
+      console.error("Flag load error:", e?.message || e);
+    }
+  })();
+}, [authReady, user, tenantId]); 
 
   async function toggleFlag() {
-    try {
-      if (!user) throw new Error("No user");
-      const idToken = await user.getIdToken(true);
-      const r = await fetch("/${tenantId}/app/api/admin/ai-studio/flag", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          authorization: `Bearer ${idToken}`,
-        },
-        body: JSON.stringify({ enabled: !flagEnabled }),
-      });
-      const j = await r.json();
-      if (j.ok) setFlagEnabled(!!j.data.enabled);
-      else throw new Error(j?.error || "Toggle failed");
-    } catch (e: any) {
-      setErr(e?.message || "Failed to toggle feature");
-    }
+  try {
+    if (!user) throw new Error("No user");
+    if (!tenantId) throw new Error("No tenantId");
+    const idToken = await user.getIdToken(true);
+    const url = `/${tenantId}/app/api/admin/ai-studio/flag`; // ⬅️ backticks!
+    const r = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        authorization: `Bearer ${idToken}`,
+      },
+      body: JSON.stringify({ enabled: !flagEnabled }),
+    });
+    const j = await r.json();
+    if (j.ok) setFlagEnabled(!!j.data.enabled);
+    else throw new Error(j?.error || "Toggle failed");
+  } catch (e: any) {
+    setErr(e?.message || "Failed to toggle feature");
   }
+}
 
   // --- Captcha helpers ---
   async function getFreshCaptchaToken(maxMs = 2500): Promise<string> {
