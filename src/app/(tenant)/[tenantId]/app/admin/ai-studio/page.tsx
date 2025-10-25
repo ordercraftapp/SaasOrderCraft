@@ -150,7 +150,7 @@ export default function AIStudioPage() {
   }
 
   // --- callAPI ---
-  async function callAPI<T>(url: string, payload: any): Promise<T> {
+  async function callAPI<T>(url: string, payload: any, tid?: string): Promise<T> {
     setBusy(true); setErr(null);
     try {
       if (!authReady || !user) throw new Error(tt("admin.aistudio.err.authNotReady", "Auth not ready"));
@@ -160,6 +160,7 @@ export default function AIStudioPage() {
       if (!token) {
         tRef.current?.reset();
         token = await getFreshCaptchaToken();
+        if (!token) throw new Error(tt("admin.aistudio.err.captchaMissing", "CAPTCHA no resuelto"));
       }
 
       let r = await fetch(url, {
@@ -168,6 +169,7 @@ export default function AIStudioPage() {
           "Content-Type": "application/json",
           authorization: `Bearer ${idToken}`,
           "x-captcha-token": token || "",
+          ...(tid ? { "x-tenant-id": tid } : {}),
         },
         body: JSON.stringify(payload),
       });
@@ -182,6 +184,7 @@ export default function AIStudioPage() {
             "Content-Type": "application/json",
             authorization: `Bearer ${idToken}`,
             "x-captcha-token": token2 || "",
+            ...(tid ? { "x-tenant-id": tid } : {}),
           },
           body: JSON.stringify(payload),
         });
@@ -200,6 +203,7 @@ export default function AIStudioPage() {
   }
 
   async function onGenerateNames() {
+    if (!tenantId) { setErr("Tenant no resuelto"); return; }
     const payload = {
       category, cuisine, tone, audience,
       baseIngredients: splitCsv(baseIngredients),
@@ -208,8 +212,7 @@ export default function AIStudioPage() {
       language,
     };
     try {
-      const data = await callAPI<NamesPayload>("/api/ai/generate-names", payload);
-      setNames(data.items || []);
+     const data = await callAPI<NamesPayload>(`/${tenantId}/app/api/ai/generate-names`, payload, tenantId);
       setSelectedName(null);
       setCopy([]); setImgPrompts([]);
     } catch (e: any) { setErr(e.message); }
@@ -224,7 +227,7 @@ export default function AIStudioPage() {
       seoKeywords: splitCsv(seoKeywords),
     };
     try {
-      const data = await callAPI<CopyPayload>("/api/ai/generate-copy", payload);
+      const data = await callAPI<CopyPayload>(`/${tenantId}/app/api/ai/generate-copy`, payload);
       setCopy(data.items || []);
       setImgPrompts([]);
     } catch (e: any) { setErr(e.message); }
@@ -234,7 +237,7 @@ export default function AIStudioPage() {
     if (!selectedName) { setErr(tt("admin.aistudio.err.pickNameFirst", "Select a name first")); return; }
     const payload = { items: [{ name: selectedName }], language };
     try {
-      const data = await callAPI<ImagePromptsPayload>("/api/ai/generate-image-prompts", payload);
+      const data = await callAPI<ImagePromptsPayload>(`/${tenantId}/app/api/ai/generate-image-prompts`, payload);
       setImgPrompts(data.items || []);
     } catch (e: any) { setErr(e.message); }
   }
