@@ -46,11 +46,11 @@ async function getFirestoreMod() {
 }
 
 function useAuthClaims() {
-  const [authReady, setAuthReady] = useState(false);
-  const [user, setUser] = useState<any | null>(null);
-  const [claims, setClaims] = useState<any | null>(null);
+  const [authReady, setAuthReady] = React.useState(false);
+  const [user, setUser] = React.useState<any | null>(null);
+  const [claims, setClaims] = React.useState<any | null>(null);
 
-  useEffect(() => {
+  React.useEffect(() => {
     let alive = true;
     (async () => {
       const { onAuthStateChanged, getAuth, getIdTokenResult } = await getAuthMod();
@@ -59,14 +59,9 @@ function useAuthClaims() {
         if (!alive) return;
         setUser(u ?? null);
         if (u) {
-          try {
-            // AUTHZ-FIX: refrescar token para traer claims por-tenant actualizados
-            await u.getIdToken(true);
-            const r = await getIdTokenResult(u);
-            setClaims(r.claims || null);
-          } catch {
-            setClaims(null);
-          }
+          // token FRESCO para claims por-tenant
+          const res = await getIdTokenResult(u, true);
+          setClaims(res.claims || null);
         } else {
           setClaims(null);
         }
@@ -77,7 +72,7 @@ function useAuthClaims() {
     return () => { alive = false; };
   }, []);
 
-  return { authReady, user, claims, isAdminGlobal: !!(claims && claims.admin) } as const;
+  return { authReady, user, claims } as const;
 }
 
 
@@ -140,6 +135,24 @@ export type Promotion = {
   updatedAt?: any;
 };
 
+//Helpers
+/** Normaliza el nodo del tenant (roles/flags/plano) */
+function normalizeTenantNode(node: any): Record<string, any> {
+  if (!node || typeof node !== 'object') return {};
+  const out: Record<string, boolean> = {};
+  const merge = (src: any) => {
+    if (!src || typeof src !== 'object') return;
+    for (const k of Object.keys(src)) {
+      if (typeof src[k] === 'boolean') out[k] ||= !!src[k];
+    }
+  };
+  merge(node);
+  merge(node.roles);
+  merge(node.flags);
+  merge(node.rolesNormalized);
+  return out;
+}
+
 /* =========================================================================
    Utils
    ========================================================================= */
@@ -192,14 +205,15 @@ async function deleteDocByIdScoped(tenantId: string, collName: string, id: strin
    ========================================================================= */
 function AdminPromotionsPage_Inner() {
   const tenantId = useTenantId();
-  const { authReady, user, claims, isAdminGlobal } = useAuthClaims();
+  const { authReady, user, claims } = useAuthClaims();
 
-  // AUTHZ-FIX: admin por tenant (o admin global)
-  const isAdminAtTenant = useMemo(() => {
-    if (!claims || !tenantId) return false;
-    const roles = claims.tenants?.[tenantId]?.roles;
-    return Boolean(isAdminGlobal || (Array.isArray(roles) && roles.includes('admin')));
-  }, [claims, tenantId, isAdminGlobal]);
+const isTenantAdmin = React.useMemo(() => {
+  if (!tenantId) return false;
+  const node = claims?.tenants?.[tenantId];
+  const flags = normalizeTenantNode(node);
+  return !!(flags?.admin || claims?.admin === true || claims?.role === 'superadmin');
+}, [claims, tenantId]);
+
   const fmtQ = useFmtQ();
 
   // 🔤 idioma
@@ -271,7 +285,7 @@ function AdminPromotionsPage_Inner() {
     let unsubCats: any, unsubSubs: any, unsubItems: any, unsubPromos: any;
     (async () => {
       if (!tenantId) { setLoading(false); setErr('Missing tenantId'); return; }
-      if (!(user && isAdminAtTenant)) { setLoading(false); return; }
+      if (!(user && isTenantAdmin)) { setLoading(false); return; }
       try {
         setLoading(true);
         setErr(null);
@@ -333,12 +347,13 @@ function AdminPromotionsPage_Inner() {
     })();
 
     return () => {
-      try { unsubCats && unsubCats(); } catch {}
-      try { unsubSubs && unsubSubs(); } catch {}
-      try { unsubItems && unsubItems(); } catch {}
-      try { unsubPromos && unsubPromos(); } catch {}
-    };
-  }, [tenantId, user, isAdminAtTenant]);
+  try { unsubCats && unsubCats(); } catch {}
+  try { unsubSubs && unsubSubs(); } catch {}
+  try { unsubItems && unsubItems(); } catch {}
+  try { unsubPromos && unsubPromos(); } catch {}
+};
+// 👇 deps:
+}, [tenantId, user, isTenantAdmin]);
 
   /* =========================================================================
      Guardar / Editar / Borrar (SCOPED)
@@ -562,9 +577,10 @@ function AdminPromotionsPage_Inner() {
      Render
      ========================================================================= */
   if (!authReady) return <div className="container py-3">{tt('admin.common.initializing', 'Initializing session…')}</div>;
-  if (!user) return <div className="container py-5 text-danger">{tt('admin.common.mustSignIn', 'You must sign in.')}</div>;
-  if (!tenantId) return <div className="container py-5 text-danger">{tt('admin.common.missingTenant', 'Missing tenant context.')}</div>;
-  if (!isAdminAtTenant) return <div className="container py-5 text-danger">{tt('admin.common.unauthorized', 'Unauthorized (admins only).')}</div>;
+if (!user) return <div className="container py-5 text-danger">{tt('admin.common.mustSignIn', 'You must sign in.')}</div>;
+if (!tenantId) return <div className="container py-5 text-danger">{tt('admin.common.missingTenant', 'Missing tenant context.')}</div>;
+if (!isTenantAdmin) return <div className="container py-5 text-danger">{tt('admin.common.unauthorized', 'Unauthorized (admins only).')}</div>;
+
 
 
   return (
@@ -922,11 +938,11 @@ function AdminPromotionsPage_Inner() {
 export default function AdminPromotionsPage() {
   return (
     
-      <AdminOnly>
+      <Protected>
         <ToolGate feature="promotions">
           <AdminPromotionsPage_Inner />
         </ToolGate>
-      </AdminOnly>
+      </Protected>
     
   );
 }
