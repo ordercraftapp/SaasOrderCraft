@@ -60,6 +60,8 @@ function useAuthClaims() {
         setUser(u ?? null);
         if (u) {
           try {
+            // AUTHZ-FIX: refrescar token para traer claims por-tenant actualizados
+            await u.getIdToken(true);
             const r = await getIdTokenResult(u);
             setClaims(r.claims || null);
           } catch {
@@ -72,13 +74,12 @@ function useAuthClaims() {
       });
       return () => unsub();
     })();
-    return () => {
-      alive = false;
-    };
+    return () => { alive = false; };
   }, []);
 
-  return { authReady, user, isAdmin: !!claims?.admin } as const;
+  return { authReady, user, claims, isAdminGlobal: !!(claims && claims.admin) } as const;
 }
+
 
 /* =========================================================================
    Tipos según tus colecciones actuales
@@ -191,7 +192,14 @@ async function deleteDocByIdScoped(tenantId: string, collName: string, id: strin
    ========================================================================= */
 function AdminPromotionsPage_Inner() {
   const tenantId = useTenantId();
-  const { authReady, user, isAdmin } = useAuthClaims();
+  const { authReady, user, claims, isAdminGlobal } = useAuthClaims();
+
+  // AUTHZ-FIX: admin por tenant (o admin global)
+  const isAdminAtTenant = useMemo(() => {
+    if (!claims || !tenantId) return false;
+    const roles = claims.tenants?.[tenantId]?.roles;
+    return Boolean(isAdminGlobal || (Array.isArray(roles) && roles.includes('admin')));
+  }, [claims, tenantId, isAdminGlobal]);
   const fmtQ = useFmtQ();
 
   // 🔤 idioma
@@ -263,7 +271,7 @@ function AdminPromotionsPage_Inner() {
     let unsubCats: any, unsubSubs: any, unsubItems: any, unsubPromos: any;
     (async () => {
       if (!tenantId) { setLoading(false); setErr('Missing tenantId'); return; }
-      if (!(user && isAdmin)) { setLoading(false); return; }
+      if (!(user && isAdminAtTenant)) { setLoading(false); return; }
       try {
         setLoading(true);
         setErr(null);
@@ -330,7 +338,7 @@ function AdminPromotionsPage_Inner() {
       try { unsubItems && unsubItems(); } catch {}
       try { unsubPromos && unsubPromos(); } catch {}
     };
-  }, [tenantId, user, isAdmin]);
+  }, [tenantId, user, isAdminAtTenant]);
 
   /* =========================================================================
      Guardar / Editar / Borrar (SCOPED)
@@ -555,8 +563,9 @@ function AdminPromotionsPage_Inner() {
      ========================================================================= */
   if (!authReady) return <div className="container py-3">{tt('admin.common.initializing', 'Initializing session…')}</div>;
   if (!user) return <div className="container py-5 text-danger">{tt('admin.common.mustSignIn', 'You must sign in.')}</div>;
-  if (!isAdmin) return <div className="container py-5 text-danger">{tt('admin.common.unauthorized', 'Unauthorized (admins only).')}</div>;
   if (!tenantId) return <div className="container py-5 text-danger">{tt('admin.common.missingTenant', 'Missing tenant context.')}</div>;
+  if (!isAdminAtTenant) return <div className="container py-5 text-danger">{tt('admin.common.unauthorized', 'Unauthorized (admins only).')}</div>;
+
 
   return (
     <div className="container py-3">
@@ -912,12 +921,12 @@ function AdminPromotionsPage_Inner() {
 
 export default function AdminPromotionsPage() {
   return (
-    <Protected>
+    
       <AdminOnly>
         <ToolGate feature="promotions">
           <AdminPromotionsPage_Inner />
         </ToolGate>
       </AdminOnly>
-    </Protected>
+    
   );
 }
