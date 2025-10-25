@@ -54,7 +54,7 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
     <NewCartProvider key={tenantId || 'no-tenant'}>
       <nav className="navbar navbar-expand-md navbar-light bg-light border-bottom">
         <div className="container">
-          <Link className="navbar-brand fw-semibold" href={withTenant('/app')}>
+          <Link className="navbar-brand fw-semibold" href={withTenant('/app/app')}>
             {tt('client.app.nav.brand', 'Customer Portal')}
           </Link>
 
