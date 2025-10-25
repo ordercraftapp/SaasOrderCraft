@@ -7,10 +7,39 @@ import { useParams } from "next/navigation";
 import Protected from "@/app/(tenant)/[tenantId]/components/Protected";
 import { useAuth } from "@/app/(tenant)/[tenantId]/app/providers";
 import { useFmtQ } from "@/lib/settings/money";
+import { getAuth } from 'firebase/auth';
 
 // i18n
-import { t, getLang } from "@/lib/i18n/t";
+import { t, getLang } from "@/lib/i18n/t"; 
 import { useTenantSettings } from "@/lib/settings/hooks";
+
+async function refreshTenantRole(tenantId: string, getIdTokenFn: () => Promise<string | null>) {
+  if (!tenantId) return false;
+  const idToken = await getIdTokenFn();
+  if (!idToken) return false; // 👈 evita 401 por token ausente
+  try {
+    const res = await fetch(`/${tenantId}/app/api/auth/refresh-role`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${idToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ tenantId }),
+      cache: 'no-store',
+    });
+    // No hagas throw en 401/403: solo log suave y continúa
+    if (!res.ok) {
+      // opcional: const txt = await res.text().catch(()=>'');
+      console.warn('[refresh-role] non-OK', res.status);
+      return false;
+    }
+    return true;
+  } catch (e) {
+    console.warn('[refresh-role] error', e);
+    return false;
+  }
+}
+
 
 /* Tipos y helpers... (idénticos a tu versión) */
 type FirestoreTS = { seconds?: number; nanoseconds?: number } | Date | null | undefined;
@@ -127,16 +156,25 @@ function ClientOrdersPageInner() {
         setLoading(true);
         setErr(null);
 
-        const headers: HeadersInit = {};
-        if (idToken) headers["Authorization"] = `Bearer ${idToken}`;
+         // ✅ REFRESH ROLE con token fresco, solo si hay user
+        const getIdTokenFn = async () => {
+          try {
+            const u = getAuth().currentUser;
+            if (!u) return null;
+            // fuerza claims actuales
+            await u.getIdToken(true);
+            return await u.getIdToken();
+          } catch { return null; }
+        };
+      await refreshTenantRole(tenantId, getIdTokenFn); // ignora resultado si falla
 
-        // tenancyUpdate: API con prefijo de tenant
-        const res = await fetch(`/${tenantId}/app/api/orders?limit=200`, {
-          cache: "no-store",
-          headers,
-        });
-        const data: ApiList = await res.json().catch(() => ({} as any));
-        if (!res.ok || data?.ok === false) throw new Error(data?.error || `HTTP ${res.status}`);
+        const headers: HeadersInit = {};
+      const idTokenNow = await getIdTokenFn();
+      if (idTokenNow) headers['Authorization'] = `Bearer ${idTokenNow}`;
+
+      const res = await fetch(`/${tenantId}/app/api/orders?limit=200`, { cache: 'no-store', headers });
+      const data: ApiList = await res.json().catch(() => ({} as any));
+      if (!res.ok || data?.ok === false) throw new Error(data?.error || `HTTP ${res.status}`);
 
         const uid = user?.uid || "";
         const mail = (user as any)?.email?.toLowerCase() || "";
@@ -232,7 +270,7 @@ function ClientOrdersPageInner() {
                       {isOpen ? t(lang, "orders.hideDetails") : t(lang, "orders.viewDetails")}
                     </button>
                     {/* tenancyUpdate: Link con prefijo tenant */}
-                    <Link href={`/${tenantId}/app/orders/${o.id}`} className="btn btn-outline-primary btn-sm">
+                    <Link href={`/${tenantId}/app/orders/${o.id}`} prefetch={false} className="btn btn-outline-primary btn-sm">
                       {t(lang, "orders.openShare")}
                     </Link>
                   </div>

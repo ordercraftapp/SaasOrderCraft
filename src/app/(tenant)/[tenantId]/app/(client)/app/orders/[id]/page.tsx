@@ -10,6 +10,34 @@ import { getFirestore, onSnapshot } from "firebase/firestore";
 import { tDoc } from "@/lib/db"; // ✅ Web SDK tenant-aware
 import { useFmtQ } from "@/lib/settings/money";
 
+async function refreshTenantRole(tenantId: string, getIdTokenFn: () => Promise<string | null>) {
+  if (!tenantId) return false;
+  const idToken = await getIdTokenFn();
+  if (!idToken) return false; // 👈 evita 401 por token ausente
+  try {
+    const res = await fetch(`/${tenantId}/app/api/auth/refresh-role`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${idToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ tenantId }),
+      cache: 'no-store',
+    });
+    // No hagas throw en 401/403: solo log suave y continúa
+    if (!res.ok) {
+      // opcional: const txt = await res.text().catch(()=>'');
+      console.warn('[refresh-role] non-OK', res.status);
+      return false;
+    }
+    return true;
+  } catch (e) {
+    console.warn('[refresh-role] error', e);
+    return false;
+  }
+}
+
+
 // i18n
 import { t, getLang } from "@/lib/i18n/t";
 import { useTenantSettings } from "@/lib/settings/hooks";
@@ -25,7 +53,7 @@ type OrderDoc = {
   total?: number;
   currency?: string;
   items?: Array<{
-    menuItemId: string;
+    menuItemId: string; 
     menuItemName?: string;
     quantity: number;
     addons?: OpsAddon[];
