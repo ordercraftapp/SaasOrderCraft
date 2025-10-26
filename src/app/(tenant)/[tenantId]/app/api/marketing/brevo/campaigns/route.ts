@@ -1,4 +1,3 @@
-// src/app/(tenant)/[tenant]/app/api/marketing/brevo/campaigns/route.ts
 export const runtime = "nodejs";
 
 import { NextRequest } from "next/server";
@@ -13,6 +12,26 @@ import { createCampaign, listCampaigns } from "@/lib/marketing/brevo";
 
 // La carpeta es [tenant] → params.tenant
 type Ctx = { params: { tenant: string } };
+
+/** Valida que una URL sea https pública (sin localhost, sin data/blob/file) */
+function isValidPublicUrl(u?: string) {
+  if (!u || typeof u !== "string") return false;
+  try {
+    const url = new URL(u);
+    if (url.protocol !== "https:") return false;
+    // Evitar localhost y 127.0.0.1
+    if (
+      url.hostname === "localhost" ||
+      url.hostname === "127.0.0.1" ||
+      url.hostname.endsWith(".localhost")
+    ) {
+      return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 /** GET /campaigns?limit=20&offset=0 */
 export async function GET(req: NextRequest, ctx: Ctx) {
@@ -36,7 +55,7 @@ export async function GET(req: NextRequest, ctx: Ctx) {
   }
 }
 
-/** POST /campaigns  { subject, html } */
+/** POST /campaigns  { subject, html, [attachmentUrl], [previewText], [name] } */
 export async function POST(req: NextRequest, ctx: Ctx) {
   const tenantId = requireTenantId(
     resolveTenantFromRequest(req, ctx.params),
@@ -47,13 +66,21 @@ export async function POST(req: NextRequest, ctx: Ctx) {
   if (!me) return json({ error: "Forbidden" }, 403);
 
   try {
-    const body = await req.json().catch(() => ({} as any));
+    const body = (await req.json().catch(() => ({}))) as {
+      subject?: string;
+      html?: string;
+      attachmentUrl?: string;
+      previewText?: string;
+      name?: string;
+    };
+
     const subject = String(body?.subject ?? "").trim();
     const html = String(body?.html ?? "").trim();
     if (!subject || !html) return json({ error: "Missing subject/html" }, 400);
 
     // Config por tenant (antes era app_config/marketing global)
-    const db = getAdminDB(); // o usa adminDbFromGuard; ambos apuntan al Admin SDK
+    // Puedes usar adminDbFromGuard o getAdminDB indistintamente (Admin SDK)
+    const db = adminDbFromGuard ?? getAdminDB();
     const cfgSnap = await db.doc(`tenants/${tenantId}/system_flags/marketing`).get();
     const cfg = (cfgSnap.exists ? cfgSnap.data() : null) as { listId?: number | string } | null;
     const listIdNum = cfg?.listId != null ? Number(cfg.listId) : NaN;
@@ -65,19 +92,36 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     const senderEmail = process.env.BREVO_SENDER_EMAIL;
     if (!senderEmail) return json({ error: "Missing BREVO_SENDER_EMAIL env" }, 500);
 
-    const created = await createCampaign({
+    // Construir payload saneado para Brevo
+    const payload: any = {
       subject,
       htmlContent: html,
       listId: listIdNum,
       senderName,
       senderEmail,
-    });
+    };
+
+    // Opcionales válidos
+    if (body?.previewText && typeof body.previewText === "string") {
+      payload.previewText = body.previewText.slice(0, 250); // Brevo permite previewText
+    }
+    if (body?.name && typeof body.name === "string") {
+      payload.name = body.name.slice(0, 200);
+    }
+
+    // ✅ Importante: solo incluir attachmentUrl si es https público válido
+    if (isValidPublicUrl(body?.attachmentUrl)) {
+      payload.attachmentUrl = body!.attachmentUrl;
+    }
+
+    // Crear campaña
+    const created = await createCampaign(payload);
 
     // Audit por tenant (reemplaza app_logs global)
     await db.collection(`tenants/${tenantId}/_admin_audit`).add({
       type: "campaign.created",
       provider: "brevo",
-      campaignId: created.id,
+      campaignId: created?.id ?? null,
       subject,
       tenantId,
       at: new Date(),
@@ -89,17 +133,23 @@ export async function POST(req: NextRequest, ctx: Ctx) {
 
     return json({ ok: true, tenantId, campaign: created });
   } catch (e: any) {
+    // Intentar ampliar mensaje de error si viene de Brevo
+    let msg = e?.message || "Create error";
     try {
-      const db = getAdminDB();
+      const asText = e?.response?.text ? await e.response.text() : null;
+      if (asText) msg = `[Brevo] ${msg}: ${asText}`;
+    } catch {}
+    try {
+      const db = adminDbFromGuard ?? getAdminDB();
       await db.collection(`tenants/${tenantId}/_admin_audit`).add({
         type: "campaign.created.error",
         provider: "brevo",
         tenantId,
         at: new Date(),
         by: me?.uid ?? null,
-        error: e?.message ?? String(e),
+        error: msg,
       });
     } catch {}
-    return json({ error: e?.message || "Create error" }, 500);
+    return json({ error: msg }, 500);
   }
 }
