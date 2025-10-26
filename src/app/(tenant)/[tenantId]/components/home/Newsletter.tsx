@@ -4,7 +4,7 @@ import React from 'react';
 import { useTenantId } from '@/lib/tenant/context';
 import { tenantPath } from '@/lib/tenant/paths';
 
-// 🔤 i18n (mismo patrón que tu referencia)
+// 🔤 i18n (mismo patrón que tus páginas admin)
 import { t as translate } from '@/lib/i18n/t';
 import { useTenantSettings } from '@/lib/settings/hooks';
 
@@ -21,68 +21,17 @@ function isValidEmail(e?: string) {
   return !!e && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
 }
 
-function normalizeLang(raw?: string | null): string {
-  const v = (raw || '').toLowerCase();
-  if (!v) return 'en';
-  // soporta es-ES, en-US, pt-BR, fr-FR, etc.
-  const short = v.slice(0, 2);
-  return short;
-}
-
 export default function Newsletter(props: { cfg?: NewsletterCfg }) {
   const cfg = props.cfg || {};
   const tenantId = useTenantId();
 
-  // ===== i18n bootstrap (idéntico a tu referencia + reactivo) =====
+  // ===== i18n: SOLO desde Firestore =====
+  // Doc: tenants/{tenantId}/settings/general.language ∈ {'en', 'es'}
   const { settings } = useTenantSettings();
-
-  // estado de idioma reactivo
-  const [lang, setLang] = React.useState<string>(() =>
-    normalizeLang((settings as any)?.language)
-  );
-
-  // cuando cambie settings.language, actualiza
-  React.useEffect(() => {
-    setLang((prev) => {
-      const next = normalizeLang((settings as any)?.language);
-      return next || prev || 'en';
-    });
+  const lang = React.useMemo<string>(() => {
+    const v = (settings as any)?.language;
+    return typeof v === 'string' && v ? v : 'en';
   }, [settings]);
-
-  // al montar, sobreescribe con localStorage si existe
-  React.useEffect(() => {
-    try {
-      if (typeof window !== 'undefined') {
-        const ls = localStorage.getItem('tenant.language');
-        if (ls) setLang(normalizeLang(ls));
-      }
-    } catch {}
-  }, []);
-
-  // escucha cambios de idioma en vivo:
-  // - storage (otras pestañas)
-  // - evento custom (misma pestaña) → dispatchEvent(new CustomEvent('tenant-language-changed', { detail: 'es' }))
-  React.useEffect(() => {
-    function onStorage(ev: StorageEvent) {
-      if (ev.key === 'tenant.language' && ev.newValue) {
-        setLang(normalizeLang(ev.newValue));
-      }
-    }
-    function onCustom(ev: Event) {
-      try {
-        const detail = (ev as CustomEvent).detail;
-        if (typeof detail === 'string') setLang(normalizeLang(detail));
-      } catch {}
-    }
-
-    window.addEventListener('storage', onStorage);
-    window.addEventListener('tenant-language-changed', onCustom as EventListener);
-
-    return () => {
-      window.removeEventListener('storage', onStorage);
-      window.removeEventListener('tenant-language-changed', onCustom as EventListener);
-    };
-  }, []);
 
   const tt = React.useCallback(
     (key: string, fallback: string, vars?: Record<string, unknown>) => {
@@ -127,7 +76,7 @@ export default function Newsletter(props: { cfg?: NewsletterCfg }) {
       const res = await fetch(apiUrl, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ email, tenantId }), // el server usa el del path
+        body: JSON.stringify({ email, tenantId }), // el server usa el tenantId del path
       });
 
       if (res.ok) {
