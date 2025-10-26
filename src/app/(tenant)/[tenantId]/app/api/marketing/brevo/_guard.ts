@@ -11,26 +11,37 @@ export function json(data: any, status = 200) {
 
 export const db = getAdminDB();
 
+// Roles aceptados por defecto para “admin”
 const DEFAULT_ADMIN_ROLES = ["admin", "owner", "superadmin"] as const;
 
 type RequireAdminOptions = {
-  tenantId?: string;
-  roles?: string[];
+  tenantId?: string;      // el tenant esperado (p.ej. "vale")
+  roles?: string[];       // lista de roles aceptados; por defecto admin/owner/superadmin
 };
 
 type MeUser = {
   uid: string;
   email?: string | null;
-  role?: string | null;
+
+  // Roles desde Firestore (users/{uid})
+  role?: string | null; // global
   tenants?:
     | Record<
         string,
         {
-          role?: string | null;
+          role?: string | null; // por-tenant (modelo antiguo)
           [k: string]: any;
         }
       >
     | null;
+
+  // Claims crudos del token (nuevos)
+  _claims?: {
+    role?: string | null;                    // e.g. "admin"
+    roles?: Record<string, boolean> | null;  // e.g. { admin: true }
+    tenants?: Record<string, { roles?: Record<string, boolean> | null }>;
+  } | null;
+
   [k: string]: any;
 };
 
@@ -54,6 +65,18 @@ function dbg(req: NextRequest) {
   };
 }
 
+/** Util: verifica si un mapa tipo { admin: true, cashier: true } contiene alguno de los roles esperados */
+function hasAnyAcceptedRoleInMap(
+  rolesMap: Record<string, boolean> | null | undefined,
+  accepted: string[]
+): boolean {
+  if (!rolesMap) return false;
+  for (const r of accepted) {
+    if (rolesMap[r] === true) return true;
+  }
+  return false;
+}
+
 async function resolveMeFromToken(req: NextRequest): Promise<MeUser | null> {
   const d = dbg(req);
   try {
@@ -64,6 +87,7 @@ async function resolveMeFromToken(req: NextRequest): Promise<MeUser | null> {
     }
     d.log("token present (len):", token.length);
 
+    // 1) Verificar idToken
     let decoded: any;
     try {
       decoded = await adminAuth.verifyIdToken(token, true);
@@ -73,20 +97,34 @@ async function resolveMeFromToken(req: NextRequest): Promise<MeUser | null> {
       return null;
     }
 
-    const uid = decoded.uid;
+    const uid = decoded.uid as string;
     const email = (decoded.email || "").toLowerCase() || null;
 
-    // Enriquecer con users/{uid}
-    let role: string | null = null;
-    let tenants: MeUser["tenants"] = null;
+    // 2) Claims “a lo rules” (compatibles con tus reglas de seguridad)
+    const claimRole = (decoded as any)?.role ?? null;                    // p.ej. "admin"
+    const claimRoles = ((decoded as any)?.roles ?? null) as Record<string, boolean> | null;
+    const claimTenants = ((decoded as any)?.tenants ?? null) as Record<
+      string,
+      { roles?: Record<string, boolean> | null }
+    > | null;
 
+    // 3) Enriquecer con users/{uid} (opcional; no requerido si usas solo claims)
+    let fsRole: string | null = null;
+    let fsTenants: MeUser["tenants"] = null;
     try {
       const userDoc = await db.doc(`users/${uid}`).get();
       if (userDoc.exists) {
         const data = userDoc.data() as any;
-        role = data?.role ?? null;
-        tenants = data?.tenants && typeof data.tenants === "object" ? data.tenants : null;
-        d.log("users/{uid} doc found:", !!userDoc.exists, "role:", role, "tenants keys:", tenants ? Object.keys(tenants) : null);
+        fsRole = data?.role ?? null;
+        fsTenants = data?.tenants && typeof data.tenants === "object" ? data.tenants : null;
+        d.log(
+          "users/{uid} doc found:",
+          !!userDoc.exists,
+          "role:",
+          fsRole,
+          "tenants keys:",
+          fsTenants ? Object.keys(fsTenants) : null
+        );
       } else {
         d.log("users/{uid} doc not found → using token-only identity");
       }
@@ -94,7 +132,18 @@ async function resolveMeFromToken(req: NextRequest): Promise<MeUser | null> {
       d.error("Firestore users/{uid} read FAILED:", e?.message || e);
     }
 
-    return { uid, email, role, tenants };
+    // 4) Devolvemos objeto identidad con ambas fuentes (Firestore + claims)
+    return {
+      uid,
+      email,
+      role: fsRole ?? null,        // preferimos el FS para “role” global (si existe)
+      tenants: fsTenants ?? null,  // y FS para tenants (si existe)
+      _claims: {
+        role: claimRole ?? null,
+        roles: claimRoles ?? null,
+        tenants: claimTenants ?? undefined,
+      },
+    };
   } catch (e: any) {
     dbg(req).error("resolveMeFromToken UNEXPECTED ERROR:", e?.message || e);
     return null;
@@ -110,26 +159,54 @@ export async function requireAdmin(req: NextRequest, opts: RequireAdminOptions =
     return null;
   }
 
-  const roles = opts.roles ?? Array.from(DEFAULT_ADMIN_ROLES);
+  const accepted = opts.roles ?? Array.from(DEFAULT_ADMIN_ROLES);
   const tId = opts.tenantId;
 
-  d.log("requireAdmin input:", { tenantId: tId, acceptedRoles: roles, meRoleGlobal: me.role });
+  d.log("requireAdmin input:", {
+    tenantId: tId,
+    acceptedRoles: accepted,
+    meRoleGlobal_FS: me.role ?? null,
+    hasFS_tenants: !!me.tenants,
+    hasClaims: !!me._claims,
+  });
 
-  // 1) Rol por tenant
+  // === 1) Autorización por-tenant (Firestore: users/{uid}.tenants[tenantId].role === alguno de accepted)
   if (tId && me.tenants && typeof me.tenants === "object") {
-    const tenantRole = (me.tenants as any)?.[tId]?.role || null;
-    d.log("tenantRole for", tId, "=", tenantRole);
-    if (tenantRole && roles.includes(tenantRole)) {
-      d.log("AUTHORIZED by tenant role");
+    const fsTenantRole = (me.tenants as any)?.[tId]?.role || null;
+    d.log("FS tenantRole for", tId, "=", fsTenantRole);
+    if (fsTenantRole && accepted.includes(fsTenantRole)) {
+      d.log("AUTHORIZED by FS tenant role");
       return me;
     }
-  } else {
-    d.log("no tenantId or me.tenants not present");
   }
 
-  // 2) Rol global
-  if (me.role && roles.includes(me.role)) {
-    d.log("AUTHORIZED by global role");
+  // === 2) Autorización por-tenant via CLAIMS: tenants[tenantId].roles = { admin: true, ... }
+  if (tId && me._claims?.tenants && typeof me._claims.tenants === "object") {
+    const claimsTenantRoles = me._claims.tenants[tId]?.roles ?? null;
+    d.log("Claim tenant roles map for", tId, "=", claimsTenantRoles);
+    if (hasAnyAcceptedRoleInMap(claimsTenantRoles || null, accepted)) {
+      d.log("AUTHORIZED by tenant claim roles map");
+      return me;
+    }
+  }
+
+  // === 3) Rol global (Firestore): users/{uid}.role
+  if (me.role && accepted.includes(me.role)) {
+    d.log("AUTHORIZED by FS global role");
+    return me;
+  }
+
+  // === 4) Rol global via CLAIMS
+  // 4a) claim.role = "admin"
+  const claimRole = me._claims?.role ?? null;
+  if (claimRole && accepted.includes(claimRole)) {
+    d.log("AUTHORIZED by global claim.role");
+    return me;
+  }
+  // 4b) claim.roles = { admin: true }
+  const claimRoles = me._claims?.roles ?? null;
+  if (hasAnyAcceptedRoleInMap(claimRoles || null, accepted)) {
+    d.log("AUTHORIZED by global claim roles map");
     return me;
   }
 
