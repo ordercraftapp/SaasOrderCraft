@@ -29,63 +29,89 @@ async function readTextSafe(res: Response) {
    Utilidades para campañas
 ----------------------------*/
 
-/** Extrae todas las src= de <img ...> del HTML (muy simple y tolerante). */
-function extractImageSrcs(html: string): string[] {
-  if (!html) return [];
-  const srcs: string[] = [];
-  // busca <img ... src="..."> (comillas simples o dobles)
-  const re = /<img\b[^>]*\bsrc\s*=\s*(['"])(.*?)\1/gi;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(html))) {
-    const url = (m[2] || "").trim();
-    if (url) srcs.push(url);
+const SAFE_PIXEL = "https://placehold.co/1x1";
+
+/** Normaliza hosts problemáticos y fuerza https donde aplique. */
+function normalizeUrl(u: string): string {
+  if (!u) return u;
+  let out = u.trim();
+
+  // via.placeholder.com → placehold.co (más estable)
+  out = out.replace(/^https?:\/\/via\.placeholder\.com/gi, "https://placehold.co");
+
+  // Forzar https si venía http (solo dominios normales; no data:, cid:)
+  if (/^http:\/\//i.test(out)) {
+    out = out.replace(/^http:\/\//i, "https://");
   }
-  return srcs;
+
+  return out;
 }
 
-/** Valida si una URL es un asset público https resolvible (heurística; sin check de red). */
-function isLikelyValidAssetUrl(u: string): boolean {
-  try {
-    const url = new URL(u);
-    if (url.protocol !== "https:") return false;
-    const host = url.hostname.toLowerCase();
+/** Limpia el HTML de fuentes que Brevo rechaza cuando valida attachments.
+ *  - Convierte http→https en src, srcset, href y url(...)
+ *  - Reemplaza via.placeholder.com
+ *  - Sustituye data:/cid: por un pixel remoto seguro (placehold.co)
+ */
+function sanitizeHtmlForBrevo(html: string): string {
+  if (!html) return html;
 
-    // Rechazar hostnames locales o internos
-    if (
-      host === "localhost" ||
-      host === "127.0.0.1" ||
-      host.endsWith(".localhost") ||
-      host.endsWith(".local")
-    ) {
-      return false;
+  let out = html;
+
+  // 1) src="..."
+  out = out.replace(
+    /(\bsrc\s*=\s*['"])([^'"]+)(['"])/gi,
+    (_m, p1, url, p3) => {
+      let v = String(url || "").trim();
+      if (/^(data:|cid:)/i.test(v)) return `${p1}${SAFE_PIXEL}${p3}`;
+      v = normalizeUrl(v);
+      return `${p1}${v}${p3}`;
     }
-
-    // Evitar esquemas/hostnames típicos que Brevo no acepta como "attachment"
-    // (si pasan por inlineImageActivation, las valida)
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-/** Si encuentra imágenes problemáticas, devolvemos false (desactivar inlineImageActivation). */
-function shouldInlineImages(html: string): boolean {
-  const imgs = extractImageSrcs(html);
-  if (imgs.length === 0) return true; // no hay imágenes, se puede dejar activado
-  for (const src of imgs) {
-    // data: cid: http: → causan rechazo si Brevo intenta adjuntarlas
-    if (src.startsWith("data:") || src.startsWith("cid:")) return false;
-    if (!isLikelyValidAssetUrl(src)) return false;
-  }
-  return true;
-}
-
-/** Cambia http:// a https:// en src de imágenes si es posible (optimista y seguro). */
-function upgradeImageSrcsToHttps(html: string): string {
-  return html.replace(
-    /(<img\b[^>]*\bsrc\s*=\s*['"])http:\/\//gi,
-    "$1https://"
   );
+
+  // 2) srcset="a 1x, b 2x, ..."
+  out = out.replace(
+    /(\bsrcset\s*=\s*['"])([^'"]+)(['"])/gi,
+    (_m, p1, list, p3) => {
+      const items = String(list || "")
+        .split(",")
+        .map(s => s.trim())
+        .map(entry => {
+          // Cada entry = "<url> [descriptor]"
+          const parts = entry.split(/\s+/);
+          if (parts.length === 0) return entry;
+          let url = parts[0];
+          if (/^(data:|cid:)/i.test(url)) {
+            parts[0] = SAFE_PIXEL;
+          } else {
+            parts[0] = normalizeUrl(url);
+          }
+          return parts.join(" ");
+        });
+      return `${p1}${items.join(", ")}${p3}`;
+    }
+  );
+
+  // 3) href="..." (por si hubiera enlaces http a imágenes o tracking)
+  out = out.replace(
+    /(\bhref\s*=\s*['"])([^'"]+)(['"])/gi,
+    (_m, p1, url, p3) => {
+      const v = normalizeUrl(String(url || "").trim());
+      return `${p1}${v}${p3}`;
+    }
+  );
+
+  // 4) url(...) en estilos inline
+  out = out.replace(
+    /(url\(\s*['"]?)([^'")]+)(['"]?\s*\))/gi,
+    (_m, p1, url, p3) => {
+      let v = String(url || "").trim();
+      if (/^(data:|cid:)/i.test(v)) v = SAFE_PIXEL;
+      v = normalizeUrl(v);
+      return `${p1}${v}${p3}`;
+    }
+  );
+
+  return out;
 }
 
 /** -------------------------
@@ -172,17 +198,13 @@ export async function upsertContacts(
         continue;
       }
 
-      // Éxito:
-      // - 201 Created -> devuelve JSON con { id }
-      // - 204 No Content -> actualizado sin cuerpo
       if (res.status === 201) {
         const jr = await res.json().catch(() => null);
         if (jr && typeof jr.id !== "undefined") created += 1;
-        else updated += 1; // fallback si no vino id por alguna razón
+        else updated += 1;
       } else if (res.status === 204) {
         updated += 1;
       } else {
-        // Otros 2xx (poco comunes aquí): considéralo actualizado
         updated += 1;
       }
     } catch (e: any) {
@@ -207,20 +229,18 @@ export async function createCampaign(args: {
   const senderEmail = args.senderEmail || process.env.BREVO_SENDER_EMAIL;
   if (!senderEmail) throw new Error("[Brevo] Missing env: BREVO_SENDER_EMAIL");
 
-  // 1) Pequeña sanitización: intenta subir http:// → https:// en <img src="...">
-  const upgradedHtml = upgradeImageSrcsToHttps(args.htmlContent);
-
-  // 2) Sólo activamos inlineImageActivation si TODAS las imágenes parecen aptas
-  const inlineOK = shouldInlineImages(upgradedHtml);
+  // Sanitiza HTML para evitar "Invalid attachment url"
+  const cleanedHtml = sanitizeHtmlForBrevo(args.htmlContent);
 
   const body: any = {
     name: args.subject,
     subject: args.subject,
-    htmlContent: upgradedHtml,
+    htmlContent: cleanedHtml,
     sender: { name: senderName, email: senderEmail },
     recipients: { listIds: [args.listId] },
     type: "classic",
-    inlineImageActivation: inlineOK, // 👈 desactiva si hay URLs problemáticas
+    // 🔴 Forzamos off para que Brevo no adjunte/valide URLs de imágenes del HTML.
+    inlineImageActivation: false,
   };
 
   // Limpieza: evita enviar null/undefined
