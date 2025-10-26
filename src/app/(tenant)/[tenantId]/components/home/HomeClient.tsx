@@ -6,14 +6,22 @@ import Hero from "@/app/(tenant)/[tenantId]/components/home/Hero";
 import PromoStrip from "@/app/(tenant)/[tenantId]/components/home/PromoStrip";
 import FeaturedMenu from "@/app/(tenant)/[tenantId]/components/home/FeaturedMenu";
 import Gallery from "@/app/(tenant)/[tenantId]/components/home/Gallery";
-import { useTenantId } from "@/lib/tenant/context"; // ✅ tenant
-import { tenantPath } from '@/lib/tenant/paths';
+import { useTenantId } from "@/lib/tenant/context";
+import { tenantPath } from "@/lib/tenant/paths";
 
 /* 🔹 Firebase client (init) + Firestore */
 import "@/lib/firebase/client";
-import { getFirestore, collection, query, orderBy, limit, getDocs } from "firebase/firestore";
+import {
+  getFirestore,
+  doc,
+  getDoc,
+  collection,
+  query,
+  orderBy,
+  limit,
+  getDocs,
+} from "firebase/firestore";
 
-/** Tipos mínimos para las props que le pasa page.tsx */
 type HeroSlide = {
   imageUrl: string;
   imageAlt?: string;
@@ -22,8 +30,19 @@ type HeroSlide = {
   cta?: { label: string; href: string };
   overlay?: "dark" | "light" | "none";
 };
-type HeroVideo = { url: string; posterUrl?: string; autoplay?: boolean; loop?: boolean; muted?: boolean; blurPx?: number };
-type HeroData = { variant: "image" | "carousel" | "video"; slides?: HeroSlide[]; video?: HeroVideo };
+type HeroVideo = {
+  url: string;
+  posterUrl?: string;
+  autoplay?: boolean;
+  loop?: boolean;
+  muted?: boolean;
+  blurPx?: number;
+};
+type HeroData = {
+  variant: "image" | "carousel" | "video";
+  slides?: HeroSlide[];
+  video?: HeroVideo;
+};
 type Promo = {
   id: string;
   title: string;
@@ -69,18 +88,15 @@ export default function HomeClient({
   const tenantId = useTenantId();
   const withTenant = useMemo(() => {
     return (p: string) => {
-      const norm = p.startsWith('/') ? p : `/${p}`;
+      const norm = p.startsWith("/") ? p : `/${p}`;
       if (!tenantId) return norm;
 
-      // Si ya viene como "/{tenantId}/..." no dupliques
       if (norm === `/${tenantId}` || norm.startsWith(`/${tenantId}/`)) return norm;
-
-      // Construye la ruta correcta (wildcard vs local)
       return tenantPath(tenantId, norm);
     };
   }, [tenantId]);
 
-  /* 🔹 Nombre de marca derivado de tenantOrders */
+  /* 🔹 Nombre de marca */
   const [brandName, setBrandName] = useState<string>("OrderCraft");
   useEffect(() => {
     let cancelled = false;
@@ -88,6 +104,20 @@ export default function HomeClient({
       try {
         if (!tenantId) return;
         const db = getFirestore();
+
+        // 1️⃣ Preferir tenants/{tenantId}.company.name
+        const rootRef = doc(db, "tenants", tenantId);
+        const rootSnap = await getDoc(rootRef);
+        const companyName = rootSnap.exists()
+          ? rootSnap.data()?.company?.name?.toString()?.trim()
+          : "";
+
+        if (!cancelled && companyName) {
+          setBrandName(companyName);
+          return;
+        }
+
+        // 2️⃣ Fallback: tenantOrders
         const colRef = collection(db, "tenants", tenantId, "tenantOrders");
         const q = query(colRef, orderBy("createdAt", "desc"), limit(1));
         const snap = await getDocs(q);
@@ -95,10 +125,12 @@ export default function HomeClient({
         const name = data?.customer?.name?.toString()?.trim();
         if (!cancelled && name) setBrandName(name);
       } catch {
-        // Silencioso: mantenemos fallback
+        // silencioso
       }
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [tenantId]);
 
   // Estado visual del navbar (claro/oscuro) al hacer scroll
@@ -110,12 +142,10 @@ export default function HomeClient({
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
-  // 👇 Control propio del menú móvil (sin Bootstrap JS)
   const [open, setOpen] = useState(false);
   const toggle = () => setOpen((v) => !v);
   const close = () => setOpen(false);
 
-  // Cerrar al cambiar hash o al redimensionar a ≥992px (lg)
   useEffect(() => {
     const onHash = () => close();
     const onResize = () => {
@@ -129,7 +159,7 @@ export default function HomeClient({
     };
   }, []);
 
-  /** Navbar fijo, transparente con fondo borroso (glass) */
+  /** Navbar */
   const Navbar = () => (
     <nav
       className={`navbar navbar-expand-lg fixed-top border-0 ${
@@ -137,12 +167,14 @@ export default function HomeClient({
       }`}
     >
       <div className="container">
-        <a className="navbar-brand fw-semibold" href={withTenant("/")} onClick={close}>
-          {/* 🔹 Reemplazo de texto fijo por brandName */}
+        <a
+          className="navbar-brand fw-semibold"
+          href={withTenant("/")}
+          onClick={close}
+        >
           {brandName}
         </a>
 
-        {/* 👉 Sin data-bs-* ni aria-controls; controlamos con estado */}
         <button
           className="navbar-toggler"
           type="button"
@@ -153,35 +185,79 @@ export default function HomeClient({
           <span className="navbar-toggler-icon" />
         </button>
 
-        {/* En desktop (≥lg) siempre visible; en móvil mostramos si open */}
-        <div className={`navbar-collapse ${open ? "d-block" : "d-none"} d-lg-flex align-items-lg-center`}>
-          <ul className="navbar-nav me-auto mb-2 mb-lg-0" onClick={close}>
-            <li className="nav-item"><a className="nav-link" href="#promos">{t(lang, "nav.promotions")}</a></li>
-            <li className="nav-item"><a className="nav-link" href="#featured">{t(lang, "nav.featured")}</a></li>
-            <li className="nav-item"><a className="nav-link" href="#gallery">{t(lang, "nav.gallery")}</a></li>
-            <li className="nav-item"><a className="nav-link" href="#aboutus">{t(lang, "nav.aboutus")}</a></li>
-            <li className="nav-item"><a className="nav-link" href="#newsletter">Newsletter</a></li>
-            <li className="nav-item"><a className="nav-link" href="#contact">Contact</a></li>
-            <li className="nav-item"><a className="nav-link" href={withTenant("/menu")}>{t(lang, "nav.menu")}</a></li>
+        <div
+          className={`navbar-collapse ${
+            open ? "d-block" : "d-none"
+          } d-lg-flex align-items-lg-center`}
+        >
+          <ul
+            className="navbar-nav me-auto mb-2 mb-lg-0"
+            onClick={close}
+          >
+            <li className="nav-item">
+              <a className="nav-link" href="#promos">
+                {t(lang, "nav.promotions")}
+              </a>
+            </li>
+            <li className="nav-item">
+              <a className="nav-link" href="#featured">
+                {t(lang, "nav.featured")}
+              </a>
+            </li>
+            <li className="nav-item">
+              <a className="nav-link" href="#gallery">
+                {t(lang, "nav.gallery")}
+              </a>
+            </li>
+            <li className="nav-item">
+              <a className="nav-link" href="#aboutus">
+                {t(lang, "nav.aboutus")}
+              </a>
+            </li>
+            <li className="nav-item">
+              <a className="nav-link" href="#newsletter">
+                Newsletter
+              </a>
+            </li>
+            <li className="nav-item">
+              <a className="nav-link" href="#contact">
+                Contact
+              </a>
+            </li>
+            <li className="nav-item">
+              <a className="nav-link" href={withTenant("/menu")}>
+                {t(lang, "nav.menu")}
+              </a>
+            </li>
           </ul>
+
           <div className="d-flex gap-2 pb-3 pb-lg-0">
-            <a className="btn btn-outline-light swap-outline" href={withTenant("/login")} onClick={close}>
+            <a
+              className="btn btn-outline-light swap-outline"
+              href={withTenant("/login")}
+              onClick={close}
+            >
               {t(lang, "nav.login")}
             </a>
-            <a className="btn btn-primary btn-cta" href={withTenant("/account")} onClick={close}>
+            <a
+              className="btn btn-primary btn-cta"
+              href={withTenant("/account")}
+              onClick={close}
+            >
               {t(lang, "nav.signup")}
             </a>
           </div>
         </div>
       </div>
 
-      {/* estilos solo del navbar */}
       <style jsx>{`
-        /* Offset para anclas con navbar fijo */
-        :global(html) { scroll-padding-top: 72px; }
-        .navbar { z-index: 1040; transition: color .2s ease, background-color .2s ease; }
-
-        /* ===== GLASS BACKDROP ===== */
+        :global(html) {
+          scroll-padding-top: 72px;
+        }
+        .navbar {
+          z-index: 1040;
+          transition: color 0.2s ease, background-color 0.2s ease;
+        }
         .nav--light {
           background: rgba(0, 0, 0, 0.24);
           -webkit-backdrop-filter: saturate(140%) blur(10px);
@@ -191,32 +267,17 @@ export default function HomeClient({
           background: rgba(255, 255, 255, 0.75);
           -webkit-backdrop-filter: saturate(140%) blur(10px);
           backdrop-filter: saturate(140%) blur(10px);
-          border-bottom: 1px solid rgba(0,0,0,0.06);
+          border-bottom: 1px solid rgba(0, 0, 0, 0.06);
         }
-
-        /* Colores de texto/links en cada estado */
         .nav--light :global(.navbar-brand),
         .nav--light :global(.nav-link) {
           color: #fff !important;
-          text-shadow: 0 1px 2px rgba(0,0,0,0.35);
+          text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
         }
-        .nav--light :global(.navbar-toggler) { border-color: rgba(255, 255, 255, 0.55); }
-
         .nav--dark :global(.navbar-brand),
         .nav--dark :global(.nav-link) {
           color: #212529 !important;
-          text-shadow: none;
         }
-        .nav--dark :global(.navbar-toggler) { border-color: rgba(0, 0, 0, 0.25); }
-
-        /* Botón outline adaptativo sin cambiar clases */
-        .nav--light :global(.swap-outline) { color:#fff; border-color: rgba(255,255,255,0.7); }
-        .nav--light :global(.swap-outline:hover) { background: rgba(255,255,255,0.12); }
-        .nav--dark :global(.swap-outline) { color:#212529; border-color: rgba(33,37,41,0.6); }
-        .nav--dark :global(.swap-outline:hover) { background: rgba(33,37,41,0.06); }
-
-        /* CTA con sombra para contraste */
-        :global(.btn-cta) { box-shadow: 0 6px 16px rgba(0,0,0,0.18); }
       `}</style>
     </nav>
   );
@@ -224,63 +285,28 @@ export default function HomeClient({
   return (
     <>
       <Navbar />
-
       <main>
         <Hero data={heroData} lang={lang} />
-
         {promos?.length > 0 && (
-          <section id="promos" aria-labelledby="promos-heading" className="py-5 border-top">
+          <section id="promos" className="py-5 border-top">
             <div className="container">
-              <div className="d-flex align-items-center justify-content-between mb-3">
-                <h2 id="promos-heading" className="h4 m-0">{t(lang, "home.promos.title")}</h2>
-                <span className="badge bg-danger-subtle text-danger border rounded-pill px-3 py-2">
-                  {t(lang, "home.promos.hot")}
-                </span>
-              </div>
+              <h2 className="h4 mb-3">{t(lang, "home.promos.title")}</h2>
               <PromoStrip promos={promos} lang={lang} />
             </div>
           </section>
         )}
-
-        <section id="featured" aria-labelledby="featured-heading" className="py-5 border-top">
+        <section id="featured" className="py-5 border-top">
           <div className="container">
-            <div className="d-flex flex-column flex-md-row align-items-md-center justify-content-md-between gap-2 mb-3">
-              <h2 id="featured-heading" className="h4 m-0">
-                {featuredTitle || t(lang, "home.featured.title")}
-              </h2>
-              {featuredCategories?.length > 0 && (
-                <nav aria-label={t(lang, "home.featured.navAria")}>
-                  <ul className="nav flex-wrap">
-                    {featuredCategories.map((c) => {
-                      const href = withTenant(`/menu?cat=${encodeURIComponent(c.id)}`);
-                      return (
-                        <li key={c.id} className="nav-item">
-                          <a
-                            className="nav-link px-3 py-1 rounded-pill bg-light border me-2 mb-2"
-                            href={href}
-                            onClick={close}
-                          >
-                            {c.name}
-                          </a>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                </nav>
-              )}
-            </div>
-
+            <h2 className="h4 mb-3">
+              {featuredTitle || t(lang, "home.featured.title")}
+            </h2>
             <FeaturedMenu items={featuredItems} lang={lang} />
           </div>
         </section>
-
         {galleryImages?.length > 0 && (
-          <section id="gallery" aria-labelledby="gallery-heading" className="py-5 border-top">
+          <section id="gallery" className="py-5 border-top">
             <div className="container">
-              <div className="d-flex align-items-center justify-content-between mb-3">
-                <h2 id="gallery-heading" className="h4 m-0">{t(lang, "home.gallery.title")}</h2>
-                <span className="text-muted small">{t(lang, "home.gallery.subtitle")}</span>
-              </div>
+              <h2 className="h4 mb-3">{t(lang, "home.gallery.title")}</h2>
               <Gallery images={galleryImages} />
             </div>
           </section>
