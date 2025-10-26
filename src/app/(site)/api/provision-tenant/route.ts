@@ -146,6 +146,20 @@ export async function POST(req: NextRequest) {
         );
       }
 
+      // 🟩 NUEVO: asegurar system_flags/marketing con el límite mensual según planTier
+      const maxByPlan = planTier === 'pro' ? 10 : planTier === 'full' ? 20 : 5;
+      trx.set(
+        adminDb.doc(`tenants/${tenantId}/system_flags/marketing`),
+        {
+          tenantId,
+          maxCampaignsPerMonth: maxByPlan,
+          updatedAt: now,
+          // createdAt: solo si no existía; merge:true no lo pisa si ya estaba
+          createdAt: now,
+        },
+        { merge: true },
+      );
+
       // Borrar reserva
       trx.delete(rRef);
     });

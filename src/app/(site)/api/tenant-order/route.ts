@@ -161,6 +161,7 @@ export async function POST(req: NextRequest) {
           // ----- Bootstrap defensivo en idempotencia -----
           try {
             const now = Timestamp.now();
+            const maxByPlan = plan === 'pro' ? 10 : plan === 'full' ? 20 : 5;
             await Promise.all([
               adminDb.doc(`tenants/${desired}/paymentProfile/default`).set(
                 {
@@ -178,6 +179,16 @@ export async function POST(req: NextRequest) {
                   currency: 'USD',
                   currencyLocale: 'en-US',
                   language: 'en',
+                },
+                { merge: true },
+              ),
+              // 🟩 NUEVO: sembrar/asegurar system_flags/marketing con límite mensual
+              adminDb.doc(`tenants/${desired}/system_flags/marketing`).set(
+                {
+                  tenantId: desired,
+                  maxCampaignsPerMonth: maxByPlan,
+                  updatedAt: now,
+                  createdAt: now,
                 },
                 { merge: true },
               ),
@@ -329,6 +340,19 @@ export async function POST(req: NextRequest) {
           currency: 'USD',
           currencyLocale: 'en-US',
           language: 'en',
+        },
+        { merge: true },
+      );
+
+      // 🟩 NUEVO: sembrar system_flags/marketing con el límite mensual según plan
+      const maxByPlan = plan === 'pro' ? 10 : plan === 'full' ? 20 : 5;
+      trx.set(
+        adminDb.doc(`tenants/${desired}/system_flags/marketing`),
+        {
+          tenantId: desired,
+          maxCampaignsPerMonth: maxByPlan,
+          createdAt: now,
+          updatedAt: now,
         },
         { merge: true },
       );
