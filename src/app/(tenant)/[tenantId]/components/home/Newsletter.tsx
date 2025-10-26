@@ -1,8 +1,12 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useTenantId } from '@/lib/tenant/context';
 import { tenantPath } from '@/lib/tenant/paths';
+
+// 🔤 i18n (mismo patrón que delivery-options/kitchen)
+import { t as translate } from '@/lib/i18n/t';
+import { useTenantSettings } from '@/lib/settings/hooks';
 
 type NewsletterCfg = {
   title?: string;
@@ -13,15 +17,37 @@ type NewsletterCfg = {
   errorMsg?: string;
 };
 
+function isValidEmail(e?: string) {
+  return !!e && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
+}
+
 export default function Newsletter(props: { cfg?: NewsletterCfg }) {
-  const c = props.cfg || {};
+  const cfg = props.cfg || {};
+  const tenantId = useTenantId();
+
+  // ===== i18n bootstrap (idéntico a tu referencia) =====
+  const { settings } = useTenantSettings();
+  const lang = useMemo(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        const ls = localStorage.getItem('tenant.language');
+        if (ls) return ls;
+      }
+    } catch {}
+    return (settings as any)?.language;
+  }, [settings]);
+
+  const tt = (key: string, fallback: string, vars?: Record<string, unknown>) => {
+    const s = translate(lang, key, vars);
+    return s === key ? fallback : s;
+  };
+
+  // ===== UI state =====
   const [email, setEmail] = useState('');
   const [hp, setHp] = useState(''); // honeypot
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
-
-  const tenantId = useTenantId();
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -30,15 +56,14 @@ export default function Newsletter(props: { cfg?: NewsletterCfg }) {
     setMsg(null);
     setErr(null);
 
-    const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-    if (!emailOk) {
-      setErr(c.errorMsg || 'Please enter a valid email');
+    if (!isValidEmail(email)) {
+      setErr(tt('newsletter.errors.invalidEmail', 'Please enter a valid email'));
       return;
     }
 
-    // Honeypot → éxito silencioso
+    // Honeypot ⇒ éxito silencioso
     if (hp.trim() !== '') {
-      setMsg(c.successMsg || 'Thanks!');
+      setMsg(cfg.successMsg ?? tt('newsletter.success', 'Thanks! Check your inbox.'));
       setEmail('');
       return;
     }
@@ -52,24 +77,28 @@ export default function Newsletter(props: { cfg?: NewsletterCfg }) {
       const res = await fetch(apiUrl, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ email, tenantId }), // enviar tenantId no hace daño (servidor usa el del path)
+        body: JSON.stringify({ email, tenantId }), // body incluye tenantId pero el server usa el del path
       });
 
       if (res.ok) {
-        setMsg(c.successMsg || 'Thanks! Check your inbox.');
+        setMsg(cfg.successMsg ?? tt('newsletter.success', 'Thanks! Check your inbox.'));
         setEmail('');
       } else {
-        const { error } = await res.json().catch(() => ({ error: 'unknown' }));
-        if (error === 'list_not_configured') {
-          setErr('Newsletter not ready yet. Please try again later.');
-        } else if (error === 'invalid_email') {
-          setErr(c.errorMsg || 'Please enter a valid email');
+        let code: string | undefined;
+        try {
+          const data = await res.json();
+          code = data?.error;
+        } catch {}
+        if (code === 'invalid_email') {
+          setErr(tt('newsletter.errors.invalidEmail', cfg.errorMsg ?? 'Please enter a valid email'));
+        } else if (code === 'list_not_configured') {
+          setErr(tt('newsletter.errors.listNotConfigured', cfg.errorMsg ?? 'Newsletter is not ready yet.'));
         } else {
-          setErr(c.errorMsg || 'Sorry, something went wrong. Try again.');
+          setErr(cfg.errorMsg ?? tt('newsletter.errors.generic', 'Sorry, something went wrong. Try again.'));
         }
       }
     } catch {
-      setErr(c.errorMsg || 'Sorry, something went wrong. Try again.');
+      setErr(cfg.errorMsg ?? tt('newsletter.errors.generic', 'Sorry, something went wrong. Try again.'));
     } finally {
       setLoading(false);
     }
@@ -83,12 +112,24 @@ export default function Newsletter(props: { cfg?: NewsletterCfg }) {
     >
       <div className="container">
         <div className="mx-auto" style={{ maxWidth: 720 }}>
-          <div className="card shadow-lg border-0 rounded-4" style={{ backdropFilter: 'blur(6px)', background: 'rgba(255,255,255,0.7)' }}>
+          <div
+            className="card shadow-lg border-0 rounded-4"
+            style={{ backdropFilter: 'blur(6px)', background: 'rgba(255,255,255,0.7)' }}
+          >
             <div className="card-body p-4 p-lg-5">
-              <h2 className="display-6 mb-2">{c.title || 'Join our newsletter'}</h2>
-              <p className="lead text-muted mb-4">{c.text || 'News, promos & seasonal dishes — no spam.'}</p>
+              <h2 className="display-6 mb-2">
+                {cfg.title ?? tt('newsletter.title', 'Join our newsletter')}
+              </h2>
+              <p className="lead text-muted mb-4">
+                {cfg.text ?? tt('newsletter.text', 'News, promos & seasonal dishes — no spam.')}
+              </p>
 
-              <form onSubmit={onSubmit} className="d-flex gap-2 flex-column flex-lg-row" aria-live="polite" aria-busy={loading}>
+              <form
+                onSubmit={onSubmit}
+                className="d-flex gap-2 flex-column flex-lg-row"
+                aria-live="polite"
+                aria-busy={loading}
+              >
                 {/* honeypot */}
                 <input
                   type="text"
@@ -99,19 +140,22 @@ export default function Newsletter(props: { cfg?: NewsletterCfg }) {
                   style={{ position: 'absolute', left: '-9999px', opacity: 0, height: 0, width: 0 }}
                   aria-hidden="true"
                 />
+
                 <label className="visually-hidden" htmlFor="nl-email">Email</label>
                 <input
                   id="nl-email"
                   type="email"
                   className="form-control form-control-lg"
-                  placeholder={c.placeholderEmail || 'Your email'}
+                  placeholder={cfg.placeholderEmail ?? tt('newsletter.placeholderEmail', 'Your email')}
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   required
                   disabled={loading}
                 />
                 <button className="btn btn-dark btn-lg" disabled={loading}>
-                  {loading ? 'Subscribing…' : (c.buttonLabel || 'Subscribe')}
+                  {loading
+                    ? tt('newsletter.loading', 'Subscribing…')
+                    : (cfg.buttonLabel ?? tt('newsletter.button', 'Subscribe'))}
                 </button>
               </form>
 

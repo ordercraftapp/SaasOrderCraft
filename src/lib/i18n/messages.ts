@@ -54,6 +54,17 @@ export const MESSAGES: Record<string, Record<string, string>> = {
     "home.about.title": "Sobre nosotros",
     "home.about.badge": "Desde 20XX",
 
+    // ===== Newsletter ====
+    "newsletter.title": "Únete a nuestro boletín",
+    "newsletter.text": "Novedades, promociones y platillos de temporada — sin spam.",
+    "newsletter.placeholderEmail": "Tu correo",
+    "newsletter.button": "Suscribirme",
+    "newsletter.loading": "Suscribiendo…",
+    "newsletter.success": "¡Gracias! Revisa tu bandeja de entrada.",
+    "newsletter.errors.invalidEmail": "Por favor ingresa un correo válido",
+    "newsletter.errors.listNotConfigured": "El boletín aún no está listo para este restaurante. Inténtalo más tarde.",
+    "newsletter.errors.generic": "Lo sentimos, ocurrió un error. Inténtalo de nuevo.",
+
     // ====== HOME HERO / PROMOS / FEATURED / GALLERY ======
     "home.hero.videoAria": "Video destacado",
     "home.hero.carouselAria": "Carrusel principal",
@@ -1948,6 +1959,18 @@ export const MESSAGES: Record<string, Record<string, string>> = {
     "nav.signup": "Sign up",
     "nav.logout": "Logout",
     "nav.aboutus": "About Us",
+
+    // === Newsletter ===
+
+    "newsletter.title": "Join our newsletter",
+    "newsletter.text": "News, promos & seasonal dishes — no spam.",
+    "newsletter.placeholderEmail": "Your email",
+    "newsletter.button": "Subscribe",
+    "newsletter.loading": "Subscribing…",
+    "newsletter.success": "Thanks! Check your inbox.",
+    "newsletter.errors.invalidEmail": "Please enter a valid email",
+    "newsletter.errors.listNotConfigured": "The newsletter is not ready for this restaurant yet. Please try again later.",
+    "newsletter.errors.generic": "Sorry, something went wrong. Try again.",
 
     // ====== HOME (basic) ======
     "home.welcome": "Welcome!",
