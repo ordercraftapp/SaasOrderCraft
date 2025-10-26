@@ -1,3 +1,4 @@
+// src/app/(tenant)/[tenant]/app/api/marketing/brevo/campaigns/route.ts
 export const runtime = "nodejs";
 
 import { NextRequest } from "next/server";
@@ -33,10 +34,13 @@ function isValidPublicUrl(u?: string) {
   }
 }
 
-/** GET /campaigns?limit=20&offset=0[&filterByTenant=1]
- *  Retrocompatible: por defecto devuelve el JSON tal cual de Brevo.
- *  Si agregas filterByTenant=1, filtra por nombre que comience con [tenantId].
- */
+/** Devuelve la fecha de inicio del mes UTC actual (ej. 2025-10-01T00:00:00.000Z) */
+function monthStartUtc(): Date {
+  const now = new Date();
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1, 0, 0, 0, 0));
+}
+
+/** GET /campaigns?limit=20&offset=0 */
 export async function GET(req: NextRequest, ctx: Ctx) {
   const tenantId = requireTenantId(
     resolveTenantFromRequest(req, ctx.params),
@@ -50,36 +54,16 @@ export async function GET(req: NextRequest, ctx: Ctx) {
     const sp = new URL(req.url).searchParams;
     const limit = Number(sp.get("limit") ?? 20);
     const offset = Number(sp.get("offset") ?? 0);
-    const filterByTenant = sp.get("filterByTenant") === "1";
 
     const data = await listCampaigns(limit, offset);
-
-    if (!filterByTenant) {
-      // 🔁 Comportamiento previo intacto
-      return json({ ok: true, tenantId, ...data });
-    }
-
-    // 🔎 Modo opcional: filtra por prefijo de nombre [tenantId]
-    const campaigns = Array.isArray((data as any)?.campaigns)
-      ? (data as any).campaigns.filter(
-          (c: any) => String(c?.name || "").startsWith(`[${tenantId}]`)
-        )
-      : [];
-
-    return json({ ok: true, tenantId, campaigns, raw: data });
+    return json({ ok: true, tenantId, ...data });
   } catch (e: any) {
     return json({ error: e?.message || "List error" }, 500);
   }
 }
 
 /** POST /campaigns  { subject, html, [attachmentUrl], [previewText], [name] }
- *  Retrocompatible:
- *    - Mantiene subject/html obligatorios
- *    - Mantiene previewText, name (si lo envías, se respeta), attachmentUrl validado
- *  Mejoras tenant-safe:
- *    - Usa senderName/senderEmail del tenant si están en system_flags/marketing
- *    - Si NO envías "name", se arma uno con prefijo: namePrefixed = `[tenantId] ${subject}`
- *    - Registra doc local en tenants/{tenantId}/marketing_campaigns/{id}
+ *  + Límite mensual por tenant (por defecto 5; override opcional en system_flags/marketing.maxCampaignsPerMonth)
  */
 export async function POST(req: NextRequest, ctx: Ctx) {
   const tenantId = requireTenantId(
@@ -89,6 +73,9 @@ export async function POST(req: NextRequest, ctx: Ctx) {
 
   const me = await requireAdmin(req, { tenantId });
   if (!me) return json({ error: "Forbidden" }, 403);
+
+  // Admin SDK (puedes usar adminDbFromGuard o getAdminDB indistintamente)
+  const db = adminDbFromGuard ?? getAdminDB();
 
   try {
     const body = (await req.json().catch(() => ({}))) as {
@@ -104,14 +91,12 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     if (!subject || !html) return json({ error: "Missing subject/html" }, 400);
 
     // Config por tenant (antes era app_config/marketing global)
-    // Puedes usar adminDbFromGuard o getAdminDB indistintamente (Admin SDK)
-    const db = adminDbFromGuard ?? getAdminDB();
     const cfgSnap = await db.doc(`tenants/${tenantId}/system_flags/marketing`).get();
     const cfg = (cfgSnap.exists ? cfgSnap.data() : null) as {
       listId?: number | string;
+      maxCampaignsPerMonth?: number;
       senderName?: string;
       senderEmail?: string;
-      // futuro: flags como { prefixNames?: boolean }
     } | null;
 
     const listIdNum = cfg?.listId != null ? Number(cfg.listId) : NaN;
@@ -119,33 +104,58 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       return json({ error: "Missing marketing listId. Run setup first." }, 400);
     }
 
-    // Remitente: primero tenant, luego env (retrocompat)
     const senderName = cfg?.senderName || process.env.BREVO_SENDER_NAME || "OrderCraft";
     const senderEmail = cfg?.senderEmail || process.env.BREVO_SENDER_EMAIL;
     if (!senderEmail) return json({ error: "Missing BREVO_SENDER_EMAIL env" }, 500);
 
-    // Retrocompat: si envías name en el body, se respeta.
-    // Si no, creamos uno con prefijo (no tocamos subject para no romper tu UI/entregabilidad)
-    const nameRaw = typeof body?.name === "string" && body.name.trim() ? body.name.trim() : subject;
-    const namePrefixed = `[${tenantId}] ${nameRaw}`;
+    // ─────────────────────────────────────────────────────────────
+    // LÍMITE MENSUAL (mínimo invasivo)
+    // ─────────────────────────────────────────────────────────────
+    const monthStart = monthStartUtc();
+    const maxPerMonth = (cfg?.maxCampaignsPerMonth && Number(cfg.maxCampaignsPerMonth)) || 5;
+
+    // Contar campañas del mes actual en la colección local
+    // Estructura esperada: tenants/{tenantId}/marketing_campaigns/{campaignId} con createdAt: Date
+    const agg = db
+      .collection(`tenants/${tenantId}/marketing_campaigns`)
+      .where("createdAt", ">=", monthStart)
+      .count();
+
+    const aggSnap = await agg.get();
+    const monthlyCount = aggSnap.data().count || 0;
+
+    if (monthlyCount >= maxPerMonth) {
+      // 409 Conflict para indicar que no es un error del servidor sino un límite de negocio
+      return json(
+        {
+          error: "Monthly campaign limit reached",
+          details: {
+            tenantId,
+            monthStart: monthStart.toISOString(),
+            used: monthlyCount,
+            limit: maxPerMonth,
+          },
+        },
+        409
+      );
+    }
+    // ─────────────────────────────────────────────────────────────
 
     // Construir payload saneado para Brevo
-    // ⚠️ tu createCampaign actual acepta objeto "amplio" (retrocompat con tu versión que soporta previewText/attachmentUrl)
     const payload: any = {
-      // subject/ htmlContent obligatorios
       subject,
       htmlContent: html,
       listId: listIdNum,
       senderName,
       senderEmail,
-
-      // name: si viene en body se respeta, si no usamos el prefijado
-      name: typeof body?.name === "string" && body.name.trim() ? body.name.trim() : namePrefixed,
     };
 
     // Opcionales válidos
     if (body?.previewText && typeof body.previewText === "string") {
       payload.previewText = body.previewText.slice(0, 250);
+    }
+    if (body?.name && typeof body.name === "string") {
+      payload.name = body.name.slice(0, 200);
     }
 
     // ✅ Importante: solo incluir attachmentUrl si es https público válido
@@ -156,46 +166,48 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     // Crear campaña en Brevo
     const created = await createCampaign(payload);
 
-    // Registro local por tenant (no rompe nada existente; solo agrega tracking)
+    // Registrar localmente la campaña (para listados y futuros conteos)
     try {
-      const docRef = db.doc(`tenants/${tenantId}/marketing_campaigns/${created?.id ?? "unknown"}`);
+      const docRef = db.doc(`tenants/${tenantId}/marketing_campaigns/${created?.id ?? String(Date.now())}`);
       await docRef.set(
         {
           id: created?.id ?? null,
-          subject,             // sujeto real (sin prefijo)
-          name: payload.name,  // el name que se envió a Brevo
-          namePrefixed,        // útil si BODY no traía name (documentamos cuál prefijamos)
+          tenantId,
+          subject,
+          name: payload.name ?? created?.name ?? subject,
           listId: listIdNum,
           senderName,
           senderEmail,
           brevo: {
             status: created?.status ?? null,
-            name: created?.name ?? payload.name,
             internal: created || null,
           },
-          tenantId,
-          createdAt: new Date(),
+          createdAt: new Date(), // usado por el conteo mensual
           createdBy: me.uid ?? null,
           createdByEmail: (me as any)?.email ?? null,
           updatedAt: new Date(),
         },
         { merge: true }
       );
-    } catch {}
+    } catch {
+      // no bloquear por error de registro local
+    }
 
-    // Audit por tenant (reemplaza app_logs global)
-    await db.collection(`tenants/${tenantId}/_admin_audit`).add({
-      type: "campaign.created",
-      provider: "brevo",
-      campaignId: created?.id ?? null,
-      subject,
-      tenantId,
-      at: new Date(),
-      by: me.uid,
-      actorEmail: (me as any)?.email ?? null,
-      origin: "api",
-      path: "marketing/brevo/campaigns",
-    });
+    // Audit por tenant
+    try {
+      await db.collection(`tenants/${tenantId}/_admin_audit`).add({
+        type: "campaign.created",
+        provider: "brevo",
+        campaignId: created?.id ?? null,
+        subject,
+        tenantId,
+        at: new Date(),
+        by: me.uid,
+        actorEmail: (me as any)?.email ?? null,
+        origin: "api",
+        path: "marketing/brevo/campaigns",
+      });
+    } catch {}
 
     return json({ ok: true, tenantId, campaign: created });
   } catch (e: any) {
