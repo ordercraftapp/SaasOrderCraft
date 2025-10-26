@@ -32,7 +32,7 @@ export default function AuthNavbar() {
       <div className="container">
         <Link className="navbar-brand d-flex align-items-center gap-2" href={withTenant("/app")}> 
           <Image src={logoSrc} alt="Logo" width={28} height={28} />
-          <span className="fw-semibold">OrderCraft</span>
+          <span className="fw-semibold">Craft</span>
         </Link>
 
         <button
