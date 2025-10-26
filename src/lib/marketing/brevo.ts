@@ -1,4 +1,3 @@
-// src/lib/marketing/brevo.ts
 import "server-only";
 
 const API_ROOT = "https://api.brevo.com/v3";
@@ -239,7 +238,7 @@ export async function createCampaign(args: {
     sender: { name: senderName, email: senderEmail },
     recipients: { listIds: [args.listId] },
     type: "classic",
-    // 🔴 Forzamos off para que Brevo no adjunte/valide URLs de imágenes del HTML.
+    // Evita que Brevo adjunte/valide URLs de imágenes del HTML.
     inlineImageActivation: false,
   };
 

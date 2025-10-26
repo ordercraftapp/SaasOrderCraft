@@ -1,4 +1,3 @@
-// src/app/(tenant)/[tenant]/app/api/marketing/brevo/setup/route.ts
 export const runtime = "nodejs";
 
 import { NextRequest } from "next/server";
@@ -28,16 +27,23 @@ export async function POST(req: NextRequest, ctx: Ctx) {
   if (!me) return json({ error: "Forbidden" }, 403);
 
   try {
-    // 2) Crear/asegurar carpeta y lista en Brevo
-    const conf = await ensureFolderAndList(); // { folderId, listId, ... }
+    // 2) Crear/asegurar carpeta y lista en Brevo — scopiadas por tenant
+    //    Nombres con prefijo por tenant para evitar colisiones y mezclar datos.
+    const folderName = `OC:${tenantId}`;
+    const listName = `OC:${tenantId}:Customers`;
+
+    const conf = await ensureFolderAndList({ folderName, listName }); // { folderId, listId, folderName, listName }
 
     // 3) Guardar config scopiada al tenant
     const db = getAdminDB();
     await db.doc(`tenants/${tenantId}/system_flags/marketing`).set(
       {
         provider: "brevo",
-        ...conf,
-        tenantId,              // siempre incluir tenantId en el documento
+        ...conf,              // folderId, listId, folderName, listName
+        tenantId,             // siempre incluir tenantId en el documento
+        // (opcional) Defaults del remitente a nivel tenant (puedes editarlos luego)
+        senderName: process.env.BREVO_SENDER_NAME || "OrderCraft",
+        senderEmail: process.env.BREVO_SENDER_EMAIL || null,
         updatedAt: new Date(),
         updatedBy: me.uid ?? null,
         updatedByEmail: me.email ?? null,
