@@ -111,20 +111,37 @@ function AdminMarketingPage_Inner() {
 
   const hasAuth = !!idToken && !loading;
 
-  async function call(path: string, opts?: RequestInit) {
-    if (!idToken) throw new Error(tt('admin.marketing.err.missingToken', 'Missing idToken'));
-    const res = await fetch(path, {
-      ...opts,
-      headers: {
-        ...(opts?.headers || {}),
-        Authorization: `Bearer ${idToken}`,
-        'content-type': 'application/json',
-      },
-    });
-    const jr = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(jr?.error || tt('admin.marketing.err.request', 'Request error'));
-    return jr;
-  }
+async function call(path: string, opts?: RequestInit) {
+  if (!idToken) throw new Error(tt('admin.marketing.err.missingToken', 'Missing idToken'));
+
+  // prefer opts values but provide sensible defaults
+  const method = (opts && (opts.method as string)) || 'POST';
+  const extraHeaders = (opts && (opts.headers as any)) || {};
+  const rawBody = opts && (opts as any).body;
+
+  // if body is already a string use it, otherwise JSON.stringify non-empty objects
+  const body =
+    rawBody === undefined || rawBody === null
+      ? undefined
+      : typeof rawBody === 'string'
+      ? rawBody
+      : JSON.stringify(rawBody);
+
+  const res = await fetch(path, {
+    method,
+    headers: {
+      Authorization: `Bearer ${idToken}`,
+      'content-type': 'application/json',
+      'x-debug-auth': '1', // <— SOLO para debug
+      ...extraHeaders,
+    },
+    body,
+  });
+
+  const jr = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(jr?.error || tt('admin.marketing.err.request', 'Request error'));
+  return jr;
+}
 
   // ====== Setup/Sync/Campaigns (TENANT API)
   async function onSetup() {

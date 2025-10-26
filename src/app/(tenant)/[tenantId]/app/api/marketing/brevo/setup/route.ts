@@ -4,7 +4,7 @@ export const runtime = "nodejs";
 import { NextRequest } from "next/server";
 
 // ✅ helpers del guard local
-import { json, requireAdmin } from "../_guard";
+import { json, requireAdmin, forbiddenDebug } from "../_guard";
 
 // ✅ tenancy helpers
 import { resolveTenantFromRequest, requireTenantId } from "@/lib/tenant/server";
@@ -24,8 +24,15 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     resolveTenantFromRequest(req, ctx.params),
     "api:marketing/brevo/setup:POST"
   );
+  // Log visible en server
+  if (req.headers.get("x-debug-auth") === "1") {
+    console.log("[SETUP] tenantId:", tenantId);
+  }
   const me = await requireAdmin(req, { tenantId });
-  if (!me) return json({ error: "Forbidden" }, 403);
+  if (!me) {
+    // 403 con motivo cuando x-debug-auth=1
+    return forbiddenDebug(req, { route: "setup", tenantId });
+  }
 
   try {
     // 2) Crear/asegurar carpeta y lista en Brevo
