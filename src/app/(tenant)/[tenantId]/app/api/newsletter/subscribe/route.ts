@@ -1,25 +1,28 @@
-// src/app/(tenant)/[tenant]/app/api/newsletter/subscribe/route.ts
 export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
 import { getAdminDB } from "@/lib/firebase/admin";
 import { resolveTenantFromRequest, requireTenantId } from "@/lib/tenant/server";
 
+type Ctx = { params: { tenant: string } };
+
 function isValidEmail(e?: string) {
   return !!e && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
 }
 
-// 📁 carpeta es [tenant] → params.tenant
-type Ctx = { params: { tenant: string } };
+function json(d: unknown, s = 200) {
+  return NextResponse.json(d, { status: s });
+}
 
 export async function POST(req: NextRequest, ctx: Ctx) {
   try {
-    const { email } = await req.json().catch(() => ({} as any));
+    const { email } = (await req.json().catch(() => ({}))) as { email?: string };
+
     if (!isValidEmail(email)) {
-      return NextResponse.json({ ok: false, error: "invalid_email" }, { status: 400 });
+      return json({ ok: false, error: "invalid_email" }, 400);
     }
 
-    // 🔐 tenant
+    // 🔐 tenant resuelto del path/host (el body puede traerlo pero no se confía en él)
     const tenantId = requireTenantId(
       resolveTenantFromRequest(req, ctx.params),
       "api:newsletter/subscribe:POST"
@@ -27,77 +30,90 @@ export async function POST(req: NextRequest, ctx: Ctx) {
 
     const apiKey = process.env.BREVO_API_KEY;
     if (!apiKey) {
-      return NextResponse.json({ ok: false, error: "missing_api_key" }, { status: 500 });
+      return json({ ok: false, error: "missing_api_key" }, 500);
     }
 
-    // 🧩 listId: primero intenta config del tenant; si no, usa env fallback (compat)
-    let listId: number | null = null;
-    try {
-      const db = getAdminDB();
-      const cfgSnap = await db.doc(`tenants/${tenantId}/system_flags/marketing`).get();
-      const cfg = (cfgSnap.exists ? cfgSnap.data() : null) as { listId?: number | string; newsletterListId?: number | string } | null;
-      const candidate = cfg?.newsletterListId ?? cfg?.listId;
-      if (candidate != null && String(candidate).match(/^\d+$/)) {
-        listId = Number(candidate);
-      } else if (process.env.BREVO_NEWSLETTER_LIST_ID && /^\d+$/.test(process.env.BREVO_NEWSLETTER_LIST_ID)) {
-        listId = Number(process.env.BREVO_NEWSLETTER_LIST_ID);
-      }
-    } catch {
-      // si falla leer config, todavía podemos intentar con env
-      if (process.env.BREVO_NEWSLETTER_LIST_ID && /^\d+$/.test(process.env.BREVO_NEWSLETTER_LIST_ID)) {
-        listId = Number(process.env.BREVO_NEWSLETTER_LIST_ID);
-      }
+    const db = getAdminDB();
+
+    // 🔧 Config única de marketing (fuente de verdad)
+    const cfgSnap = await db.doc(`tenants/${tenantId}/system_flags/marketing`).get();
+    const cfg = (cfgSnap.exists ? cfgSnap.data() : null) as
+      | { listId?: number | string; folderId?: number | string }
+      | null;
+
+    const listIdRaw = cfg?.listId;
+    const listId =
+      typeof listIdRaw === "number"
+        ? listIdRaw
+        : typeof listIdRaw === "string" && /^\d+$/.test(listIdRaw)
+        ? Number(listIdRaw)
+        : null;
+
+    if (!listId) {
+      // ⚠️ La lista no está configurada: el setup debe crearla y guardar listId
+      return json({ ok: false, error: "list_not_configured" }, 503);
     }
 
-    // 📤 Payload a Brevo
-    const payload: Record<string, any> = {
+    // 📤 Brevo — upsert contacto en la lista del tenant
+    const payload = {
       email,
-      updateEnabled: true, // evita conflicto si ya existe
+      updateEnabled: true,
+      listIds: [listId],
       attributes: {
-        TENANT: tenantId,
+        TENANT_ID: tenantId,
         SOURCE: "newsletter_subscribe",
         SUBSCRIBED_AT: new Date().toISOString(),
       },
     };
-    if (typeof listId === "number") {
-      payload.listIds = [listId];
-    }
 
-    // Brevo: https://api.brevo.com/v3/contacts
     const r = await fetch("https://api.brevo.com/v3/contacts", {
       method: "POST",
       headers: {
         "api-key": apiKey,
-        "content-type": "application/json",
         accept: "application/json",
+        "content-type": "application/json",
       },
       body: JSON.stringify(payload),
     });
 
-    if (r.ok) {
-      // 🧾 auditoría best-effort
-      (async () => {
-        try {
-          const db = getAdminDB();
-          await db.collection(`tenants/${tenantId}/_admin_audit`).add({
-            type: "newsletter.subscribe",
-            provider: "brevo",
-            tenantId,
-            email,
-            listId: listId ?? null,
-            at: new Date(),
-            origin: "api",
-            path: "newsletter/subscribe",
-          });
-        } catch {}
-      })();
-
-      return NextResponse.json({ ok: true, tenantId });
-    } else {
-      const txt = await r.text().catch(() => "");
-      return NextResponse.json({ ok: false, error: "brevo_error", detail: txt }, { status: 502 });
+    if (!r.ok) {
+      const detail = await r.text().catch(() => "");
+      return json({ ok: false, error: "brevo_error", detail }, 502);
     }
-  } catch {
-    return NextResponse.json({ ok: false, error: "unexpected" }, { status: 500 });
+
+    // 🧾 Persistencia local (idempotente)
+    const emailLower = String(email).toLowerCase();
+    await db
+      .doc(`tenants/${tenantId}/newsletter_signups/${emailLower}`)
+      .set(
+        {
+          email: emailLower,
+          tenantId,
+          source: "newsletter_subscribe",
+          provider: "brevo",
+          listId,
+          updatedAt: new Date(),
+          createdAt: new Date(),
+        },
+        { merge: true }
+      );
+
+    // 🔍 Auditoría best-effort (no bloqueante)
+    db.collection(`tenants/${tenantId}/_admin_audit`)
+      .add({
+        type: "newsletter.subscribe",
+        provider: "brevo",
+        tenantId,
+        email: emailLower,
+        listId,
+        at: new Date(),
+        origin: "api",
+        path: "newsletter/subscribe",
+      })
+      .catch(() => {});
+
+    return json({ ok: true, tenantId }, 200);
+  } catch (e: any) {
+    return json({ ok: false, error: "unexpected", detail: String(e?.message || e) }, 500);
   }
 }

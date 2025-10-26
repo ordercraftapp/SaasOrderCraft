@@ -1,11 +1,8 @@
-
-// src/app/(tenant)/[tenantId]/components/Newsletter.tsx
 'use client';
 
 import React, { useState } from 'react';
-import { useTenantId } from '@/lib/tenant/context'; // ✅ tenant
+import { useTenantId } from '@/lib/tenant/context';
 import { tenantPath } from '@/lib/tenant/paths';
-
 
 type NewsletterCfg = {
   title?: string;
@@ -14,7 +11,6 @@ type NewsletterCfg = {
   buttonLabel?: string;
   successMsg?: string;
   errorMsg?: string;
-  // imageUrl?: string;
 };
 
 export default function Newsletter(props: { cfg?: NewsletterCfg }) {
@@ -25,35 +21,52 @@ export default function Newsletter(props: { cfg?: NewsletterCfg }) {
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
-  const tenantId = useTenantId(); // ✅
+  const tenantId = useTenantId();
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setMsg(null); setErr(null);
+    if (loading) return;
+
+    setMsg(null);
+    setErr(null);
 
     const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
-    if (!emailOk) { setErr('Please enter a valid email'); return; }
-    if (hp.trim() !== '') { setMsg(c.successMsg || 'Thanks!'); setEmail(''); return; } // bot
+    if (!emailOk) {
+      setErr(c.errorMsg || 'Please enter a valid email');
+      return;
+    }
+
+    // Honeypot → éxito silencioso
+    if (hp.trim() !== '') {
+      setMsg(c.successMsg || 'Thanks!');
+      setEmail('');
+      return;
+    }
 
     setLoading(true);
     try {
-      // ✅ tenant-aware API path (fallback a global si aún no hay tenant)
       const apiUrl = tenantId
-  ? tenantPath(tenantId, '/app/api/newsletter/subscribe')
-  : '/api/newsletter/subscribe';
-
+        ? tenantPath(tenantId, '/app/api/newsletter/subscribe')
+        : '/api/newsletter/subscribe';
 
       const res = await fetch(apiUrl, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        // ✅ incluye tenantId en el payload
-        body: JSON.stringify({ email, tenantId }),
+        body: JSON.stringify({ email, tenantId }), // enviar tenantId no hace daño (servidor usa el del path)
       });
+
       if (res.ok) {
         setMsg(c.successMsg || 'Thanks! Check your inbox.');
         setEmail('');
       } else {
-        setErr(c.errorMsg || 'Sorry, something went wrong. Try again.');
+        const { error } = await res.json().catch(() => ({ error: 'unknown' }));
+        if (error === 'list_not_configured') {
+          setErr('Newsletter not ready yet. Please try again later.');
+        } else if (error === 'invalid_email') {
+          setErr(c.errorMsg || 'Please enter a valid email');
+        } else {
+          setErr(c.errorMsg || 'Sorry, something went wrong. Try again.');
+        }
       }
     } catch {
       setErr(c.errorMsg || 'Sorry, something went wrong. Try again.');
@@ -63,9 +76,11 @@ export default function Newsletter(props: { cfg?: NewsletterCfg }) {
   }
 
   return (
-    <section id="newsletter" className="py-5 position-relative" style={{
-      background: 'radial-gradient(1200px 400px at 50% -50%, rgba(255,255,255,0.3), transparent 60%)'
-    }}>
+    <section
+      id="newsletter"
+      className="py-5 position-relative"
+      style={{ background: 'radial-gradient(1200px 400px at 50% -50%, rgba(255,255,255,0.3), transparent 60%)' }}
+    >
       <div className="container">
         <div className="mx-auto" style={{ maxWidth: 720 }}>
           <div className="card shadow-lg border-0 rounded-4" style={{ backdropFilter: 'blur(6px)', background: 'rgba(255,255,255,0.7)' }}>
@@ -73,7 +88,7 @@ export default function Newsletter(props: { cfg?: NewsletterCfg }) {
               <h2 className="display-6 mb-2">{c.title || 'Join our newsletter'}</h2>
               <p className="lead text-muted mb-4">{c.text || 'News, promos & seasonal dishes — no spam.'}</p>
 
-              <form onSubmit={onSubmit} className="d-flex gap-2 flex-column flex-lg-row" aria-live="polite">
+              <form onSubmit={onSubmit} className="d-flex gap-2 flex-column flex-lg-row" aria-live="polite" aria-busy={loading}>
                 {/* honeypot */}
                 <input
                   type="text"
@@ -93,6 +108,7 @@ export default function Newsletter(props: { cfg?: NewsletterCfg }) {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   required
+                  disabled={loading}
                 />
                 <button className="btn btn-dark btn-lg" disabled={loading}>
                   {loading ? 'Subscribing…' : (c.buttonLabel || 'Subscribe')}
