@@ -1,10 +1,10 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
+import React from 'react';
 import { useTenantId } from '@/lib/tenant/context';
 import { tenantPath } from '@/lib/tenant/paths';
 
-// 🔤 i18n (mismo patrón que delivery-options/kitchen)
+// 🔤 i18n (mismo patrón que tu referencia)
 import { t as translate } from '@/lib/i18n/t';
 import { useTenantSettings } from '@/lib/settings/hooks';
 
@@ -21,33 +21,83 @@ function isValidEmail(e?: string) {
   return !!e && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
 }
 
+function normalizeLang(raw?: string | null): string {
+  const v = (raw || '').toLowerCase();
+  if (!v) return 'en';
+  // soporta es-ES, en-US, pt-BR, fr-FR, etc.
+  const short = v.slice(0, 2);
+  return short;
+}
+
 export default function Newsletter(props: { cfg?: NewsletterCfg }) {
   const cfg = props.cfg || {};
   const tenantId = useTenantId();
 
-  // ===== i18n bootstrap (idéntico a tu referencia) =====
+  // ===== i18n bootstrap (idéntico a tu referencia + reactivo) =====
   const { settings } = useTenantSettings();
-  const lang = useMemo(() => {
+
+  // estado de idioma reactivo
+  const [lang, setLang] = React.useState<string>(() =>
+    normalizeLang((settings as any)?.language)
+  );
+
+  // cuando cambie settings.language, actualiza
+  React.useEffect(() => {
+    setLang((prev) => {
+      const next = normalizeLang((settings as any)?.language);
+      return next || prev || 'en';
+    });
+  }, [settings]);
+
+  // al montar, sobreescribe con localStorage si existe
+  React.useEffect(() => {
     try {
       if (typeof window !== 'undefined') {
         const ls = localStorage.getItem('tenant.language');
-        if (ls) return ls;
+        if (ls) setLang(normalizeLang(ls));
       }
     } catch {}
-    return (settings as any)?.language;
-  }, [settings]);
+  }, []);
 
-  const tt = (key: string, fallback: string, vars?: Record<string, unknown>) => {
-    const s = translate(lang, key, vars);
-    return s === key ? fallback : s;
-  };
+  // escucha cambios de idioma en vivo:
+  // - storage (otras pestañas)
+  // - evento custom (misma pestaña) → dispatchEvent(new CustomEvent('tenant-language-changed', { detail: 'es' }))
+  React.useEffect(() => {
+    function onStorage(ev: StorageEvent) {
+      if (ev.key === 'tenant.language' && ev.newValue) {
+        setLang(normalizeLang(ev.newValue));
+      }
+    }
+    function onCustom(ev: Event) {
+      try {
+        const detail = (ev as CustomEvent).detail;
+        if (typeof detail === 'string') setLang(normalizeLang(detail));
+      } catch {}
+    }
+
+    window.addEventListener('storage', onStorage);
+    window.addEventListener('tenant-language-changed', onCustom as EventListener);
+
+    return () => {
+      window.removeEventListener('storage', onStorage);
+      window.removeEventListener('tenant-language-changed', onCustom as EventListener);
+    };
+  }, []);
+
+  const tt = React.useCallback(
+    (key: string, fallback: string, vars?: Record<string, unknown>) => {
+      const s = translate(lang, key, vars);
+      return s === key ? fallback : s;
+    },
+    [lang]
+  );
 
   // ===== UI state =====
-  const [email, setEmail] = useState('');
-  const [hp, setHp] = useState(''); // honeypot
-  const [loading, setLoading] = useState(false);
-  const [msg, setMsg] = useState<string | null>(null);
-  const [err, setErr] = useState<string | null>(null);
+  const [email, setEmail] = React.useState('');
+  const [hp, setHp] = React.useState(''); // honeypot
+  const [loading, setLoading] = React.useState(false);
+  const [msg, setMsg] = React.useState<string | null>(null);
+  const [err, setErr] = React.useState<string | null>(null);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -77,7 +127,7 @@ export default function Newsletter(props: { cfg?: NewsletterCfg }) {
       const res = await fetch(apiUrl, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ email, tenantId }), // body incluye tenantId pero el server usa el del path
+        body: JSON.stringify({ email, tenantId }), // el server usa el del path
       });
 
       if (res.ok) {
