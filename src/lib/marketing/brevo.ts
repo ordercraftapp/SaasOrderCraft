@@ -25,6 +25,69 @@ async function readTextSafe(res: Response) {
   }
 }
 
+/* ---------------------------
+   Utilidades para campañas
+----------------------------*/
+
+/** Extrae todas las src= de <img ...> del HTML (muy simple y tolerante). */
+function extractImageSrcs(html: string): string[] {
+  if (!html) return [];
+  const srcs: string[] = [];
+  // busca <img ... src="..."> (comillas simples o dobles)
+  const re = /<img\b[^>]*\bsrc\s*=\s*(['"])(.*?)\1/gi;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(html))) {
+    const url = (m[2] || "").trim();
+    if (url) srcs.push(url);
+  }
+  return srcs;
+}
+
+/** Valida si una URL es un asset público https resolvible (heurística; sin check de red). */
+function isLikelyValidAssetUrl(u: string): boolean {
+  try {
+    const url = new URL(u);
+    if (url.protocol !== "https:") return false;
+    const host = url.hostname.toLowerCase();
+
+    // Rechazar hostnames locales o internos
+    if (
+      host === "localhost" ||
+      host === "127.0.0.1" ||
+      host.endsWith(".localhost") ||
+      host.endsWith(".local")
+    ) {
+      return false;
+    }
+
+    // Evitar esquemas/hostnames típicos que Brevo no acepta como "attachment"
+    // (si pasan por inlineImageActivation, las valida)
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Si encuentra imágenes problemáticas, devolvemos false (desactivar inlineImageActivation). */
+function shouldInlineImages(html: string): boolean {
+  const imgs = extractImageSrcs(html);
+  if (imgs.length === 0) return true; // no hay imágenes, se puede dejar activado
+  for (const src of imgs) {
+    // data: cid: http: → causan rechazo si Brevo intenta adjuntarlas
+    if (src.startsWith("data:") || src.startsWith("cid:")) return false;
+    if (!isLikelyValidAssetUrl(src)) return false;
+  }
+  return true;
+}
+
+/** Cambia http:// a https:// en src de imágenes si es posible (optimista y seguro). */
+function upgradeImageSrcsToHttps(html: string): string {
+  return html.replace(
+    /(<img\b[^>]*\bsrc\s*=\s*['"])http:\/\//gi,
+    "$1https://"
+  );
+}
+
 /** -------------------------
  *  Carpetas y Listas (Setup)
  *  ------------------------*/
@@ -144,22 +207,38 @@ export async function createCampaign(args: {
   const senderEmail = args.senderEmail || process.env.BREVO_SENDER_EMAIL;
   if (!senderEmail) throw new Error("[Brevo] Missing env: BREVO_SENDER_EMAIL");
 
-  const body = {
+  // 1) Pequeña sanitización: intenta subir http:// → https:// en <img src="...">
+  const upgradedHtml = upgradeImageSrcsToHttps(args.htmlContent);
+
+  // 2) Sólo activamos inlineImageActivation si TODAS las imágenes parecen aptas
+  const inlineOK = shouldInlineImages(upgradedHtml);
+
+  const body: any = {
     name: args.subject,
     subject: args.subject,
-    htmlContent: args.htmlContent,
+    htmlContent: upgradedHtml,
     sender: { name: senderName, email: senderEmail },
     recipients: { listIds: [args.listId] },
     type: "classic",
-    inlineImageActivation: true,
+    inlineImageActivation: inlineOK, // 👈 desactiva si hay URLs problemáticas
   };
+
+  // Limpieza: evita enviar null/undefined
+  for (const k of Object.keys(body)) {
+    if (body[k] === undefined || body[k] === null) delete body[k];
+  }
 
   const res = await fetch(`${API_ROOT}/emailCampaigns`, {
     method: "POST",
     headers: headers(),
     body: JSON.stringify(body),
   });
-  if (!res.ok) throw new Error(`[Brevo] createCampaign failed: ${res.status} ${await readTextSafe(res)}`);
+
+  if (!res.ok) {
+    const txt = await readTextSafe(res);
+    throw new Error(`[Brevo] createCampaign failed: ${res.status} ${txt}`);
+  }
+
   return await res.json();
 }
 
