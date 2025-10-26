@@ -355,7 +355,7 @@ async function call(path: string, opts?: RequestInit) {
       html: `
 <section style="font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;max-width:640px;margin:0 auto;padding:24px">
   <header style="text-align:center;padding:8px 0">
-    <img src="https://via.placeholder.com/140x40?text=Your+Logo" alt="Your brand" style="max-width:140px;height:auto"/>
+    <img src="https://placehold.co/140x40?text=Your+Logo" alt="Your brand" ... />
   </header>
   <h1 style="margin:16px 0 8px">Burgers, ribs & comfort food you’ll never forget</h1>
   <p style="margin:0 0 16px;color:#555">This weekend only. Show this email at checkout or order online.</p>
@@ -371,7 +371,7 @@ async function call(path: string, opts?: RequestInit) {
 <section style="font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;max-width:640px;margin:0 auto;padding:24px">
   <h2 style="margin:0 0 8px">New arrival: Smoky BBQ Ribs</h2>
   <p style="margin:0 0 16px;color:#555">Slow-cooked, fall-off-the-bone delicious. Limited launch pricing this week.</p>
-  <img src="https://via.placeholder.com/640x280?text=BBQ+Ribs" alt="Smoky BBQ Ribs" style="width:100%;height:auto;border-radius:10px"/>
+  <img src="https://placehold.co/140x40?text=Your+Logo" alt="Your brand" ... />
   <p style="margin:16px 0">
     <a href="https://example.com/menu" class="btn" style="display:inline-block;padding:12px 18px;border-radius:8px;text-decoration:none;background:#198754;color:#fff;font-weight:600">Try it today</a>
   </p>
