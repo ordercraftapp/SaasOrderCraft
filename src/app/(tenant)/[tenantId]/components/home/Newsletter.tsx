@@ -4,7 +4,7 @@ import React from 'react';
 import { useTenantId } from '@/lib/tenant/context';
 import { tenantPath } from '@/lib/tenant/paths';
 
-// 🔤 i18n (mismo patrón que tus páginas admin)
+// 🔤 i18n
 import { t as translate } from '@/lib/i18n/t';
 import { useTenantSettings } from '@/lib/settings/hooks';
 
@@ -25,23 +25,22 @@ export default function Newsletter(props: { cfg?: NewsletterCfg }) {
   const cfg = props.cfg || {};
   const tenantId = useTenantId();
 
-  // ===== i18n: SOLO desde Firestore =====
-  // Doc: tenants/{tenantId}/settings/general.language ∈ {'en', 'es'}
+  // 1) Leer SOLO de DB. Soporta ambas formas: settings.language o settings.general.language
   const { settings } = useTenantSettings();
-  const lang = React.useMemo<string>(() => {
-    const v = (settings as any)?.language;
-    return typeof v === 'string' && v ? v : 'en';
-  }, [settings]);
+  const rawLang =
+    (settings as any)?.language ??
+    (settings as any)?.general?.language ??
+    undefined; // si es undefined, t() cae a "es" por tu getLang
 
+  // helper: pasa el idioma crudo en cada render (sin memo) — así reacciona inmediato
   const tt = React.useCallback(
     (key: string, fallback: string, vars?: Record<string, unknown>) => {
-      const s = translate(lang, key, vars);
+      const s = translate(rawLang, key, vars);
       return s === key ? fallback : s;
     },
-    [lang]
+    [rawLang]
   );
 
-  // ===== UI state =====
   const [email, setEmail] = React.useState('');
   const [hp, setHp] = React.useState(''); // honeypot
   const [loading, setLoading] = React.useState(false);
@@ -76,7 +75,7 @@ export default function Newsletter(props: { cfg?: NewsletterCfg }) {
       const res = await fetch(apiUrl, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ email, tenantId }), // el server usa el tenantId del path
+        body: JSON.stringify({ email, tenantId }), // el server usa el del path
       });
 
       if (res.ok) {
