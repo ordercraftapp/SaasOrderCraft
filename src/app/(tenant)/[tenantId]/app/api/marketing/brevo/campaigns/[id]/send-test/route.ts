@@ -5,82 +5,63 @@ import { NextRequest } from "next/server";
 import { json, requireAdmin } from "../../../_guard";
 import { resolveTenantFromRequest, requireTenantId } from "@/lib/tenant/server";
 import { getAdminDB } from "@/lib/firebase/admin";
-import { sendCampaignTest, upsertContacts } from "@/lib/marketing/brevo";
+import { sendCampaignTest } from "@/lib/marketing/brevo";
 
-// Carpeta es [tenant] → el tipo refleja 'tenant'
 type Ctx = { params: { tenant: string; id: string } };
 
 export async function POST(req: NextRequest, ctx: Ctx) {
   const tenantId = requireTenantId(
     resolveTenantFromRequest(req, ctx.params),
-    "api:marketing/brevo/campaigns/[id]/send-test"
+    "api:marketing/brevo/campaigns/:id/send-test:POST"
   );
 
-  const me = await requireAdmin(req);
+  // ✅ acepta admin/owner/superadmin y también rol "marketing"
+  const me = await requireAdmin(req, { tenantId, roles: ["admin", "owner", "superadmin", "marketing"] });
   if (!me) return json({ error: "Forbidden" }, 403);
 
+  const idNum = Number(ctx.params.id);
+  if (!Number.isFinite(idNum)) return json({ error: "Invalid campaign id" }, 400);
+
+  const body = await req.json().catch(() => ({} as any));
+  let emailTo: string[] = Array.isArray(body?.emailTo) ? body.emailTo : [];
+  emailTo = emailTo.map((e) => String(e || "").trim()).filter(Boolean);
+  if (emailTo.length === 0) return json({ error: "Missing emailTo[]" }, 400);
+
   try {
-    const id = Number(ctx.params.id);
-    const body = await req.json().catch(() => ({} as any));
+    await sendCampaignTest(idNum, emailTo);
 
-    let emails: string[] = Array.isArray(body?.emailTo)
-      ? body.emailTo
-      : body?.email
-      ? [body.email]
-      : [];
+    // Audit
+    try {
+      const db = getAdminDB();
+      await db.collection(`tenants/${tenantId}/_admin_audit`).add({
+        type: "campaign.sendTest",
+        provider: "brevo",
+        tenantId,
+        at: new Date(),
+        by: me.uid,
+        actorEmail: me.email ?? null,
+        campaignId: idNum,
+        emailTo,
+        origin: "api",
+        path: "marketing/brevo/campaigns/:id/send-test",
+      });
+    } catch {}
 
-    emails = emails
-      .filter((e: unknown): e is string => typeof e === "string")
-      .map((e) => e.trim().toLowerCase())
-      .filter((e) => e.includes("@"));
-
-    if (!emails.length) return json({ error: "Missing emailTo" }, 400);
-
-    const adminDb = getAdminDB();
-    const cfgSnap = await adminDb.doc(`tenants/${tenantId}/system_flags/marketing`).get();
-    const cfg = (cfgSnap.exists ? cfgSnap.data() : null) as { listId?: number | string } | null;
-    const listIdNum = cfg?.listId != null ? Number(cfg.listId) : NaN;
-    if (!Number.isFinite(listIdNum)) {
-      return json({ error: "Missing marketing listId. Run setup first." }, 400);
-    }
-
-    const up = await upsertContacts(
-      emails.map((email) => ({ email })),
-      listIdNum
-    );
-    if (up?.failed?.length) {
-      const detail = up.failed.map((f: any) => `${f.email}: ${f.error}`).join(", ");
-      return json({ error: `No se pudieron preparar estos contactos: ${detail}` }, 400);
-    }
-
-    await sendCampaignTest(id, emails);
-
-    await adminDb.collection(`tenants/${tenantId}/_admin_audit`).add({
-      type: "campaign.sendTest",
-      provider: "brevo",
-      campaignId: id,
-      emails,
-      tenantId,
-      at: new Date(),
-      by: me.uid,
-      actorEmail: me.email ?? null,
-      origin: "api",
-      path: "marketing/brevo/campaigns/[id]/send-test",
-    });
-
-    return json({ ok: true, tenantId, campaignId: id, emails });
+    return json({ ok: true, tenantId, id: idNum, emailTo });
   } catch (e: any) {
     try {
-      const adminDb = getAdminDB();
-      await adminDb.collection(`tenants/${tenantId}/_admin_audit`).add({
+      const db = getAdminDB();
+      await db.collection(`tenants/${tenantId}/_admin_audit`).add({
         type: "campaign.sendTest.error",
         provider: "brevo",
         tenantId,
         at: new Date(),
-        by: null,
+        by: me?.uid ?? null,
+        campaignId: idNum,
+        emailTo,
         error: e?.message ?? String(e),
       });
     } catch {}
-    return json({ error: e?.message || "SendTest error" }, 400);
+    return json({ error: e?.message || "Send test error" }, 500);
   }
 }
