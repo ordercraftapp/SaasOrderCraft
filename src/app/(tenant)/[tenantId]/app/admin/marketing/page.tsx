@@ -73,7 +73,13 @@ function AdminMarketingPage_Inner() {
   const [includeAllCustomers, setIncludeAllCustomers] = useState(false);
 
   // ====== NUEVO: Tabs principales (Compose | Campaigns | Contacts)
-  const [mainTab, setMainTab] = useState<'compose' | 'campaigns' | 'contacts'>('compose');
+  const [mainTab, setMainTab] = useState<'compose' | 'campaigns' | 'contacts' | 'settings'>('compose');
+
+  // ====== Settings (per-tenant sender)
+  const [senderName, setSenderName] = useState('');
+  const [senderEmail, setSenderEmail] = useState('');
+  const [settingsBusy, setSettingsBusy] = useState(false);
+  const [settingsMsg, setSettingsMsg] = useState<string | null>(null);
 
   // ====== Content Assistant / Editor
   const [showAssist, setShowAssist] = useState(true);
@@ -277,6 +283,37 @@ async function call(path: string, opts?: RequestInit) {
       setBusy(false);
     }
   }
+
+    async function loadMarketingSettings() {
+    setSettingsBusy(true);
+    setSettingsMsg(null);
+    try {
+      const r = await call(`${apiBase}/marketing/brevo/settings`, { method: 'GET' });
+      setSenderName(r?.senderName || '');
+      setSenderEmail(r?.senderEmail || '');
+    } catch (e: any) {
+      setSettingsMsg(e?.message || 'Cannot load settings');
+    } finally {
+      setSettingsBusy(false);
+    }
+  }
+
+  async function saveMarketingSettings() {
+    setSettingsBusy(true);
+    setSettingsMsg(null);
+    try {
+      await call(`${apiBase}/marketing/brevo/settings`, {
+        method: 'PUT',
+        body: JSON.stringify({ senderName, senderEmail }),
+      });
+      setSettingsMsg('Saved!');
+    } catch (e: any) {
+      setSettingsMsg(e?.message || 'Save failed');
+    } finally {
+      setSettingsBusy(false);
+    }
+  }
+
   async function onSendTest(id: number) {
     if (!testEmail) {
       alert(tt('admin.marketing.alert.enterTestEmail', 'Enter email for test.'));
@@ -308,6 +345,14 @@ async function call(path: string, opts?: RequestInit) {
     if (hasAuth) refreshCampaigns();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasAuth, apiBase]);
+
+  useEffect(() => {
+    if (hasAuth && mainTab === 'settings') {
+      loadMarketingSettings();
+  }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasAuth, mainTab, apiBase]);
+
 
   // ====== Utilidades de content (sanitizado/editor)
   const spammyWords = useMemo(
@@ -758,6 +803,14 @@ async function call(path: string, opts?: RequestInit) {
                   onClick={() => setMainTab('contacts')}
                 >
                   {tt('admin.marketing.tabs.contacts', 'Contacts')}
+                </button>
+              </li>
+              <li className="nav-item">
+                <button
+                  className={`nav-link ${mainTab === 'settings' ? 'active' : ''}`}
+                  onClick={() => setMainTab('settings')}
+                >
+                  {tt('admin.marketing.tabs.settings', 'Settings')}
                 </button>
               </li>
             </ul>
@@ -1555,6 +1608,75 @@ async function call(path: string, opts?: RequestInit) {
                 </div>
               </div>
             )}
+                      {/* === Tab: Settings === */}
+          {mainTab === 'settings' && (
+            <div className="card">
+              <div className="card-header">
+                {tt('admin.marketing.settings.title', 'Sender settings (per tenant)')}
+              </div>
+              <div className="card-body">
+                <div className="row g-3">
+                  <div className="col-12 col-md-6">
+                    <label className="form-label">
+                      {tt('admin.marketing.settings.senderName', 'Sender name')}
+                    </label>
+                    <input
+                      className="form-control"
+                      value={senderName}
+                      onChange={(e) => setSenderName(e.target.value)}
+                      placeholder="Ej. La Parrilla — Promos"
+                      disabled={settingsBusy}
+                    />
+                    <div className="form-text">
+                      {tt('admin.marketing.settings.senderNameHint', 'Shown as the From name in inbox')}
+                    </div>
+                  </div>
+                  <div className="col-12 col-md-6">
+                    <label className="form-label">
+                      {tt('admin.marketing.settings.senderEmail', 'Sender email')}
+                    </label>
+                    <input
+                      className="form-control"
+                      value={senderEmail}
+                      onChange={(e) => setSenderEmail(e.target.value)}
+                      placeholder="marketing@tu-dominio.com"
+                      disabled={settingsBusy}
+                    />
+                    <div className="form-text">
+                      {tt('admin.marketing.settings.senderEmailHint', 'Must be a verified sender in Brevo')}
+                    </div>
+                   </div>
+                </div>
+
+                <div className="d-flex gap-2 mt-3">
+                  <button
+                    className="btn btn-primary"
+                    onClick={saveMarketingSettings}
+                    disabled={!hasAuth || settingsBusy}
+                  >
+                    {settingsBusy
+                      ? tt('admin.marketing.settings.saving', 'Saving…')
+                      : tt('admin.marketing.settings.saveBtn', 'Save')}
+                  </button>
+                  {settingsMsg && (
+                    <span className="small ms-2">
+                      {settingsMsg}
+                    </span>
+                  )}
+                </div>
+
+                <hr className="my-3" />
+                <div className="alert alert-light border small">
+                  <strong>{tt('admin.marketing.settings.note', 'Note')}:</strong>{' '}
+                  {tt(
+                    'admin.marketing.settings.noteText',
+                    'If set here, campaigns will prefer these values over the global env vars (BREVO_SENDER_NAME/BREVO_SENDER_EMAIL).'
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
 
             {/* Modal contacto */}
             {selectedContact && (
