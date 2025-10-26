@@ -33,7 +33,10 @@ function isValidPublicUrl(u?: string) {
   }
 }
 
-/** GET /campaigns?limit=20&offset=0 */
+/** GET /campaigns?limit=20&offset=0[&filterByTenant=1]
+ *  Retrocompatible: por defecto devuelve el JSON tal cual de Brevo.
+ *  Si agregas filterByTenant=1, filtra por nombre que comience con [tenantId].
+ */
 export async function GET(req: NextRequest, ctx: Ctx) {
   const tenantId = requireTenantId(
     resolveTenantFromRequest(req, ctx.params),
@@ -47,15 +50,37 @@ export async function GET(req: NextRequest, ctx: Ctx) {
     const sp = new URL(req.url).searchParams;
     const limit = Number(sp.get("limit") ?? 20);
     const offset = Number(sp.get("offset") ?? 0);
+    const filterByTenant = sp.get("filterByTenant") === "1";
 
     const data = await listCampaigns(limit, offset);
-    return json({ ok: true, tenantId, ...data });
+
+    if (!filterByTenant) {
+      // 🔁 Comportamiento previo intacto
+      return json({ ok: true, tenantId, ...data });
+    }
+
+    // 🔎 Modo opcional: filtra por prefijo de nombre [tenantId]
+    const campaigns = Array.isArray((data as any)?.campaigns)
+      ? (data as any).campaigns.filter(
+          (c: any) => String(c?.name || "").startsWith(`[${tenantId}]`)
+        )
+      : [];
+
+    return json({ ok: true, tenantId, campaigns, raw: data });
   } catch (e: any) {
     return json({ error: e?.message || "List error" }, 500);
   }
 }
 
-/** POST /campaigns  { subject, html, [attachmentUrl], [previewText], [name] } */
+/** POST /campaigns  { subject, html, [attachmentUrl], [previewText], [name] }
+ *  Retrocompatible:
+ *    - Mantiene subject/html obligatorios
+ *    - Mantiene previewText, name (si lo envías, se respeta), attachmentUrl validado
+ *  Mejoras tenant-safe:
+ *    - Usa senderName/senderEmail del tenant si están en system_flags/marketing
+ *    - Si NO envías "name", se arma uno con prefijo: namePrefixed = `[tenantId] ${subject}`
+ *    - Registra doc local en tenants/{tenantId}/marketing_campaigns/{id}
+ */
 export async function POST(req: NextRequest, ctx: Ctx) {
   const tenantId = requireTenantId(
     resolveTenantFromRequest(req, ctx.params),
@@ -82,31 +107,45 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     // Puedes usar adminDbFromGuard o getAdminDB indistintamente (Admin SDK)
     const db = adminDbFromGuard ?? getAdminDB();
     const cfgSnap = await db.doc(`tenants/${tenantId}/system_flags/marketing`).get();
-    const cfg = (cfgSnap.exists ? cfgSnap.data() : null) as { listId?: number | string } | null;
+    const cfg = (cfgSnap.exists ? cfgSnap.data() : null) as {
+      listId?: number | string;
+      senderName?: string;
+      senderEmail?: string;
+      // futuro: flags como { prefixNames?: boolean }
+    } | null;
+
     const listIdNum = cfg?.listId != null ? Number(cfg.listId) : NaN;
     if (!Number.isFinite(listIdNum)) {
       return json({ error: "Missing marketing listId. Run setup first." }, 400);
     }
 
-    const senderName = process.env.BREVO_SENDER_NAME || "OrderCraft";
-    const senderEmail = process.env.BREVO_SENDER_EMAIL;
+    // Remitente: primero tenant, luego env (retrocompat)
+    const senderName = cfg?.senderName || process.env.BREVO_SENDER_NAME || "OrderCraft";
+    const senderEmail = cfg?.senderEmail || process.env.BREVO_SENDER_EMAIL;
     if (!senderEmail) return json({ error: "Missing BREVO_SENDER_EMAIL env" }, 500);
 
+    // Retrocompat: si envías name en el body, se respeta.
+    // Si no, creamos uno con prefijo (no tocamos subject para no romper tu UI/entregabilidad)
+    const nameRaw = typeof body?.name === "string" && body.name.trim() ? body.name.trim() : subject;
+    const namePrefixed = `[${tenantId}] ${nameRaw}`;
+
     // Construir payload saneado para Brevo
+    // ⚠️ tu createCampaign actual acepta objeto "amplio" (retrocompat con tu versión que soporta previewText/attachmentUrl)
     const payload: any = {
+      // subject/ htmlContent obligatorios
       subject,
       htmlContent: html,
       listId: listIdNum,
       senderName,
       senderEmail,
+
+      // name: si viene en body se respeta, si no usamos el prefijado
+      name: typeof body?.name === "string" && body.name.trim() ? body.name.trim() : namePrefixed,
     };
 
     // Opcionales válidos
     if (body?.previewText && typeof body.previewText === "string") {
-      payload.previewText = body.previewText.slice(0, 250); // Brevo permite previewText
-    }
-    if (body?.name && typeof body.name === "string") {
-      payload.name = body.name.slice(0, 200);
+      payload.previewText = body.previewText.slice(0, 250);
     }
 
     // ✅ Importante: solo incluir attachmentUrl si es https público válido
@@ -114,8 +153,35 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       payload.attachmentUrl = body!.attachmentUrl;
     }
 
-    // Crear campaña
+    // Crear campaña en Brevo
     const created = await createCampaign(payload);
+
+    // Registro local por tenant (no rompe nada existente; solo agrega tracking)
+    try {
+      const docRef = db.doc(`tenants/${tenantId}/marketing_campaigns/${created?.id ?? "unknown"}`);
+      await docRef.set(
+        {
+          id: created?.id ?? null,
+          subject,             // sujeto real (sin prefijo)
+          name: payload.name,  // el name que se envió a Brevo
+          namePrefixed,        // útil si BODY no traía name (documentamos cuál prefijamos)
+          listId: listIdNum,
+          senderName,
+          senderEmail,
+          brevo: {
+            status: created?.status ?? null,
+            name: created?.name ?? payload.name,
+            internal: created || null,
+          },
+          tenantId,
+          createdAt: new Date(),
+          createdBy: me.uid ?? null,
+          createdByEmail: (me as any)?.email ?? null,
+          updatedAt: new Date(),
+        },
+        { merge: true }
+      );
+    } catch {}
 
     // Audit por tenant (reemplaza app_logs global)
     await db.collection(`tenants/${tenantId}/_admin_audit`).add({
@@ -126,7 +192,7 @@ export async function POST(req: NextRequest, ctx: Ctx) {
       tenantId,
       at: new Date(),
       by: me.uid,
-      actorEmail: me.email ?? null,
+      actorEmail: (me as any)?.email ?? null,
       origin: "api",
       path: "marketing/brevo/campaigns",
     });

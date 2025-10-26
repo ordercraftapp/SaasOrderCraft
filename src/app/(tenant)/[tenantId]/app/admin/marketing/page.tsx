@@ -299,11 +299,11 @@ async function call(path: string, opts?: RequestInit) {
     }
   }
   async function refreshCampaigns() {
-    try {
-      const r = await call(`${apiBase}/marketing/brevo/campaigns`, { method: 'GET' });
-      setCampaigns(r?.campaigns || []);
-    } catch {}
-  }
+  try {
+    const r = await call(`${apiBase}/marketing/brevo/campaigns/local?limit=50`, { method: 'GET' });
+    setCampaigns(r?.items || []); // items vienen de Firestore
+  } catch {}
+}
   useEffect(() => {
     if (hasAuth) refreshCampaigns();
     // eslint-disable-next-line react-hooks/exhaustive-deps
