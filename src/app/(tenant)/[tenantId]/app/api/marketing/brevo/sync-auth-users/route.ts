@@ -4,7 +4,7 @@ export const runtime = "nodejs";
 import { NextRequest } from "next/server";
 
 // ✅ Guard / tenancy
-import { json, requireAdmin, forbiddenDebug } from "../_guard";
+import { json, requireAdmin } from "../_guard";
 import { resolveTenantFromRequest, requireTenantId } from "@/lib/tenant/server";
 
 // ✅ Admin SDKs
@@ -63,13 +63,8 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     resolveTenantFromRequest(req, ctx.params),
     "api:marketing/brevo/sync-auth-users:POST"
   );
-  if (req.headers.get("x-debug-auth") === "1") {
-    console.log("[SYNC-AUTH] tenantId:", tenantId);
-  }
   const me = await requireAdmin(req, { tenantId });
-  if (!me) {
-    return forbiddenDebug(req, { route: "sync-auth-users", tenantId });
-  }
+  if (!me) return json({ error: "Forbidden" }, 403);
 
   try {
     // 2) Config por tenant (antes era app_config global)

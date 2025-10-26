@@ -4,7 +4,7 @@ export const runtime = "nodejs";
 import { NextRequest } from "next/server";
 
 // ✅ Guard / tenancy
-import { json, requireAdmin, forbiddenDebug } from "../_guard";
+import { json, requireAdmin } from "../_guard";
 import { resolveTenantFromRequest, requireTenantId } from "@/lib/tenant/server";
 
 // ✅ Firestore Admin
@@ -38,13 +38,8 @@ export async function POST(req: NextRequest, ctx: Ctx) {
     resolveTenantFromRequest(req, ctx.params),
     "api:marketing/brevo/sync-contacts:POST"
   );
-  if (req.headers.get("x-debug-auth") === "1") {
-    console.log("[SYNC-CONTACTS] tenantId:", tenantId);
-  }
   const me = await requireAdmin(req, { tenantId });
-  if (!me) {
-    return forbiddenDebug(req, { route: "sync-contacts", tenantId });
-  }
+  if (!me) return json({ error: "Forbidden" }, 403);
 
   try {
     // 2) Flags de query

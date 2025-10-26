@@ -113,6 +113,7 @@ function AdminMarketingPage_Inner() {
 
 async function call(path: string, opts?: RequestInit) {
   if (!idToken) throw new Error(tt('admin.marketing.err.missingToken', 'Missing idToken'));
+  
 
   // prefer opts values but provide sensible defaults
   const method = (opts && (opts.method as string)) || 'POST';
@@ -127,17 +128,15 @@ async function call(path: string, opts?: RequestInit) {
       ? rawBody
       : JSON.stringify(rawBody);
 
-  const res = await fetch(path, {
-    method,
+   const res = await fetch(path, {
+    ...opts,
     headers: {
+      ...(opts?.headers || {}),
       Authorization: `Bearer ${idToken}`,
       'content-type': 'application/json',
-      'x-debug-auth': '1', // <— SOLO para debug
-      ...extraHeaders,
+      'x-debug-auth': '1', // <— solo mientras depuras
     },
-    body,
   });
-
   const jr = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(jr?.error || tt('admin.marketing.err.request', 'Request error'));
   return jr;
