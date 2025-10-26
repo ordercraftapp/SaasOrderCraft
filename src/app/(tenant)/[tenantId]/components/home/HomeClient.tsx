@@ -1,4 +1,3 @@
-// src/app/(tenant)/[tenantId]/components/home/HomeClient.tsx
 "use client";
 
 import { useEffect, useState, useMemo } from "react";
@@ -9,6 +8,10 @@ import FeaturedMenu from "@/app/(tenant)/[tenantId]/components/home/FeaturedMenu
 import Gallery from "@/app/(tenant)/[tenantId]/components/home/Gallery";
 import { useTenantId } from "@/lib/tenant/context"; // ✅ tenant
 import { tenantPath } from '@/lib/tenant/paths';
+
+/* 🔹 Firebase client (init) + Firestore */
+import "@/lib/firebase/client";
+import { getFirestore, collection, query, orderBy, limit, getDocs } from "firebase/firestore";
 
 /** Tipos mínimos para las props que le pasa page.tsx */
 type HeroSlide = {
@@ -65,17 +68,38 @@ export default function HomeClient({
   // ✅ tenant
   const tenantId = useTenantId();
   const withTenant = useMemo(() => {
-  return (p: string) => {
-    const norm = p.startsWith('/') ? p : `/${p}`;
-    if (!tenantId) return norm;
+    return (p: string) => {
+      const norm = p.startsWith('/') ? p : `/${p}`;
+      if (!tenantId) return norm;
 
-    // Si ya viene como "/{tenantId}/..." no dupliques
-    if (norm === `/${tenantId}` || norm.startsWith(`/${tenantId}/`)) return norm;
+      // Si ya viene como "/{tenantId}/..." no dupliques
+      if (norm === `/${tenantId}` || norm.startsWith(`/${tenantId}/`)) return norm;
 
-    // Construye la ruta correcta (wildcard vs local)
-    return tenantPath(tenantId, norm);
-  };
-}, [tenantId]);
+      // Construye la ruta correcta (wildcard vs local)
+      return tenantPath(tenantId, norm);
+    };
+  }, [tenantId]);
+
+  /* 🔹 Nombre de marca derivado de tenantOrders */
+  const [brandName, setBrandName] = useState<string>("OrderCraft");
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        if (!tenantId) return;
+        const db = getFirestore();
+        const colRef = collection(db, "tenants", tenantId, "tenantOrders");
+        const q = query(colRef, orderBy("createdAt", "desc"), limit(1));
+        const snap = await getDocs(q);
+        const data = snap.docs[0]?.data() as any | undefined;
+        const name = data?.customer?.name?.toString()?.trim();
+        if (!cancelled && name) setBrandName(name);
+      } catch {
+        // Silencioso: mantenemos fallback
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [tenantId]);
 
   // Estado visual del navbar (claro/oscuro) al hacer scroll
   const [scrolled, setScrolled] = useState(false);
@@ -114,7 +138,8 @@ export default function HomeClient({
     >
       <div className="container">
         <a className="navbar-brand fw-semibold" href={withTenant("/")} onClick={close}>
-          OrderCraft
+          {/* 🔹 Reemplazo de texto fijo por brandName */}
+          {brandName}
         </a>
 
         {/* 👉 Sin data-bs-* ni aria-controls; controlamos con estado */}
