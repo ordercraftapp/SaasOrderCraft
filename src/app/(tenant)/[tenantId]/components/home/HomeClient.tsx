@@ -63,6 +63,12 @@ export default function HomeClient({
   }, []);
   const lang = clientLang || serverLang;
 
+  //Capitalizar Titulo
+    const displayName = useMemo(() => {
+    const raw = (brandName ?? "").trim();
+    return raw ? raw.charAt(0).toUpperCase() + raw.slice(1) : "";
+  }, [brandName]);
+
   // rutas tenant
   const tenantId = useTenantId();
   const withTenant = useMemo(() => {
@@ -106,7 +112,13 @@ export default function HomeClient({
     >
       <div className="container">
         <a className="navbar-brand fw-semibold" href={withTenant("/")} onClick={close}>
-          {brandName || '\u00A0'}
+          <span
+            className="text-truncate d-inline-block"
+            style={{ maxWidth: "60vw", lineHeight: 1.2 }}
+            title={displayName}
+          >
+            {displayName || "\u00A0"}
+          </span>
         </a>
 
         <button
