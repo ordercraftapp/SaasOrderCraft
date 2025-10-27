@@ -2,7 +2,7 @@
 export const runtime = 'nodejs';
 
 import { NextRequest, NextResponse } from 'next/server';
-
+import { getTenantPaypalAccessToken, getTenantPaypalPublic } from '@/lib/payments/paypal';
 // ✅ Tenant helpers (segmento/subdominio → tenantId)
 import { resolveTenantFromRequest, requireTenantId } from '@/lib/tenant/server';
 
@@ -54,18 +54,21 @@ export async function POST(
     }
 
     // ✅ Normalizar moneda y montos
-    const currency = String(
-      orderDraft?.totals?.currency || process.env.PAY_CURRENCY || 'GTQ'
-    ).toUpperCase();
+    const pub = await getTenantPaypalPublic(tenantId);
+if (!pub?.enabled) {
+  return NextResponse.json({ error: 'PayPal disabled for this tenant' }, { status: 400 });
+}
 
-    // Para PayPal v2, el valor debe ser string con 2 decimales
-    const amountValue = Number(orderDraft?.orderTotal || 0);
-    const amountStr = amountValue.toFixed(2);
+const currency = String(
+  orderDraft?.totals?.currency || pub.currency || 'GTQ'
+).toUpperCase();
+
+const amountValue = Number(orderDraft?.orderTotal || 0);
+const amountStr = amountValue.toFixed(2);
 
     // ✅ Token + endpoint api-m
-    const token = await getPaypalAccessToken();
-    const isLive = process.env.PAYPAL_ENV === 'live';
-    const base = isLive ? 'https://api-m.paypal.com' : 'https://api-m.sandbox.paypal.com';
+    const { token, base } = await getTenantPaypalAccessToken(tenantId, 'api-m');  
+    const isLive = process.env.PAYPAL_ENV === 'live';   
 
     // ====== Guardar draft (tenant-scoped) ======
     const draftRef = await tColAdmin('orderDrafts', tenantId).add({
@@ -81,23 +84,15 @@ export async function POST(
 
     // ====== Crear PayPal Order ======
     const resp = await fetch(`${base}/v2/checkout/orders`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      cache: 'no-store',
-      body: JSON.stringify({
-        intent: 'CAPTURE',
-        purchase_units: [
-          {
-            amount: {
-              currency_code: currency,
-              value: amountStr,
-            },
-          },
-        ],
-        // sin envío para restaurantes
-        application_context: { shipping_preference: 'NO_SHIPPING' },
-      }),
-    });
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+  cache: 'no-store',
+  body: JSON.stringify({
+    intent: 'CAPTURE',
+    purchase_units: [{ amount: { currency_code: currency, value: amountStr } }],
+    application_context: { shipping_preference: 'NO_SHIPPING' },
+  }),
+});
 
     if (!resp.ok) {
       const t = await resp.text().catch(() => '');

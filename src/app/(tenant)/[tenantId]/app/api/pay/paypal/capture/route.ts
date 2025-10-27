@@ -1,6 +1,6 @@
 // src/app/(tenant)/[tenant]/app/api/pay/paypal/capture/route.ts
 export const runtime = 'nodejs';
-
+import { getTenantPaypalAccessToken } from '@/lib/payments/paypal';
 import { NextRequest, NextResponse } from 'next/server';
 
 // ✅ Tenant/Scope helpers
@@ -48,17 +48,17 @@ export async function POST(
       return NextResponse.json({ error: 'Missing paypalOrderId' }, { status: 400 });
     }
 
-    const token = await getPaypalAccessToken();
+    const { token, base } = await getTenantPaypalAccessToken(tenantId, 'api'); // o 'api-m', ambas sirven con v2
     const isLive = process.env.PAYPAL_ENV === 'live';
-    const base = isLive ? 'https://api.paypal.com' : 'https://api.sandbox.paypal.com';
+    
 
     // === Capturar en PayPal ===
     const capRes = await fetch(`${base}/v2/checkout/orders/${paypalOrderId}/capture`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      cache: 'no-store',
-      body: JSON.stringify({}),
-    });
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+  cache: 'no-store',
+  body: JSON.stringify({}),
+});
 
     if (!capRes.ok) {
       const t = await capRes.text();

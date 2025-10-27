@@ -1383,20 +1383,37 @@ const onSubmitCash = async () => {
   const [paypalReady, setPaypalReady] = useState(false);
   const paypalButtonsRef = useRef<any>(null);
 
-  useEffect(() => {
-    if (!enabledPaypal) return;
-    if (typeof window === 'undefined') return;
-    const cid = process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID;
-    if (!cid) return;
-    if ((window as any).paypal) { setPaypalReady(true); return; }
-    const s = document.createElement('script');
-    const currency = process.env.NEXT_PUBLIC_PAY_CURRENCY || 'USD';
-    s.src = `https://www.paypal.com/sdk/js?client-id=${encodeURIComponent(cid)}&currency=${encodeURIComponent(currency)}`;
-    s.async = true;
-    s.onload = () => setPaypalReady(true);
-    s.onerror = () => console.warn('PayPal could not be loaded SDK.');
-    document.body.appendChild(s);
-  }, [enabledPaypal]);
+  // PayPal: carga SDK por-tenant
+useEffect(() => {
+  if (!enabledPaypal) return;
+  if (typeof window === 'undefined') return;
+
+  let cancelled = false;
+
+  (async () => {
+    try {
+      const res = await fetch(withTenant('/app/api/pay/paypal/sdk-params'), { cache: 'no-store' });
+      const j = await res.json();
+      if (!j?.enabled || !j?.clientId) return;
+      const currency = (j.currency || process.env.NEXT_PUBLIC_PAY_CURRENCY || 'USD');
+
+      // si ya está en la página, no lo re-inyectes
+      if ((window as any).paypal) { if (!cancelled) setPaypalReady(true); return; }
+
+      const s = document.createElement('script');
+      s.src = `https://www.paypal.com/sdk/js?client-id=${encodeURIComponent(j.clientId)}&currency=${encodeURIComponent(currency)}`;
+      s.async = true;
+      s.onload = () => { if (!cancelled) setPaypalReady(true); };
+      s.onerror = () => console.warn('PayPal SDK could not be loaded.');
+      document.body.appendChild(s);
+    } catch (e) {
+      console.warn('sdk-params failed', e);
+    }
+  })();
+
+  return () => { cancelled = true; };
+}, [enabledPaypal, withTenant]);
+
 
   useEffect(() => {
     if (!tenantId) return;
@@ -1493,12 +1510,13 @@ const onSubmitCash = async () => {
 
   return (
     <CheckoutUI
-      state={state}
-      actions={actions}
-      onSubmitCash={onSubmitCash}
-      paypalActiveHint={!process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID ? '(Configura NEXT_PUBLIC_PAYPAL_CLIENT_ID)' : undefined}
-      cart={cart}
-    />
+  state={state}
+  actions={actions}
+  onSubmitCash={onSubmitCash}
+  paypalActiveHint={enabledPaypal ? undefined : '(Configurar PayPal en paymentProfile)'}
+  cart={cart}
+/>
+
   );
 }
 
