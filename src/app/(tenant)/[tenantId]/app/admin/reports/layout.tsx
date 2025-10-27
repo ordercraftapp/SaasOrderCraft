@@ -77,7 +77,8 @@ export default function ReportsLayout({ children }: { children: React.ReactNode 
 
   // drag-to-scroll state
   const [drag, setDrag] = useState({ active: false, startX: 0, startLeft: 0, moved: false });
-  const isInteractive = (el: EventTarget | null) => el instanceof HTMLElement && !!el.closest('a,button,input,textarea,select,summary,[role="button"]');
+  const isInteractive = (el: EventTarget | null) =>
+    el instanceof HTMLElement && !!el.closest('a,button,input,textarea,select,summary,[role="button"]');
 
   const onPointerDown: React.PointerEventHandler<HTMLDivElement> = (e) => {
     if (isInteractive(e.target)) return;
@@ -148,24 +149,13 @@ export default function ReportsLayout({ children }: { children: React.ReactNode 
             <div className="container">
               <h1 className="h4 mb-3 text-center">{tt('admin.reports.title', 'Reports')}</h1>
 
-              {/* Rail centrado */}
+              {/* Grid 2 filas, móvil-friendly, con arrastre horizontal */}
               <div className="mx-auto" style={{ maxWidth: 'min(1100px, 100%)' }}>
                 <div
                   ref={railRef}
                   role="region"
                   aria-label={tt('admin.reports.shortcuts', 'Report shortcuts')}
-                  className="d-flex gap-2 justify-content-center"
-                  style={{
-                    overflowX: 'auto',
-                    WebkitOverflowScrolling: 'touch',
-                    scrollBehavior: 'smooth',
-                    padding: '8px 12px',
-                    scrollSnapType: 'x mandatory',
-                    scrollbarWidth: 'none',
-                    msOverflowStyle: 'none',
-                    cursor: drag.active ? 'grabbing' : 'grab',
-                    userSelect: drag.active ? 'none' : 'auto',
-                  }}
+                  className="reports-rail"
                   onPointerDown={onPointerDown}
                   onPointerMove={onPointerMove}
                   onPointerUp={endDrag}
@@ -183,9 +173,39 @@ export default function ReportsLayout({ children }: { children: React.ReactNode 
                   }}
                 >
                   <style jsx>{`
-                    div::-webkit-scrollbar { display: none; }
+                    .reports-rail {
+                      display: grid;
+                      grid-auto-flow: column;         /* Llena por columnas */
+                      grid-template-rows: repeat(2, auto); /* ✅ Siempre 2 filas */
+                      grid-auto-columns: max-content; /* Chips tamaño contenido */
+                      column-gap: 12px;
+                      row-gap: 10px;
+
+                      overflow-x: auto;
+                      -webkit-overflow-scrolling: touch;
+                      scroll-behavior: smooth;
+                      padding: 8px 12px;
+
+                      scroll-snap-type: x mandatory;
+                      scrollbar-width: none;
+                      -ms-overflow-style: none;
+                      cursor: ${drag.active ? 'grabbing' : 'grab'};
+                      user-select: ${drag.active ? 'none' : 'auto'};
+                    }
+                    .reports-rail::-webkit-scrollbar { display: none; }
+
+                    /* En pantallas medianas o mayores, centramos y evitamos scroll si cabe */
+                    @media (min-width: 768px) {
+                      .reports-rail {
+                        justify-content: center;      /* centra columnas */
+                      }
+                    }
+
                     @media (max-width: 576px) {
-                      a.btn { padding-left: 12px !important; padding-right: 12px !important; }
+                      .reports-rail :global(a.btn) {
+                        padding-left: 12px !important;
+                        padding-right: 12px !important;
+                      }
                     }
                   `}</style>
 
@@ -210,7 +230,7 @@ export default function ReportsLayout({ children }: { children: React.ReactNode 
                             scrollSnapAlign: 'center',
                             whiteSpace: 'nowrap',
                             borderRadius: 9999,
-                            flex: '0 0 auto',
+                            flex: '0 0 auto', // no afecta al grid, pero mantiene el chip compacto
                           }}
                           prefetch
                         >
