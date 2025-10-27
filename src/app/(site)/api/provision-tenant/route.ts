@@ -17,11 +17,18 @@ function json(d: unknown, s = 200) {
 // Cambia a true si quieres crear el usuario owner automáticamente (aquí no hace falta porque lo creas en /tenant-order)
 const CREATE_OWNER_USER = false;
 
+// ⏳ helper trial (7 días)
+function addDays(ts: Timestamp, days: number) {
+  const ms = ts.toMillis() + days * 24 * 60 * 60 * 1000;
+  return Timestamp.fromMillis(ms);
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => ({}));
     const tenantIdRaw = String(body?.tenantId || '').trim();
     const orderId = String(body?.orderId || '').trim();
+    const trial = Boolean(body?.trial === true); // ← NUEVO: flag de trial opcional
 
     const tenantId = normalizeTenantId(tenantIdRaw);
     if (!tenantId || !orderId) return json({ error: 'Missing params.' }, 400);
@@ -46,6 +53,16 @@ export async function POST(req: NextRequest) {
 
     if (order.orderStatus !== 'created') {
       return json({ error: 'Order is not in a creatable state.' }, 409);
+    }
+
+    // 🛡️ NUEVO: Gating de pago (todos los planes son pagados).
+    // Si NO es trial, exigimos paymentStatus === 'paid'.
+    if (!trial) {
+      const paid = String(order?.paymentStatus || 'pending') === 'paid';
+      if (!paid) {
+        // 402 Payment Required (semánticamente correcto); si prefieres 403/409, cambia aquí.
+        return json({ error: 'Payment required before provisioning.' }, 402);
+      }
     }
 
     // --- Normalización de plan a planTier (con compatibilidad legado) ---
@@ -88,6 +105,7 @@ export async function POST(req: NextRequest) {
 
     // 3) Transacción: activar tenant, provisionar order, sembrar membresía (customers), limpiar reserva
     const now = Timestamp.now();
+    const trialEndsAt = trial ? addDays(now, 7) : null; // ← NUEVO
     let effectiveOwnerUid: string | undefined;
 
     await adminDb.runTransaction(async (trx) => {
@@ -108,6 +126,18 @@ export async function POST(req: NextRequest) {
         status: 'active',
         updatedAt: now,
       };
+
+      // 🆕 Aditivo y no disruptivo: si es trial, guarda metadatos en el tenant
+      if (trial) {
+        updateTenant.trial = {
+          enabled: true,
+          startedAt: now,
+          endsAt: trialEndsAt,
+          originOrderId: orderId,
+          planTier,
+        };
+      }
+
       const ownerFromTenant = (curT?.owner || {}) as any;
       const ownerUidFromTenant = ownerUid || ownerFromTenant?.uid;
       if (ownerUidFromTenant) {
@@ -116,8 +146,23 @@ export async function POST(req: NextRequest) {
 
       trx.update(tRef, updateTenant);
 
-      // Actualizar order
-      trx.update(oRef, { orderStatus: 'provisioned', updatedAt: now });
+      // Actualizar order (manteniendo tu lógica intacta)
+      const orderUpdate: Record<string, unknown> = {
+        orderStatus: 'provisioned',
+        updatedAt: now,
+      };
+
+      // 🆕 Aditivo en orden: reflejar trial si aplica (no altera tus campos existentes)
+      if (trial) {
+        orderUpdate.trial = {
+          enabled: true,
+          startedAt: now,
+          endsAt: trialEndsAt,
+        };
+        // Nota: no cambiamos paymentStatus; queda 'pending' si no se cobró.
+      }
+
+      trx.update(oRef, orderUpdate);
 
       // 🟩 Si tenemos ownerUid efectivo, sembramos membresía del owner en customers/{uid}
       effectiveOwnerUid = ownerUidFromTenant;
