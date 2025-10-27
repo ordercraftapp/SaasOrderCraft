@@ -145,6 +145,26 @@ async function getUiLanguage(tenantId: string): Promise<string> {
   }
 }
 
+/** ✅ NUEVO: leer el nombre de marca 100% en servidor */
+async function getTenantBrandName(tenantId: string): Promise<string> {
+  // 1) Preferimos tenants/{tenantId}.company.name
+  const rootRef = db.collection('tenants').doc(tenantId);
+  const rootSnap = await rootRef.get();
+  const companyName = rootSnap.exists ? (rootSnap.get('company.name') as string | undefined) : undefined;
+  if (companyName && companyName.toString().trim()) return companyName.toString().trim();
+
+  // 2) Fallback: último tenantOrder por createdAt desc → customer.name
+  const ordersSnap = await rootRef
+    .collection('tenantOrders')
+    .orderBy('createdAt', 'desc')
+    .limit(1)
+    .get();
+
+  const orderData = ordersSnap.docs[0]?.data() as any | undefined;
+  const customerName = orderData?.customer?.name?.toString()?.trim();
+  return customerName || '';
+}
+
 // ===== Catálogo =====
 type Category = { id: string; name: string };
 type Subcategory = { id: string; name: string; categoryId?: string };
@@ -299,16 +319,20 @@ export default async function HomePage({ params }: { params: { tenantId: string 
     publish: { status: 'draft', version: 0 },
   } as HomeConfig;
 
+  // ✅ NUEVO: obtener brandName en servidor
+  const brandName = await getTenantBrandName(tenantId);
+
   // Promos activas
   const now = new Date();
-const activePromos = (cfg.promos || []).filter((p) => {
-  if (!p.active) return false;
-  const start = tsToDate(p.startAt);
-  const end   = tsToDate(p.endAt);
-  if (start && start > now) return false;
-  if (end && end < now) return false;
-  return true;
-});
+  const activePromos = (cfg.promos || []).filter((p) => {
+    if (!p.active) return false;
+    const start = tsToDate(p.startAt);
+    const end   = tsToDate(p.endAt);
+    if (start && start > now) return false;
+    if (end && end < now) return false;
+    return true;
+  });
+
   const [allCats, /* allSubs no usado aquí */, allItems, couponsMap] = await Promise.all([
     fetchCategories(tenantId),
     fetchSubcategories(tenantId),
@@ -402,6 +426,9 @@ const activePromos = (cfg.promos || []).filter((p) => {
         // ⛔️ No pasamos newsletter/contact para controlar el orden abajo
         // newsletter={cfg.newsletter}
         // contact={contactNormalized}
+
+        // ✅ NUEVO: nombre de marca desde servidor (impide flicker)
+        brandName={brandName}
       />
 
       {/* 4) ABOUT US */}
@@ -427,3 +454,4 @@ const activePromos = (cfg.promos || []).filter((p) => {
     </>
   );
 }
+
