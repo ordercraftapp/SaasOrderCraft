@@ -146,31 +146,48 @@ export default function TaxesReportPage() {
   const currency = rows[0]?.currency ?? 'USD';
 
   // Cargar perfil activo 1 vez 
-  useEffect(() => {
-    (async () => {
-      try {
-        const p = await getActiveTaxProfile();
-        if (p) setActiveProfile(p);
-      } catch {}
-    })();
-  }, []);
-// quitarrrrrrrrrrrrrrrrrrr
-  useEffect(() => {
-  // ⚠️ Solo para debugging; quítalo en prod
+// Cargar perfil activo 1 vez (tenant-aware real: tenants/{tenantId}/taxProfiles)
+useEffect(() => {
   (async () => {
+    if (!tenantId) return;
     try {
-      const auth = getAuth();
-      const idt = await auth.currentUser?.getIdTokenResult(true); // true = fuerza refresh, por si recién setearon claims
-      console.log('[DEBUG] claims:', idt?.claims);
-      // Ejemplos de acceso:
-      // console.log('tenantId:', idt?.claims?.tenantId);
-      // console.log('tenants map:', idt?.claims?.tenants);
-      // console.log('roles globales:', idt?.claims?.roles);
-    } catch (e) {
-      console.warn('No se pudieron leer claims:', e);
+      // 1) Si tu helper ya soporta tenantId, úsalo:
+      try {
+        const pMaybe = await (getActiveTaxProfile as any)?.(tenantId);
+        if (pMaybe) {
+          setActiveProfile(pMaybe as TaxProfile);
+          return;
+        }
+      } catch {
+        // ignoramos y caemos al fallback directo a Firestore
+      }
+
+      // 2) Fallback: leer directo de Firestore en tenants/{tenantId}/taxProfiles
+      //    criterio: activo primero, o el más reciente si no hay flag "active"
+      const q = fsQuery(
+        tCol('taxProfiles', tenantId),
+        // si usas un campo "active: true", descomenta la línea de abajo:
+        // where('active', '==', true),
+        orderBy('createdAt', 'desc'),
+        limit(1)
+      );
+      // claims frescos para evitar 403 por reglas recién cambiadas
+      const u = getAuth().currentUser;
+      if (u) await u.getIdToken(true);
+
+      const snap = await getDocs(q);
+      if (!snap.empty) {
+        setActiveProfile(snap.docs[0].data() as TaxProfile);
+      } else {
+        setActiveProfile(null);
+      }
+    } catch {
+      // no mostramos error duro en el panel, solo dejamos "No active profile found."
+      setActiveProfile(null);
     }
   })();
-}, []);
+}, [tenantId]);
+
 
 
   /* =========================
