@@ -145,6 +145,8 @@ export default function AIStudioPage() {
     }
   }
 
+  
+
   // --- Captcha helpers ---
   async function getFreshCaptchaToken(maxMs = 2500): Promise<string> {
     const started = Date.now();

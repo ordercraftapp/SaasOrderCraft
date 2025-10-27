@@ -1,3 +1,4 @@
+// src/app/(tenant)/[tenantId]/app/admin/roles/layout.tsx
 // Server component (no "use client")
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';

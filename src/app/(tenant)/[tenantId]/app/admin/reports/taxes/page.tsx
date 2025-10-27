@@ -177,148 +177,155 @@ export default function TaxesReportPage() {
      RUN (tenant-aware)
      ========================= */
   const run = async () => {
-    if (!from || !to) return alert(tt('admin.taxes.alert.pickRange', 'Pick a date range.'));
-    const fromD = parseInputDate(from);
-    const toD = parseInputDate(to);
-    if (!fromD || !toD) return alert(tt('admin.taxes.alert.invalidDates', 'Invalid dates.'));
-    try { await getAuth().currentUser?.getIdToken(true); } catch {}
-    setLoading(true);
-    setError(null);
+  if (!from || !to) return alert(tt('admin.taxes.alert.pickRange', 'Pick a date range.'));
+  const fromD = parseInputDate(from);
+  const toD = parseInputDate(to);
+  if (!fromD || !toD) return alert(tt('admin.taxes.alert.invalidDates', 'Invalid dates.'));
+  try { await getAuth().currentUser?.getIdToken(true); } catch {}
+  setLoading(true);
+  setError(null);
 
-    try {
-      const qRef = fsQuery(
-        tCol(tenantId, 'orders'),
-        where('status', '==', 'closed'),
-        where('createdAt', '>=', Timestamp.fromDate(startOfDayLocal(fromD))),
-        where('createdAt', '<=', Timestamp.fromDate(endOfDayLocal(toD))),
-        orderBy('createdAt', 'asc'),
-        limit(5000)
-      );
+  try {
+    const qRef = fsQuery(
+      tCol(tenantId, 'orders'),
+      where('status', '==', 'closed'),
+      where('createdAt', '>=', Timestamp.fromDate(startOfDayLocal(fromD))),
+      where('createdAt', '<=', Timestamp.fromDate(endOfDayLocal(toD))),
+      orderBy('createdAt', 'asc'),
+      limit(5000)
+    );
 
-      const snap = await getDocs(qRef);
+    // 🔁 fuerza claims frescos en este tab antes de consultar Firestore
+    const u = getAuth().currentUser;
+    if (u) {
+      await u.getIdToken(true);
+    }
 
-      const out: Row[] = [];
-      const enriched: OrderSnapshotLite[] = [];
+    const snap = await getDocs(qRef);
 
-      snap.forEach(doc => {
-        const d = doc.data() as any;
-        const s = d.taxSnapshot as any | undefined;
+    const out: Row[] = [];
+    const enriched: OrderSnapshotLite[] = [];
 
-        const createdAt =
-          (d.createdAt && typeof d.createdAt.toDate === 'function')
-            ? d.createdAt.toDate().toISOString().slice(0, 10)
-            : (typeof d.createdAt === 'string'
-                ? d.createdAt.slice(0, 10)
-                : '');
+    snap.forEach(doc => {
+      const d = doc.data() as any;
+      const s = d.taxSnapshot as any | undefined;
 
-        const currency = s?.currency || d.currency || 'USD';
+      const createdAt =
+        (d.createdAt && typeof d.createdAt.toDate === 'function')
+          ? d.createdAt.toDate().toISOString().slice(0, 10)
+          : (typeof d.createdAt === 'string'
+              ? d.createdAt.slice(0, 10)
+              : '');
 
-        const orderType: '' | 'dine-in' | 'delivery' | 'pickup' =
-          (d.orderType || d?.orderInfo?.type || '') as any;
+      const currency = s?.currency || d.currency || 'USD';
 
-        const jurisdictionApplied = safeStr(s?.jurisdictionApplied || '');
+      const orderType: '' | 'dine-in' | 'delivery' | 'pickup' =
+        (d.orderType || d?.orderInfo?.type || '') as any;
 
-        const zeroBaseCents = cents(s?.summaryZeroRated?.baseCents);
-        const exemptBaseCents = cents(s?.summaryExempt?.baseCents);
+      const jurisdictionApplied = safeStr(s?.jurisdictionApplied || '');
 
-        // Surcharges (solo taxable)
-        let serviceBaseCents = 0;
-        let serviceTaxCents = 0;
-        const surs = Array.isArray(s?.surcharges) ? s?.surcharges : [];
-        for (const sc of surs) {
-          if (sc?.taxable) {
-            serviceBaseCents += cents(sc?.baseCents);
-            serviceTaxCents += cents(sc?.taxCents);
-          }
+      const zeroBaseCents = cents(s?.summaryZeroRated?.baseCents);
+      const exemptBaseCents = cents(s?.summaryExempt?.baseCents);
+
+      // Surcharges (solo taxable)
+      let serviceBaseCents = 0;
+      let serviceTaxCents = 0;
+      const surs = Array.isArray(s?.surcharges) ? s?.surcharges : [];
+      for (const sc of surs) {
+        if (sc?.taxable) {
+          serviceBaseCents += cents(sc?.baseCents);
+          serviceTaxCents += cents(sc?.taxCents);
         }
+      }
 
-        // Tabla original (por tasa)
-        if (Array.isArray(s?.summaryByRate)) {
-          for (const r of s.summaryByRate) {
-            const hasBase = Number.isFinite(r?.baseCents);
-            const baseCents = hasBase
-              ? Number(r.baseCents || 0)
-              : (Number.isFinite(r?.taxCents) && (Number(r?.rateBps) > 0)
-                  ? Math.round((Number(r.taxCents) * 10000) / Number(r.rateBps))
-                  : 0);
-
-            const ratePct = Number.isFinite(r?.rateBps)
-              ? (Number(r.rateBps) / 100)
-              : Number(r?.ratePct ?? 0);
-
-            out.push({
-              date: createdAt,
-              orderId: doc.id,
-              taxCents: Number(r.taxCents || 0),
-              baseCents,
-              rateLabel: `${(ratePct).toFixed(2)}%`,
-              currency,
-            });
-          }
-        }
-
-        // Totales por orden (para B2B)
-        let orderTaxableBase = 0;
-        let orderTax = 0;
-        const linesForOrder = Array.isArray(s?.summaryByRate) ? s.summaryByRate : [];
-        for (const r of linesForOrder) {
-          const base = Number.isFinite(r?.baseCents)
+      // Tabla original (por tasa)
+      if (Array.isArray(s?.summaryByRate)) {
+        for (const r of s.summaryByRate) {
+          const hasBase = Number.isFinite(r?.baseCents);
+          const baseCents = hasBase
             ? Number(r.baseCents || 0)
             : (Number.isFinite(r?.taxCents) && (Number(r?.rateBps) > 0)
                 ? Math.round((Number(r.taxCents) * 10000) / Number(r.rateBps))
                 : 0);
-          orderTaxableBase += base;
-          orderTax += cents(r?.taxCents);
+
+          const ratePct = Number.isFinite(r?.rateBps)
+            ? (Number(r.rateBps) / 100)
+            : Number(r?.ratePct ?? 0);
+
+          out.push({
+            date: createdAt,
+            orderId: doc.id,
+            taxCents: Number(r.taxCents || 0),
+            baseCents,
+            rateLabel: `${(ratePct).toFixed(2)}%`,
+            currency,
+          });
         }
-        orderTaxableBase += serviceBaseCents;
-        orderTax += serviceTaxCents;
+      }
 
-        const mappedRates = linesForOrder.map((r: any) => ({
-          rateCode: safeStr(r?.rateCode || r?.code || ''),
-          rateBps: Number.isFinite(r?.rateBps) ? Number(r.rateBps) : undefined,
-          ratePct: Number.isFinite(r?.ratePct) ? Number(r.ratePct) : undefined,
-          baseCents: Number.isFinite(r?.baseCents)
-            ? Number(r.baseCents)
-            : (Number.isFinite(r?.taxCents) && (Number(r?.rateBps) > 0)
-                ? Math.round((Number(r.taxCents) * 10000) / Number(r.rateBps))
-                : 0),
-          taxCents: cents(r?.taxCents),
-        }));
+      // Totales por orden (para B2B)
+      let orderTaxableBase = 0;
+      let orderTax = 0;
+      const linesForOrder = Array.isArray(s?.summaryByRate) ? s.summaryByRate : [];
+      for (const r of linesForOrder) {
+        const base = Number.isFinite(r?.baseCents)
+          ? Number(r.baseCents || 0)
+          : (Number.isFinite(r?.taxCents) && (Number(r?.rateBps) > 0)
+              ? Math.round((Number(r.taxCents) * 10000) / Number(r.rateBps))
+              : 0);
+        orderTaxableBase += base;
+        orderTax += cents(r?.taxCents);
+      }
+      orderTaxableBase += serviceBaseCents;
+      orderTax += serviceTaxCents;
 
-        const b2bTaxId =
-          (d?.customer?.taxId && String(d.customer.taxId)) ||
-          (s?.customer?.taxId && String(s.customer.taxId)) ||
-          (d?.customerTaxId && String(d.customerTaxId)) ||
-          null;
+      const mappedRates = linesForOrder.map((r: any) => ({
+        rateCode: safeStr(r?.rateCode || r?.code || ''),
+        rateBps: Number.isFinite(r?.rateBps) ? Number(r.rateBps) : undefined,
+        ratePct: Number.isFinite(r?.ratePct) ? Number(r.ratePct) : undefined,
+        baseCents: Number.isFinite(r?.baseCents)
+          ? Number(r.baseCents)
+          : (Number.isFinite(r?.taxCents) && (Number(r?.rateBps) > 0)
+              ? Math.round((Number(r.taxCents) * 10000) / Number(r.rateBps))
+              : 0),
+        taxCents: cents(r?.taxCents),
+      }));
 
-        enriched.push({
-          id: doc.id,
-          date: createdAt,
-          currency,
-          jurisdictionApplied,
-          orderType,
-          summaryByRate: mappedRates,
-          zeroBaseCents,
-          exemptBaseCents,
-          serviceBaseCents,
-          serviceTaxCents,
-          b2bTaxId,
-          orderTaxableBaseCents: orderTaxableBase,
-          orderTaxCents: orderTax,
-          orderTotalCents: cents(d?.totalsCents?.grandTotalWithTaxCents ?? d?.totalCents),
-        });
+      const b2bTaxId =
+        (d?.customer?.taxId && String(d.customer.taxId)) ||
+        (s?.customer?.taxId && String(s.customer.taxId)) ||
+        (d?.customerTaxId && String(d.customerTaxId)) ||
+        null;
+
+      enriched.push({
+        id: doc.id,
+        date: createdAt,
+        currency,
+        jurisdictionApplied,
+        orderType,
+        summaryByRate: mappedRates,
+        zeroBaseCents,
+        exemptBaseCents,
+        serviceBaseCents,
+        serviceTaxCents,
+        b2bTaxId,
+        orderTaxableBaseCents: orderTaxableBase,
+        orderTaxCents: orderTax,
+        orderTotalCents: cents(d?.totalsCents?.grandTotalWithTaxCents ?? d?.totalCents),
       });
+    });
 
-      setRows(out);
-      setOrdersData(enriched);
-    } catch (e: any) {
-      const msg = e?.message || tt('common.loadError', 'Could not load data.');
-      setError(msg);
-      console.error('[TaxesReport] error:', e);
-    } finally {
-      setLoading(false);
-    }
-  };
+    setRows(out);
+    setOrdersData(enriched);
+  } catch (e: any) {
+    const msg = e?.message || tt('common.loadError', 'Could not load data.');
+    setError(msg);
+    console.error('[TaxesReport] error:', e);
+  } finally {
+    setLoading(false);
+  }
+};
+
 
   /* =========================
      Filtros (en memoria)
