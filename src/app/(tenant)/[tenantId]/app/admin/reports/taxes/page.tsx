@@ -187,7 +187,7 @@ export default function TaxesReportPage() {
 
   try {
     const qRef = fsQuery(
-      tCol(tenantId, 'orders'),
+      tCol('orders', tenantId), // ✅ FIX: (colección, tenantId)
       where('status', '==', 'closed'),
       where('createdAt', '>=', Timestamp.fromDate(startOfDayLocal(fromD))),
       where('createdAt', '<=', Timestamp.fromDate(endOfDayLocal(toD))),
@@ -202,6 +202,9 @@ export default function TaxesReportPage() {
     }
 
     const snap = await getDocs(qRef);
+
+    // ... (resto idéntico a tu código: build de out/enriched, setRows, setOrdersData)
+
 
     const out: Row[] = [];
     const enriched: OrderSnapshotLite[] = [];
