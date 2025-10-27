@@ -14,6 +14,7 @@ import {
   Timestamp,
   DocumentData,
 } from "firebase/firestore";
+import { getAuth } from "firebase/auth"; // ✅ REFRESH claims antes de Firestore
 
 // ✅ tenant-aware helpers
 import { tCol } from "@/lib/db";
@@ -281,11 +282,14 @@ export default function AdminTimeReportsPage() {
     setError(null);
     setLoading(true);
     try {
+      // 🔁 claims FRESCOS antes de consultar Firestore
+      await getAuth().currentUser?.getIdToken(true);
+
       const from = new Date(fromStr + "T00:00:00");
       const to = new Date(toStr + "T23:59:59.999");
 
       const qRef = query(
-        tCol(tenantId, "orders"),
+        tCol("orders", tenantId), // ✅ coleccion scopiada por tenant
         where("createdAt", ">=", Timestamp.fromDate(from)),
         where("createdAt", "<=", Timestamp.fromDate(to)),
         orderBy("createdAt", "asc"),
