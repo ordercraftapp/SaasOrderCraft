@@ -6,6 +6,7 @@ import Link from 'next/link';
 import Protected from '@/app/(tenant)/[tenantId]/components/Protected';
 import ToolGate from '@/components/ToolGate';
 import AdminOnly from '@/app/(tenant)/[tenantId]/components/AdminOnly';
+import { useTenantId } from '@/lib/tenant/context';
 
 // 🔤 i18n
 import { t as translate } from '@/lib/i18n/t';
@@ -14,11 +15,11 @@ import { useTenantSettings } from '@/lib/settings/hooks';
 /* ✅ Visibilidad por plan */
 import { useFeature } from '@/lib/plans/client';
 
-/** Tipado local para que TS entienda opcionales y podamos forzar string en fallbacks */
+/** Tipado local */
 type ReportLink = {
   title: string;
   subtitle?: string;
-  href: string;
+  href: string;   // <-- base sin tenant (empieza con /admin/...)
   emoji: string;
   hint?: string;
 };
@@ -53,9 +54,10 @@ function getFeatureKeyByHref(href: string):
 }
 
 export default function ReportsLayout({ children }: { children: React.ReactNode }) {
+  const tenantId = useTenantId();
   const railRef = useRef<HTMLDivElement | null>(null);
 
-  // 🔤 idioma actual + helper (semilla estable para SSR/hidratación)
+  // 🔤 idioma actual + helper
   const { settings } = useTenantSettings();
   const [lang, setLang] = useState<string | undefined>(() => (settings as any)?.language);
 
@@ -73,13 +75,9 @@ export default function ReportsLayout({ children }: { children: React.ReactNode 
     return s === key ? fallback : s;
   };
 
-  // drag-to-scroll state (sin flechas)
+  // drag-to-scroll state
   const [drag, setDrag] = useState({ active: false, startX: 0, startLeft: 0, moved: false });
-
-  const isInteractive = (el: EventTarget | null) => {
-    if (!(el instanceof HTMLElement)) return false;
-    return !!el.closest('a,button,input,textarea,select,summary,[role="button"]');
-  };
+  const isInteractive = (el: EventTarget | null) => el instanceof HTMLElement && !!el.closest('a,button,input,textarea,select,summary,[role="button"]');
 
   const onPointerDown: React.PointerEventHandler<HTMLDivElement> = (e) => {
     if (isInteractive(e.target)) return;
@@ -87,7 +85,6 @@ export default function ReportsLayout({ children }: { children: React.ReactNode 
     if (!el) return;
     setDrag({ active: true, startX: e.clientX, startLeft: el.scrollLeft, moved: false });
   };
-
   const onPointerMove: React.PointerEventHandler<HTMLDivElement> = (e) => {
     const el = railRef.current;
     if (!el || !drag.active) return;
@@ -95,19 +92,18 @@ export default function ReportsLayout({ children }: { children: React.ReactNode 
     if (Math.abs(dx) > 5 && !drag.moved) setDrag((d) => ({ ...d, moved: true }));
     el.scrollLeft = drag.startLeft - dx;
   };
-
   const endDrag: React.PointerEventHandler<HTMLDivElement> = () => {
     if (!drag.active) return;
     setDrag((d) => ({ ...d, active: false }));
   };
 
-  // util: clave i18n derivada del slug de la ruta (último segmento del href)
+  // util: clave i18n desde el slug de r.href (sin tenant)
   const slugKey = (href: string) => {
     const slug = href.split('/').filter(Boolean).pop() || '';
     return `admin.reports.${slug}`;
   };
 
-  /* ✅ Visibilidad de cada reporte (un hook por feature) */
+  /* ✅ Visibilidad de cada reporte (por plan) */
   const { allowed: allowSales }     = useFeature('salesReports');
   const { allowed: allowTaxes }     = useFeature('taxesReports');
   const { allowed: allowProducts }  = useFeature('productReports');
@@ -128,90 +124,109 @@ export default function ReportsLayout({ children }: { children: React.ReactNode 
     '/admin/reports/time-reports':      allowTime,
   };
 
+  // Mientras no haya tenantId, evita renderizar links rotos/prefetch 404
+  if (!tenantId) {
+    return (
+      <Protected>
+        <AdminOnly>
+          <ToolGate feature="reports">
+            <div className="container py-4">
+              <div className="text-center text-muted">Loading tenant…</div>
+              <div className="container mt-3">{children}</div>
+            </div>
+          </ToolGate>
+        </AdminOnly>
+      </Protected>
+    );
+  }
+
   return (
-  <Protected>
-    <AdminOnly>
-      <ToolGate feature="reports">
-        <div className="container-fluid py-3">
-          <div className="container">
-            <h1 className="h4 mb-3 text-center">{tt('admin.reports.title', 'Reports')}</h1>
+    <Protected>
+      <AdminOnly>
+        <ToolGate feature="reports">
+          <div className="container-fluid py-3">
+            <div className="container">
+              <h1 className="h4 mb-3 text-center">{tt('admin.reports.title', 'Reports')}</h1>
 
-            {/* Rail centrado sin flechas */}
-            <div className="mx-auto" style={{ maxWidth: 'min(1100px, 100%)' }}>
-              <div
-                ref={railRef}
-                role="region"
-                aria-label={tt('admin.reports.shortcuts', 'Report shortcuts')}
-                className="d-flex gap-2 justify-content-center"
-                style={{
-                  overflowX: 'auto',
-                  WebkitOverflowScrolling: 'touch',
-                  scrollBehavior: 'smooth',
-                  padding: '8px 12px',
-                  scrollSnapType: 'x mandatory',
-                  scrollbarWidth: 'none',
-                  msOverflowStyle: 'none',
-                  cursor: drag.active ? 'grabbing' : 'grab',
-                  userSelect: drag.active ? 'none' : 'auto',
-                }}
-                onPointerDown={onPointerDown}
-                onPointerMove={onPointerMove}
-                onPointerUp={endDrag}
-                onPointerCancel={endDrag}
-                onClickCapture={(e) => {
-                  if (drag.moved) {
-                    e.preventDefault();
-                    e.stopPropagation();
-                  }
-                }}
-                onWheel={(e) => {
-                  const el = railRef.current;
-                  if (!el) return;
-                  if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) el.scrollLeft += e.deltaY;
-                }}
-              >
-                <style jsx>{`
-                  div::-webkit-scrollbar { display: none; }
-                  @media (max-width: 576px) {
-                    a.btn { padding-left: 12px !important; padding-right: 12px !important; }
-                  }
-                `}</style>
+              {/* Rail centrado */}
+              <div className="mx-auto" style={{ maxWidth: 'min(1100px, 100%)' }}>
+                <div
+                  ref={railRef}
+                  role="region"
+                  aria-label={tt('admin.reports.shortcuts', 'Report shortcuts')}
+                  className="d-flex gap-2 justify-content-center"
+                  style={{
+                    overflowX: 'auto',
+                    WebkitOverflowScrolling: 'touch',
+                    scrollBehavior: 'smooth',
+                    padding: '8px 12px',
+                    scrollSnapType: 'x mandatory',
+                    scrollbarWidth: 'none',
+                    msOverflowStyle: 'none',
+                    cursor: drag.active ? 'grabbing' : 'grab',
+                    userSelect: drag.active ? 'none' : 'auto',
+                  }}
+                  onPointerDown={onPointerDown}
+                  onPointerMove={onPointerMove}
+                  onPointerUp={endDrag}
+                  onPointerCancel={endDrag}
+                  onClickCapture={(e) => {
+                    if (drag.moved) {
+                      e.preventDefault();
+                      e.stopPropagation();
+                    }
+                  }}
+                  onWheel={(e) => {
+                    const el = railRef.current;
+                    if (!el) return;
+                    if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) el.scrollLeft += e.deltaY;
+                  }}
+                >
+                  <style jsx>{`
+                    div::-webkit-scrollbar { display: none; }
+                    @media (max-width: 576px) {
+                      a.btn { padding-left: 12px !important; padding-right: 12px !important; }
+                    }
+                  `}</style>
 
-                {REPORT_LINKS
-                  .filter(r => allowedByHref[r.href] ?? true)
-                  .map((r) => {
-                    const base = slugKey(r.href);
-                    // 🔒 Forzamos a string el fallback para complacer a TS
-                    const fallbackHint: string = (r.hint ?? r.subtitle ?? '');
-                    const title = tt(`${base}.title`, r.title);
-                    const hint  = tt(`${base}.hint`,  fallbackHint);
+                  {REPORT_LINKS
+                    .filter(r => allowedByHref[r.href] ?? true)
+                    .map((r) => {
+                      const base = slugKey(r.href);
+                      const fallbackHint: string = (r.hint ?? r.subtitle ?? '');
+                      const title = tt(`${base}.title`, r.title);
+                      const hint  = tt(`${base}.hint`,  fallbackHint);
 
-                    return (
-                      <Link
-                        key={r.href}
-                        href={r.href}
-                        className="btn btn-outline-secondary d-inline-flex align-items-center gap-2 px-3 py-2"
-                        title={hint}
-                        style={{
-                          scrollSnapAlign: 'center',
-                          whiteSpace: 'nowrap',
-                          borderRadius: 9999,
-                          flex: '0 0 auto',
-                        }}
-                      >
-                        <span aria-hidden="true" style={{ fontSize: 22, lineHeight: 1 }}>{r.emoji}</span>
-                        <span className="fw-semibold">{title}</span>
-                      </Link>
-                    );
-                  })}
+                      // ✅ href final con tenant
+                      const fullHref = `/${tenantId}/app${r.href}`;
+
+                      return (
+                        <Link
+                          key={r.href}
+                          href={fullHref}
+                          className="btn btn-outline-secondary d-inline-flex align-items-center gap-2 px-3 py-2"
+                          title={hint}
+                          style={{
+                            scrollSnapAlign: 'center',
+                            whiteSpace: 'nowrap',
+                            borderRadius: 9999,
+                            flex: '0 0 auto',
+                          }}
+                          prefetch
+                        >
+                          <span aria-hidden="true" style={{ fontSize: 22, lineHeight: 1 }}>{r.emoji}</span>
+                          <span className="fw-semibold">{title}</span>
+                        </Link>
+                      );
+                    })}
+                </div>
               </div>
             </div>
-          </div>
 
-          <div className="container mt-3">{children}</div>
-        </div>
-      </ToolGate>
-    </AdminOnly>
-  </Protected>
-);
+            <div className="container mt-3">{children}</div>
+          </div>
+        </ToolGate>
+      </AdminOnly>
+    </Protected>
+  );
 }
