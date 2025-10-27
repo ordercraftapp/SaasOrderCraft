@@ -13,6 +13,7 @@ import {
   getDocs,
   Timestamp,
 } from "firebase/firestore";
+import { getAuth } from "firebase/auth";
 import { tCol } from "@/lib/db";
 import { useTenantId } from "@/lib/tenant/context";
 import { useFmtQ } from "@/lib/settings/money";
@@ -290,7 +291,7 @@ function downloadExcelXml(filename: string, xml: string) {
 
 /** ====== Page ====== */
 export default function AdminSalesReportPage() {
-   const tenantId = useTenantId() as string;
+  const tenantId = useTenantId() as string;
   const fmtQ = useFmtQ();
 
   // 🔤 idioma actual (igual que en Kitchen)
@@ -366,11 +367,14 @@ export default function AdminSalesReportPage() {
     setError(null);
     setLoading(true);
     try {
+      // 🔁 claims frescos antes de Firestore
+      await getAuth().currentUser?.getIdToken(true);
+
       const from = startOfDay(new Date(fromStr));
       const to = endOfDay(new Date(toStr));
 
       const qRef = query(
-        tCol(tenantId, "orders"),
+        tCol("orders", tenantId), // ✅ coleccion scopiada por tenant
         where("createdAt", ">=", Timestamp.fromDate(from)),
         where("createdAt", "<=", Timestamp.fromDate(to)),
         orderBy("createdAt", "asc")
