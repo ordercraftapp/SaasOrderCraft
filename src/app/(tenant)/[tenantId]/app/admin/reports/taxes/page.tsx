@@ -1,6 +1,6 @@
 // src/app/(tenant)/[tenant]/app/admin/reports/taxes/page.tsx
 'use client';
-
+import { getAuth } from 'firebase/auth'; 
 import { useEffect, useMemo, useState } from 'react';
 import Protected from '@/app/(tenant)/[tenantId]/components/Protected';
 import AdminOnly from '@/app/(tenant)/[tenantId]/components/AdminOnly';
@@ -154,6 +154,24 @@ export default function TaxesReportPage() {
       } catch {}
     })();
   }, []);
+// quitarrrrrrrrrrrrrrrrrrr
+  useEffect(() => {
+  // ⚠️ Solo para debugging; quítalo en prod
+  (async () => {
+    try {
+      const auth = getAuth();
+      const idt = await auth.currentUser?.getIdTokenResult(true); // true = fuerza refresh, por si recién setearon claims
+      console.log('[DEBUG] claims:', idt?.claims);
+      // Ejemplos de acceso:
+      // console.log('tenantId:', idt?.claims?.tenantId);
+      // console.log('tenants map:', idt?.claims?.tenants);
+      // console.log('roles globales:', idt?.claims?.roles);
+    } catch (e) {
+      console.warn('No se pudieron leer claims:', e);
+    }
+  })();
+}, []);
+
 
   /* =========================
      RUN (tenant-aware)
