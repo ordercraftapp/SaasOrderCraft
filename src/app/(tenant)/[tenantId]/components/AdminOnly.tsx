@@ -37,6 +37,8 @@ export default function AdminOnly({ children }: { children: React.ReactNode }) {
           setErr((!data.ok && "error" in data && data.error) ? data.error! : `HTTP ${resp.status}`);
           setAllowed(false);
         } else {
+          // 🔑 Asegura que el token del cliente tenga los claims recién escritos (retrocompatible)
+          try { await user.getIdToken(true); } catch {}
           setAllowed(data.role === "admin");
         }
       } catch (e: any) {

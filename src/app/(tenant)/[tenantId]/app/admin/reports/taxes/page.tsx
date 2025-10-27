@@ -145,7 +145,7 @@ export default function TaxesReportPage() {
   const totalBase = useMemo(() => rows.reduce((a, r) => a + r.baseCents, 0), [rows]);
   const currency = rows[0]?.currency ?? 'USD';
 
-  // Cargar perfil activo 1 vez
+  // Cargar perfil activo 1 vez 
   useEffect(() => {
     (async () => {
       try {
@@ -181,7 +181,7 @@ export default function TaxesReportPage() {
     const fromD = parseInputDate(from);
     const toD = parseInputDate(to);
     if (!fromD || !toD) return alert(tt('admin.taxes.alert.invalidDates', 'Invalid dates.'));
-
+    try { await getAuth().currentUser?.getIdToken(true); } catch {}
     setLoading(true);
     setError(null);
 
