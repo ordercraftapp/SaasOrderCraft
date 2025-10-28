@@ -38,7 +38,7 @@ export default function SuccessClient({ tenantId, orderId }: { tenantId: string;
     const supportsWildcard = process.env.NEXT_PUBLIC_USE_WILDCARD_SUBDOMAINS?.toLowerCase() !== 'false';
 
     const adminUrl = supportsWildcard
-      ? `https://${tenantId}.${baseDomain}/admin`
+      ? `https://${tenantId}.${baseDomain}/login`
       : `/${tenantId}/admin`;
 
     const appUrl = supportsWildcard
@@ -166,7 +166,7 @@ export default function SuccessClient({ tenantId, orderId }: { tenantId: string;
               <div className="small">
                 <div className="d-flex align-items-center justify-content-between border rounded p-2 mb-2">
                   <div>
-                    <div className="fw-semibold">Admin panel</div>
+                    <div className="fw-semibold">Login to your Admin portal</div>
                     <div className="text-muted text-truncate" style={{ maxWidth: 520 }}>
                       {adminUrl}
                     </div>

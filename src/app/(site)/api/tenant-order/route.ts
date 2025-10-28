@@ -34,6 +34,22 @@ function json(d: unknown, s = 200) {
 const BLACKLIST = new Set(['www', 'app', 'api', 'admin', 'mail', 'root', 'support', 'status']);
 const HOLD_MINUTES = 15;
 
+// 🧮 precios por plan (mensual) en centavos
+const PLAN_PRICE_CENTS: Record<PlanId, number> = {
+  starter: 1999,
+  pro: 2999,
+  full: 3499,
+};
+
+function fmtMoney(cents: number, currency: string) {
+  const v = cents / 100;
+  try {
+    return new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(v);
+  } catch {
+    return `${v.toFixed(2)} ${currency}`;
+  }
+}
+
 /** 🔗 URL de login del tenant */
 function buildLoginUrl(tenantId: string) {
   const baseDomain = (process.env.NEXT_PUBLIC_BASE_DOMAIN || 'datacraftcoders.cloud').toLowerCase();
@@ -41,9 +57,25 @@ function buildLoginUrl(tenantId: string) {
   return supportsWildcard ? `https://${tenantId}.${baseDomain}/app/login` : `/${tenantId}/app/login`;
 }
 
-function welcomeHtml(tenantId: string, adminName: string) {
+/** =========================
+ *  Correo (HTML) con plan/precio y trial opcional
+ *  ========================= */
+function welcomeHtml(params: {
+  tenantId: string;
+  adminName: string;
+  plan: PlanId;
+  priceLabel: string; // p.ej. "$19.99 USD / month"
+  trialEndsAt?: Date | null; // si viene, se muestra la línea de trial
+}) {
+  const { tenantId, adminName, plan, priceLabel, trialEndsAt } = params;
   const loginUrl = buildLoginUrl(tenantId);
   const safeName = (adminName || '').trim();
+  const trialSection = trialEndsAt
+    ? `<p style="margin:0 0 10px 0;font-size:15px;line-height:1.6;color:#374151;">
+         <strong>Free trial:</strong> ends on <strong>${trialEndsAt.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}</strong>.
+       </p>`
+    : '';
+
   return `
   <div style="display:none;max-height:0;overflow:hidden;font-size:1px;line-height:1px;color:#fff;opacity:0;">
     Your workspace is almost ready!
@@ -63,7 +95,14 @@ function welcomeHtml(tenantId: string, adminName: string) {
                 ${safeName ? `Welcome, ${safeName}!` : 'Welcome!'} 🎉
               </h1>
               <p style="margin:0 0 10px 0;font-size:15px;line-height:1.6;color:#374151;">
-                Your restaurant workspace has been created. You can sign in here:
+                Your restaurant workspace has been created.
+              </p>
+              <p style="margin:0 0 10px 0;font-size:15px;line-height:1.6;color:#374151;">
+                <strong>Plan:</strong> ${plan.charAt(0).toUpperCase() + plan.slice(1)} — <strong>${priceLabel}</strong>
+              </p>
+              ${trialSection}
+              <p style="margin:0 0 10px 0;font-size:15px;line-height:1.6;color:#374151;">
+                You can sign in here:
               </p>
             </td>
           </tr>
@@ -96,11 +135,28 @@ function welcomeHtml(tenantId: string, adminName: string) {
   </table>`;
 }
 
-function welcomeText(tenantId: string) {
+/** =========================
+ *  Correo (texto plano) con plan/precio y trial opcional
+ *  ========================= */
+function welcomeText(params: {
+  tenantId: string;
+  plan: PlanId;
+  priceLabel: string;
+  trialEndsAt?: Date | null;
+}) {
+  const { tenantId, plan, priceLabel, trialEndsAt } = params;
   const loginUrl = buildLoginUrl(tenantId);
+  const planLine = `Plan: ${plan.charAt(0).toUpperCase() + plan.slice(1)} — ${priceLabel}`;
+  const trialLine = trialEndsAt
+    ? `Free trial ends on: ${trialEndsAt.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}`
+    : null;
+
   return `Welcome!
 
 Your restaurant workspace has been created.
+${planLine}
+${trialLine ? trialLine + '\n' : ''}
+
 Open your login page: ${loginUrl}
 
 If you have any questions, just reply to this email.`;
@@ -182,7 +238,6 @@ export async function POST(req: NextRequest) {
                 },
                 { merge: true },
               ),
-              // 🟩 NUEVO: sembrar/asegurar system_flags/marketing con límite mensual
               adminDb.doc(`tenants/${desired}/system_flags/marketing`).set(
                 {
                   tenantId: desired,
@@ -297,7 +352,7 @@ export async function POST(req: NextRequest) {
         customDomain: null,
       });
 
-      // Crear order (created)
+      // Crear order (created) — ⬇️ aquí seteamos monto y moneda
       const orderRef = ordersCol.doc();
       trx.set(orderRef, {
         orderId: orderRef.id,
@@ -312,8 +367,8 @@ export async function POST(req: NextRequest) {
           country: address.country,
           postalCode: address.postalCode || null,
         },
-        amountCents: 0,
-        currency: 'USD',
+        amountCents: PLAN_PRICE_CENTS[plan], // ← monto por plan
+        currency: 'USD',                     // ← moneda
         paymentStatus: 'pending',
         orderStatus: 'created',
         createdAt: now,
@@ -360,14 +415,32 @@ export async function POST(req: NextRequest) {
       return { tenantId: desired, orderId: orderRef.id, ownerUid };
     });
 
-    // Email de bienvenida (no bloqueante)
+    // Email de bienvenida (no bloqueante) — con plan/precio y trial opcional
     try {
-      const html = welcomeHtml(result.tenantId, body.adminName);
-      const text = welcomeText(result.tenantId);
+      const priceLabel = `${fmtMoney(PLAN_PRICE_CENTS[body.plan], 'USD')} / month`;
+      // ⬇️ Si más adelante llamas este correo desde un flujo de trial, pásale la fecha real:
+      // const trialEndsAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+      const trialEndsAt: Date | undefined = undefined;
+
+      const html = welcomeHtml({
+        tenantId: result.tenantId,
+        adminName: body.adminName,
+        plan: body.plan,
+        priceLabel,
+        trialEndsAt,
+      });
+
+      const text = welcomeText({
+        tenantId: result.tenantId,
+        plan: body.plan,
+        priceLabel,
+        trialEndsAt,
+      });
+
       await sendTransactionalEmail({
         toEmail: String(body.adminEmail || '').trim().toLowerCase(),
         toName: body.adminName || '',
-        subject: `Your workspace "${result.tenantId}" is ready`,
+        subject: `Your workspace "${result.tenantId}" is ready — ${body.plan.toUpperCase()} plan`,
         html,
         text,
       });
@@ -408,7 +481,6 @@ export async function GET(req: NextRequest) {
     const oData = oSnap.data() as any;
 
     // ---------- Normalización defensiva de plan ----------
-    // Toma planTier del tenant; si no, intenta con plan (legado); si no, usa el de la orden; valida.
     const allowed: PlanId[] = ['starter', 'pro', 'full'];
     const candidate =
       (tData?.planTier as PlanId | undefined) ??

@@ -1,7 +1,7 @@
 // src/app/(site)/checkout/CheckoutClient.tsx
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 
@@ -29,8 +29,26 @@ type Summary = {
 };
 
 declare global {
-  interface Window {
-    paypal?: any;
+  interface Window { paypal?: any; }
+}
+
+// 🧮 Precios oficiales por plan (mensual)
+const PLAN_PRICE_CENTS: Record<Summary['plan'], number> = {
+  starter: 1999, // 19.99
+  pro: 2999,     // 29.99
+  full: 3499,    // 34.99
+};
+
+function fmtMoney(amountCents: number, currency: string) {
+  const value = (amountCents / 100);
+  try {
+    return new Intl.NumberFormat(undefined, {
+      style: 'currency',
+      currency: currency?.toUpperCase() || 'USD',
+      maximumFractionDigits: 2,
+    }).format(value);
+  } catch {
+    return `${value.toFixed(2)} ${currency?.toUpperCase() || 'USD'}`;
   }
 }
 
@@ -101,7 +119,7 @@ export default function CheckoutClient({ tenantId, orderId }: { tenantId: string
     document.body.appendChild(script);
 
     return () => {
-      // do not remove SDK in case user navigates back/forward
+      // keep SDK for navigation consistency
     };
   }, [summary]);
 
@@ -164,7 +182,7 @@ export default function CheckoutClient({ tenantId, orderId }: { tenantId: string
       },
 
       onCancel: () => {
-        // Optional: inform user
+        // Optional: notify user
       },
 
       onError: (err: any) => {
@@ -174,9 +192,6 @@ export default function CheckoutClient({ tenantId, orderId }: { tenantId: string
 
     buttons.render(`#${containerId}`);
     setRenderedButtons(true);
-
-    // no cleanup (paypal handles)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [paypalReady, summary, renderedButtons, reloadSummary]);
 
   async function createRestaurant() {
@@ -220,12 +235,30 @@ export default function CheckoutClient({ tenantId, orderId }: { tenantId: string
 
   const paid = summary?.paymentStatus === 'paid';
 
+  // 🧾 Cálculos y textos de precios (UI)
+  const monthlyPriceCents = useMemo(() => summary ? PLAN_PRICE_CENTS[summary.plan] : 0, [summary]);
+  const priceDisplayCurrency = summary?.currency || 'USD';
+  const monthlyPriceLabel = useMemo(
+    () => fmtMoney(monthlyPriceCents, priceDisplayCurrency),
+    [monthlyPriceCents, priceDisplayCurrency]
+  );
+  const orderAmountLabel = useMemo(
+    () => fmtMoney(summary?.amountCents || 0, priceDisplayCurrency),
+    [summary?.amountCents, priceDisplayCurrency]
+  );
+  const amountMatchesPlan = useMemo(
+    () => !!summary && summary.amountCents === monthlyPriceCents,
+    [summary, monthlyPriceCents]
+  );
+
   return (
     <div className="row justify-content-center">
       <div className="col-12 col-lg-8">
         <header className="mb-4 text-center">
           <h1 className="h4 fw-bold">Checkout</h1>
-          <p className="text-muted">Review your details and complete your purchase to create your restaurant workspace.</p>
+          <p className="text-muted">
+            Review your details and complete your purchase or start a 7-day free trial.
+          </p>
         </header>
 
         <div className="card shadow-sm border-0">
@@ -236,11 +269,48 @@ export default function CheckoutClient({ tenantId, orderId }: { tenantId: string
               <div className="alert alert-danger">{err}</div>
             ) : summary ? (
               <>
-                <div className="mb-3">
-                  <h2 className="h6 fw-semibold">Plan</h2>
-                  <p className="mb-0 text-capitalize">{summary.plan}</p>
+                {/* Pricing summary */}
+                <div className="mb-4">
+                  <h2 className="h6 fw-semibold d-flex align-items-center justify-content-between">
+                    <span>Pricing summary</span>
+                    <span className="badge text-bg-primary-subtle border border-primary-subtle">
+                      Monthly billing
+                    </span>
+                  </h2>
+
+                  <div className="border rounded-3 p-3">
+                    <div className="d-flex justify-content-between small mb-2">
+                      <span className="text-muted">Plan</span>
+                      <span className="text-capitalize">{summary.plan}</span>
+                    </div>
+
+                    <div className="d-flex justify-content-between small mb-2">
+                      <span className="text-muted">Monthly price (plan)</span>
+                      <span>{monthlyPriceLabel}</span>
+                    </div>
+
+                    <div className="d-flex justify-content-between small mb-2">
+                      <span className="text-muted">Today&apos;s charge</span>
+                      <span>
+                        {orderAmountLabel}{' '}
+                        {paid ? <span className="badge bg-success ms-2">Paid</span> : <span className="text-muted">(pending)</span>}
+                      </span>
+                    </div>
+
+                    {!amountMatchesPlan && (
+                      <div className="alert alert-warning small mb-2">
+                        The order amount differs from the plan list price. Make sure your backend sets
+                        the correct monthly price for <strong className="text-capitalize">{summary.plan}</strong>.
+                      </div>
+                    )}
+
+                    <div className="small text-muted">
+                      7-day free trial available — you can start now without payment.
+                    </div>
+                  </div>
                 </div>
 
+                {/* Details */}
                 <div className="mb-3">
                   <h2 className="h6 fw-semibold">Subdomain</h2>
                   <p className="mb-0">
@@ -279,11 +349,12 @@ export default function CheckoutClient({ tenantId, orderId }: { tenantId: string
                     Status: <span className="text-capitalize">{summary.orderStatus}</span>
                   </p>
                   <p className="mb-0">
-                    Amount: {(summary.amountCents / 100).toFixed(2)} {summary.currency}{' '}
+                    Amount: {orderAmountLabel}{' '}
                     {paid ? <span className="badge bg-success ms-2">Paid</span> : <span className="text-muted">(payment pending)</span>}
                   </p>
                 </div>
 
+                {/* PayPal */}
                 {!paid && (
                   <div className="mb-3">
                     <h2 className="h6 fw-semibold">Pay with PayPal</h2>
@@ -296,6 +367,7 @@ export default function CheckoutClient({ tenantId, orderId }: { tenantId: string
               </>
             ) : null}
 
+            {/* Actions */}
             <div className="d-flex flex-column flex-md-row gap-2 mt-3">
               <Link href="/signup" className="btn btn-outline-secondary">
                 Back
@@ -329,10 +401,8 @@ export default function CheckoutClient({ tenantId, orderId }: { tenantId: string
         </div>
 
         <div className="alert alert-info mt-3 small">
-          <strong>About trials:</strong> For the smoothest 7-day free trial with automatic billing on day 7, 
-          the ideal setup is PayPal <em>Subscriptions</em> with a trial period. The current checkout uses 
-          a one-time charge; the “Start 7-day free trial” button will provision without upfront payment 
-          (your backend should set <code>trialEndsAt = now + 7 days</code> and enforce payment afterwards).
+          <strong>About billing:</strong> Subscriptions are monthly. For automatic billing after trial, switch to
+          PayPal <em>Subscriptions</em> later. Current flow uses a one-time charge; the trial button provisions without upfront payment.
         </div>
       </div>
     </div>
