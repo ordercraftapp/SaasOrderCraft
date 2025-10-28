@@ -54,19 +54,25 @@ function buildUpgradeUrl(tenantId?: string | null): string | null {
 export default function ToolGate({ feature, children, fallback }: Props) {
   const feat = useFeature(feature) as { allowed: boolean; loading: boolean; tenantId?: string };
 
+  // ✅ Calcula siempre los hooks (nunca condicional)
+  const resolvedTenantId = useMemo(
+    () => feat?.tenantId ?? getTenantIdFromLocationSafe(),
+    [feat?.tenantId]
+  );
+  const upgradeHref = useMemo(
+    () => buildUpgradeUrl(resolvedTenantId),
+    [resolvedTenantId]
+  );
+
   if (feat.loading) return <div className="text-muted">Loading…</div>;
 
   if (!feat.allowed) {
     if (process.env.NODE_ENV !== 'production') {
-      // 👇 Traza útil en dev para depurar por qué no aparece una tool
       console.warn(`[ToolGate] feature "${String(feature)}" disabled for tenant ${feat.tenantId ?? '(unknown)'}`);
     }
 
     // Si el caller provee fallback, lo respetamos (retrocompat).
     if (fallback) return <>{fallback}</>;
-
-    const resolvedTenantId = feat.tenantId || getTenantIdFromLocationSafe();
-    const upgradeHref = useMemo(() => buildUpgradeUrl(resolvedTenantId), [resolvedTenantId]);
 
     return (
       <div className="alert alert-warning d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-2">
@@ -79,6 +85,7 @@ export default function ToolGate({ feature, children, fallback }: Props) {
             href={upgradeHref}
             className="btn btn-warning btn-sm fw-semibold position-relative"
             style={{ boxShadow: '0 0 0.65rem rgba(255,193,7,.45)' }}
+            rel="noopener noreferrer"
           >
             <span className="me-1" aria-hidden>✨</span>
             Upgrade plan
