@@ -151,16 +151,24 @@ export default function CheckoutClient({ tenantId, orderId }: { tenantId: string
             body: JSON.stringify({
               tenantId: summary.tenantId,
               orderId: summary.orderId,
-              amountCents,
+              amountCents: summary.amountCents || PLAN_PRICE_CENTS[summary.plan] || 0,
               currency: (summary.currency || 'USD').toUpperCase(),
               description: `Checkout @ ${summary.tenantId} - ${summary.orderId}`,
             }),
           });
-          const json = await resp.json();
-          if (!resp.ok || !json?.paypalOrderId) {
+          const json = await resp.json().catch(() => ({}));
+          // 🔧 aceptar múltiples formatos
+          const paypalOrderId =
+            json?.paypalOrderId ??
+            json?.id ??
+            json?.orderID ??
+            json?.result?.id;
+
+          if (!resp.ok || !paypalOrderId) {
             throw new Error(json?.error || 'Could not create PayPal order.');
           }
-          return json.paypalOrderId;
+          return paypalOrderId;
+
         } catch (e: any) {
           setErr(e?.message || 'Could not create PayPal order.');
           throw e;

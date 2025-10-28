@@ -230,15 +230,21 @@ export default function UpgradeClient({ tenantId, orderId }: { tenantId: string;
               description: `Plan ${selectedPlan} @ ${summary.tenantId}`,
             }),
           });
+
           const json = await resp.json().catch(() => ({}));
-          if (!resp.ok || !json?.paypalOrderId) {
-            // eslint-disable-next-line no-console
+          // 🔧 aceptar múltiples formatos (backend puede devolver id/orderID/paypalOrderId/result.id)
+          const paypalOrderId =
+            json?.paypalOrderId ??
+            json?.id ??
+            json?.orderID ??
+            json?.result?.id;
+
+          if (!resp.ok || !paypalOrderId) {
             console.error('[UpgradeClient] PayPal create-order failed:', resp.status, json);
             throw new Error(json?.error || 'Could not create PayPal order.');
           }
-          // eslint-disable-next-line no-console
-          //console.log('[UpgradeClient] paypalOrderId:', json.paypalOrderId);
-          return json.paypalOrderId;
+          return paypalOrderId;
+
         } catch (e: any) {
           setErr(e?.message || 'Could not prepare PayPal order.');
           throw e;
