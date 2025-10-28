@@ -5,11 +5,23 @@ import { adminDb } from '@/lib/firebase/admin';
 
 export const runtime = 'nodejs';
 
+
 export async function POST(req: NextRequest) {
+  
   try {
     const { tenantId, orderId, paypalOrderId } = await req.json() as {
       tenantId?: string; orderId?: string; paypalOrderId?: string;
     };
+    // 🔎 Log de entrada (no imprime secretos)
+    console.log('[paypal:capture] start', {
+      tenantId,
+      orderId,
+      paypalOrderId_present: Boolean(paypalOrderId),
+      env: process.env.PAYPAL_ENV || 'sandbox',
+      server_id_present: Boolean(process.env.PAYPAL_CLIENT_ID),
+      server_secret_present: Boolean(process.env.PAYPAL_CLIENT_SECRET),
+    });
+
     if (!tenantId || !orderId || !paypalOrderId) {
       return NextResponse.json({ error: 'Missing tenantId, orderId or paypalOrderId' }, { status: 400 });
     }

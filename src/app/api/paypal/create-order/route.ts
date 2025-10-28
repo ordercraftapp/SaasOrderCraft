@@ -26,6 +26,16 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Invalid amount' }, { status: 400 });
     }
 
+    console.log('[paypal:create-order] start', {
+    tenantId, orderId,
+    amountCents,
+    currency,
+    env: process.env.PAYPAL_ENV || 'sandbox',
+    server_id_present: Boolean(process.env.PAYPAL_CLIENT_ID),
+    server_secret_present: Boolean(process.env.PAYPAL_CLIENT_SECRET),
+  });
+
+
     // 2) Crear PayPal order
     const accessToken = await getPayPalAccessToken();
     const base = getPayPalBase();
