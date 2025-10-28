@@ -1,4 +1,3 @@
-// src/app/api/paypal/create-order/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { getPayPalAccessToken, getPayPalBase } from '../_paypal';
 import { adminDb } from '@/lib/firebase/admin';
@@ -16,7 +15,7 @@ function toCents(n: unknown): number {
 }
 
 async function resolveAmountCents(tenantId: string, orderId: string, provided?: number): Promise<{ cents: number; currency: string }> {
-  // 1) si viene válido, úsalo
+  // 1) si viene válido, úsalo (evita race conditions si cliente fuerza el monto)
   if (Number.isInteger(provided) && provided! >= 1) {
     return { cents: provided!, currency: (process.env.PAY_CURRENCY || 'USD').toUpperCase() };
   }
@@ -28,8 +27,6 @@ async function resolveAmountCents(tenantId: string, orderId: string, provided?: 
 
   const data = snap.data() || {};
   // Ajusta a tus campos reales:
-  // totalDecimal recomendado (p.ej., 12.34)
-  // o subtotal/taxes/discounts
   let currency = (data.currency || process.env.PAY_CURRENCY || 'USD').toString().toUpperCase();
 
   let cents = 0;
@@ -56,24 +53,23 @@ async function resolveAmountCents(tenantId: string, orderId: string, provided?: 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json() as {
-      tenantId?: string; orderId?: string; amountCents?: number; currency?: string; description?: string;
+      tenantId?: string; orderId?: string; amountCents?: number; currency?: string; description?: string; selectedPlan?: string;
     };
 
     const tenantId = body.tenantId?.trim();
     const orderId  = body.orderId?.trim();
     if (!tenantId || !orderId) return j({ error: 'Missing tenantId or orderId' }, 400);
 
-    // 🔎 Resuelve monto/currency (usa fallback si hace falta)
+    // si client pasa amountCents lo usamos — evita race conditions
     const { cents, currency } = await resolveAmountCents(
       tenantId,
       orderId,
       typeof body.amountCents === 'number' ? Math.floor(body.amountCents) : undefined
     );
 
-    // Logs defensivos
+    // Logs defensivos para debug
     console.log('[paypal:create-order] resolved amount', {
-      tenantId, orderId, cents, currency,
-      provided: body.amountCents,
+      tenantId, orderId, cents, currency, provided: body.amountCents, selectedPlan: body.selectedPlan,
     });
 
     const value = (cents / 100).toFixed(2);
@@ -112,7 +108,9 @@ export async function POST(req: NextRequest) {
 
     const id = json?.id as string | undefined;
     if (!id) return j({ error: 'No PayPal order id' }, 500);
-    return j({ id });
+
+    // Respondemos metadata útil para el cliente
+    return j({ paypalOrderId: id, id, orderId, amountCents: cents });
   } catch (e: any) {
     console.error('[paypal:create-order] exception', { message: e?.message });
     return j({ error: e?.message || 'Internal error' }, 500);
