@@ -1,12 +1,33 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { Suspense, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
+
+export const dynamic = 'force-dynamic'; // evita prerender estático de esta página
 
 declare global { interface Window { paypal?: any; } }
 
 export default function PaywallPage() {
+  return (
+    <Suspense fallback={
+      <main className="container py-5">
+        <div className="row justify-content-center">
+          <div className="col-12 col-lg-8">
+            <div className="text-center mb-4">
+              <h1 className="h5 fw-semibold">Loading…</h1>
+              <p className="text-muted">Preparing your payment options.</p>
+            </div>
+          </div>
+        </div>
+      </main>
+    }>
+      <PaywallInner />
+    </Suspense>
+  );
+}
+
+function PaywallInner() {
   const sp = useSearchParams();
 
   const tenantId = sp.get('tenantId') || '';
@@ -46,7 +67,7 @@ export default function PaywallPage() {
         const r = await fetch('/api/paypal/create-order', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ tenantId, orderId: undefined }), // si quieres forzar una orden específica, pásala aquí
+          body: JSON.stringify({ tenantId, orderId: undefined }),
         });
         const j = await r.json();
         if (!r.ok || !j?.paypalOrderId) throw new Error(j?.error || 'Create order failed');
@@ -55,10 +76,8 @@ export default function PaywallPage() {
       onApprove: async (data: any) => {
         const paypalOrderId = data?.orderID;
         if (!paypalOrderId) return;
-        // Necesitamos saber qué orderId capturar; si el checker te lo pasó, inclúyelo en el query
-        const orderId = sp.get('orderId') || ''; // opcional: añade en middleware si quieres precisión
+        const orderId = sp.get('orderId') || '';
         const body = orderId ? { tenantId, orderId, paypalOrderId } : { tenantId, paypalOrderId };
-        // Si no pasas orderId, tu /capture debe resolver cuál es la “pendiente” del tenant
         const r = await fetch('/api/paypal/capture', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -66,7 +85,6 @@ export default function PaywallPage() {
         });
         const j = await r.json();
         if (!r.ok || !j?.ok) throw new Error(j?.error || 'Capture failed');
-        // Pago OK → volver a la ruta original
         window.location.href = ret;
       },
       onError: (e: any) => setErr(e?.message || 'PayPal error'),
