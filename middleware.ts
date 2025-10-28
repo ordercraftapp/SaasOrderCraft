@@ -117,7 +117,7 @@ function parseLegacyTenantPath(pathname: string): { tenant: string | null; rest:
   return { tenant, rest: rest || "/" };
 }
 
-export function middleware(req: NextRequest) {
+export async function middleware(req: NextRequest) {
   const url = req.nextUrl.clone();
   const pathname = url.pathname;
 
@@ -203,6 +203,41 @@ export function middleware(req: NextRequest) {
     const res = nextWithTenant(req, tenantId);
     return withPaypalCsp(res); // ⬅️ añadido para mantener CSP consistente en /login
   }
+
+  // =========================
+  // 🔒 PAYWALL (desde el SITE)
+  // =========================
+  // Solo aplicamos paywall sobre rutas bajo /{tenantId}/app...
+  const isTenantAppRoute = virtualPath === "/app" || virtualPath.startsWith("/app/");
+  const isSitePaywall = pathname.startsWith("/paywall") || pathname.startsWith("/(site)/paywall");
+  if (isTenantAppRoute && !isSitePaywall) {
+    try {
+      const checkUrl = new URL("/api/site/billing/check", req.url);
+      checkUrl.searchParams.set("tenantId", tenantId);
+
+      // La ruta original para volver después del pago
+      const returnTo = `${pathname}${url.search || ""}`;
+
+      const resp = await fetch(checkUrl.toString(), { cache: "no-store" });
+      if (resp.ok) {
+        const data = await resp.json();
+        if (data?.block === true) {
+          const paywallUrl = new URL("/paywall", req.url);
+          paywallUrl.searchParams.set("tenantId", tenantId);
+          paywallUrl.searchParams.set("return", returnTo);
+          if (data.plan) paywallUrl.searchParams.set("plan", data.plan);
+          if (data.amountCents != null) paywallUrl.searchParams.set("amountCents", String(data.amountCents));
+          if (data.currency) paywallUrl.searchParams.set("currency", data.currency);
+          const res = rewriteWithTenant(req, paywallUrl, tenantId);
+          return withPaypalCsp(res);
+        }
+      }
+      // si el checker falla o responde no-bloqueo, continuamos normal
+    } catch {
+      // fail-open: dejar pasar si checker falla
+    }
+  }
+  // =========================
 
   const wantsAdmin = isPath(vForRoles, "/admin");
   const wantsDelivery = isPath(vForRoles, "/delivery");
