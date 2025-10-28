@@ -217,12 +217,18 @@ export default function UpgradeClient({ tenantId, orderId }: { tenantId: string;
           }
 
           // 2) Crear PayPal order
-          // eslint-disable-next-line no-console
-    
+          // ⚠️ FIX: enviar amountCents (entero) y currency
+          const amountCents = PLAN_PRICE_CENTS[selectedPlan] ?? 0;
           const resp = await fetch('/api/paypal/create-order', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ tenantId: summary.tenantId, orderId: summary.orderId }),
+            body: JSON.stringify({
+              tenantId: summary.tenantId,
+              orderId: summary.orderId,
+              amountCents,
+              currency: (summary.currency || 'USD').toUpperCase(),
+              description: `Plan ${selectedPlan} @ ${summary.tenantId}`,
+            }),
           });
           const json = await resp.json().catch(() => ({}));
           if (!resp.ok || !json?.paypalOrderId) {

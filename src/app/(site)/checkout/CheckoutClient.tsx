@@ -143,10 +143,18 @@ export default function CheckoutClient({ tenantId, orderId }: { tenantId: string
 
       createOrder: async () => {
         try {
+          // ⚠️ FIX: enviar amountCents (entero) y currency
+          const amountCents = summary.amountCents || PLAN_PRICE_CENTS[summary.plan] || 0;
           const resp = await fetch('/api/paypal/create-order', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ tenantId: summary.tenantId, orderId: summary.orderId }),
+            body: JSON.stringify({
+              tenantId: summary.tenantId,
+              orderId: summary.orderId,
+              amountCents,
+              currency: (summary.currency || 'USD').toUpperCase(),
+              description: `Checkout @ ${summary.tenantId} - ${summary.orderId}`,
+            }),
           });
           const json = await resp.json();
           if (!resp.ok || !json?.paypalOrderId) {

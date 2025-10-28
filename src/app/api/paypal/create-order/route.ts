@@ -1,40 +1,83 @@
+// src/app/api/paypal/create-order/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { getPayPalAccessToken, getPayPalBase } from '../_paypal';
+import { adminDb } from '@/lib/firebase/admin';
 
 export const runtime = 'nodejs';
 
-type CreateBody = {
-  tenantId?: string;
-  orderId?: string;
-  amountCents?: number; // opcional si ya lo calculaste; si no, pásalo desde tu upgrade API
-  currency?: string;    // 'USD' por defecto
-  description?: string; // opcional
-};
-
 function j(d: any, s = 200) { return NextResponse.json(d, { status: s }); }
+function toCents(n: unknown): number {
+  if (typeof n === 'number') return Math.round(n * 100);
+  if (typeof n === 'string') {
+    const v = Number(n.replace(/[^\d.-]/g, ''));
+    return Math.round(v * 100);
+  }
+  return 0;
+}
+
+async function resolveAmountCents(tenantId: string, orderId: string, provided?: number): Promise<{ cents: number; currency: string }> {
+  // 1) si viene válido, úsalo
+  if (Number.isInteger(provided) && provided! >= 1) {
+    return { cents: provided!, currency: (process.env.PAY_CURRENCY || 'USD').toUpperCase() };
+  }
+
+  // 2) fallback: lee la orden interna y calcula
+  const ref = adminDb.doc(`tenants/${tenantId}/tenantOrders/${orderId}`);
+  const snap = await ref.get();
+  if (!snap.exists) throw new Error('Order not found to resolve amount');
+
+  const data = snap.data() || {};
+  // Ajusta a tus campos reales:
+  // totalDecimal recomendado (p.ej., 12.34)
+  // o subtotal/taxes/discounts
+  let currency = (data.currency || process.env.PAY_CURRENCY || 'USD').toString().toUpperCase();
+
+  let cents = 0;
+  if (typeof data.total === 'number') {
+    cents = Math.round(data.total * 100);
+  } else if (typeof data.total === 'string') {
+    cents = toCents(data.total);
+  } else if (typeof data.amountCents === 'number') {
+    cents = data.amountCents;
+  } else {
+    // ejemplo: suma subtotal + taxes - discounts si tu esquema lo tiene
+    const subtotal = Number(data.subtotal || 0);
+    const taxes    = Number(data.taxes || 0);
+    const disc     = Number(data.discounts || 0);
+    cents = Math.round((subtotal + taxes - disc) * 100);
+  }
+
+  if (!Number.isInteger(cents) || cents < 1) {
+    throw new Error('Invalid order total when resolving amount');
+  }
+  return { cents, currency };
+}
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json() as CreateBody;
-    const { tenantId, orderId } = body;
-    const amountCents = Number(body.amountCents ?? 0);
-    const currency = (body.currency || process.env.PAY_CURRENCY || 'USD').toUpperCase();
-    const description = body.description || `Order ${orderId} @ ${tenantId}`;
+    const body = await req.json() as {
+      tenantId?: string; orderId?: string; amountCents?: number; currency?: string; description?: string;
+    };
 
-    // Logs defensivos (no secretos)
-    console.log('[paypal:create-order] start', {
-      tenantId, orderId,
-      amountCents, currency,
-      env: process.env.PAYPAL_ENV || 'sandbox',
-      server_id_present: Boolean(process.env.PAYPAL_CLIENT_ID),
-      server_secret_present: Boolean(process.env.PAYPAL_CLIENT_SECRET),
+    const tenantId = body.tenantId?.trim();
+    const orderId  = body.orderId?.trim();
+    if (!tenantId || !orderId) return j({ error: 'Missing tenantId or orderId' }, 400);
+
+    // 🔎 Resuelve monto/currency (usa fallback si hace falta)
+    const { cents, currency } = await resolveAmountCents(
+      tenantId,
+      orderId,
+      typeof body.amountCents === 'number' ? Math.floor(body.amountCents) : undefined
+    );
+
+    // Logs defensivos
+    console.log('[paypal:create-order] resolved amount', {
+      tenantId, orderId, cents, currency,
+      provided: body.amountCents,
     });
 
-    if (!tenantId || !orderId) return j({ error: 'Missing tenantId or orderId' }, 400);
-    if (!amountCents || amountCents < 1) return j({ error: 'Invalid amountCents' }, 400);
-
-    // PayPal total en decimales
-    const value = (amountCents / 100).toFixed(2);
+    const value = (cents / 100).toFixed(2);
+    const description = body.description || `Order ${orderId} @ ${tenantId}`;
 
     const accessToken = await getPayPalAccessToken();
     const base = getPayPalBase();
@@ -44,49 +87,34 @@ export async function POST(req: NextRequest) {
       headers: {
         'Authorization': `Bearer ${accessToken}`,
         'Content-Type': 'application/json',
-        'PayPal-Request-Id': `${tenantId}__${orderId}`, // idempotencia
+        'PayPal-Request-Id': `${tenantId}__${orderId}`,
       },
       body: JSON.stringify({
         intent: 'CAPTURE',
-        purchase_units: [
-          {
-            amount: { currency_code: currency, value },
-            description,
-            custom_id: `${tenantId}__${orderId}`,
-          }
-        ],
+        purchase_units: [{
+          amount: { currency_code: currency, value },
+          description,
+          custom_id: `${tenantId}__${orderId}`,
+        }],
         application_context: {
           brand_name: tenantId,
           shipping_preference: 'NO_SHIPPING',
           user_action: 'PAY_NOW',
-          return_url: 'https://www.datacraftcoders.cloud/checkout/success', // opcionales
-          cancel_url: 'https://www.datacraftcoders.cloud/checkout/cancel',
         },
       }),
     });
 
-    const createJson = await createResp.json().catch(() => ({}));
+    const json = await createResp.json().catch(() => ({}));
     if (!createResp.ok) {
-      console.error('[paypal:create-order] create failed', {
-        status: createResp.status,
-        bodyKeys: Object.keys(createJson || {}),
-      });
-      return j({ error: 'PayPal create failed', details: createJson }, 500);
+      console.error('[paypal:create-order] create failed', { status: createResp.status, json });
+      return j({ error: 'PayPal create failed', details: json }, 500);
     }
 
-    const id = createJson?.id as string | undefined;
-    if (!id) {
-      console.error('[paypal:create-order] no id in response');
-      return j({ error: 'No PayPal order id' }, 500);
-    }
-
-    console.log('[paypal:create-order] success', { id });
+    const id = json?.id as string | undefined;
+    if (!id) return j({ error: 'No PayPal order id' }, 500);
     return j({ id });
   } catch (e: any) {
     console.error('[paypal:create-order] exception', { message: e?.message });
-    const msg = e?.message?.includes('Missing PAYPAL_CLIENT_ID') || e?.message?.includes('PAYPAL_CLIENT_SECRET')
-      ? 'Missing PAYPAL_CLIENT_ID or PAYPAL_CLIENT_SECRET'
-      : (e?.message || 'Internal error');
-    return j({ error: msg }, 500);
+    return j({ error: e?.message || 'Internal error' }, 500);
   }
 }
