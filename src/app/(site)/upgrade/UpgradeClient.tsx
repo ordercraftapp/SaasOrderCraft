@@ -49,17 +49,45 @@ export default function UpgradeClient({ tenantId, orderId }: { tenantId: string;
   const [paypalReady, setPaypalReady] = useState(false);
   const [renderedButtons, setRenderedButtons] = useState(false);
 
+  const [resolvedOrderId, setResolvedOrderId] = useState<string>(orderId || '');
   const [debugOpen, setDebugOpen] = useState(false);
 
   // 🔎 LOG INICIAL DE PROPS
   useEffect(() => {
     // eslint-disable-next-line no-console
     console.log('[UpgradeClient] props:', { tenantId, orderId });
-    if (!tenantId || !orderId) {
+    if (!tenantId) {
       // eslint-disable-next-line no-console
-      console.warn('[UpgradeClient] Missing tenantId or orderId in props.');
+      console.warn('[UpgradeClient] Missing tenantId in props.');
     }
   }, [tenantId, orderId]);
+
+  // Fallback: resolver orderId si no vino en props
+  const resolveOrderIdIfNeeded = useCallback(async () => {
+    if (!tenantId) {
+      setErr('Missing tenantId.');
+      return;
+    }
+    if (resolvedOrderId) return; // ya lo tenemos
+
+    const url = `/api/upgrade/resolve-order?tenantId=${encodeURIComponent(tenantId)}`;
+    // eslint-disable-next-line no-console
+    console.log('[UpgradeClient] resolving orderId:', url);
+    try {
+      const r = await fetch(url, { cache: 'no-store' });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok || !j?.orderId) {
+        // eslint-disable-next-line no-console
+        console.error('[UpgradeClient] resolve-order failed', r.status, j);
+        throw new Error(j?.error || 'Could not resolve an existing order for this tenant.');
+      }
+      setResolvedOrderId(j.orderId);
+      // eslint-disable-next-line no-console
+      console.log('[UpgradeClient] resolved orderId:', j.orderId);
+    } catch (e: any) {
+      setErr(e?.message || 'Failed to resolve order for upgrade.');
+    }
+  }, [tenantId, resolvedOrderId]);
 
   const currency = (summary?.currency || 'USD').toUpperCase();
   const priceLabel = useMemo(() => {
@@ -68,11 +96,17 @@ export default function UpgradeClient({ tenantId, orderId }: { tenantId: string;
   }, [selectedPlan, currency]);
 
   const reloadSummary = useCallback(async () => {
-    if (!tenantId || !orderId) {
-      setErr('Missing tenantId or orderId.');
+    if (!tenantId) {
+      setErr('Missing tenantId.');
       return;
     }
-    const url = `/api/tenant-order?tenantId=${encodeURIComponent(tenantId)}&orderId=${encodeURIComponent(orderId)}`;
+    const oid = resolvedOrderId || orderId;
+    if (!oid) {
+      await resolveOrderIdIfNeeded();
+      return;
+    }
+
+    const url = `/api/tenant-order?tenantId=${encodeURIComponent(tenantId)}&orderId=${encodeURIComponent(oid)}`;
     // eslint-disable-next-line no-console
     console.log('[UpgradeClient] GET summary URL:', url);
     try {
@@ -87,30 +121,36 @@ export default function UpgradeClient({ tenantId, orderId }: { tenantId: string;
       // eslint-disable-next-line no-console
       console.log('[UpgradeClient] summary loaded:', data);
       setSummary(data);
-      setSelectedPlan(data.planTier || 'starter');
+      setSelectedPlan((data.planTier as PlanId) || 'starter');
       setErr('');
     } catch (e: any) {
       setErr(e?.message || 'Failed to load summary.');
     }
-  }, [tenantId, orderId]);
+  }, [tenantId, orderId, resolvedOrderId, resolveOrderIdIfNeeded]);
 
+  // Orquestación de carga
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        if (!tenantId || !orderId) {
-          if (!cancelled) setErr('Missing tenantId or orderId.');
+        if (!tenantId) {
+          if (!cancelled) setErr('Missing tenantId.');
           return;
         }
+        // Paso 1: si no tenemos orderId, resuélvelo
+        if (!resolvedOrderId && !orderId) {
+          await resolveOrderIdIfNeeded();
+        }
+        // Paso 2: cargar summary
         await reloadSummary();
       } catch (e: any) {
-        if (!cancelled) setErr(e?.message || 'Failed to load summary.');
+        if (!cancelled) setErr(e?.message || 'Failed to initialize upgrade.');
       } finally {
         if (!cancelled) setLoading(false);
       }
     })();
     return () => { cancelled = true; };
-  }, [tenantId, orderId, reloadSummary]);
+  }, [tenantId, orderId, resolvedOrderId, resolveOrderIdIfNeeded, reloadSummary]);
 
   // Load PayPal SDK
   useEffect(() => {
@@ -289,7 +329,7 @@ export default function UpgradeClient({ tenantId, orderId }: { tenantId: string;
           </p>
         </header>
 
-        {/* 🔎 Pequeño panel de depuración (puedes ocultarlo si no lo necesitas) */}
+        {/* 🔎 Panel de debug opcional */}
         <div className="d-flex justify-content-end mb-2">
           <button className="btn btn-link btn-sm" onClick={() => setDebugOpen(v => !v)}>
             {debugOpen ? 'Hide debug' : 'Show debug'}
@@ -297,7 +337,8 @@ export default function UpgradeClient({ tenantId, orderId }: { tenantId: string;
         </div>
         {debugOpen && (
           <div className="alert alert-secondary small">
-            <div><strong>Props</strong> tenantId: <code>{tenantId || '(empty)'}</code> — orderId: <code>{orderId || '(empty)'}</code></div>
+            <div><strong>Props</strong> tenantId: <code>{tenantId || '(empty)'}</code> — orderId (prop): <code>{orderId || '(empty)'}</code></div>
+            <div><strong>resolvedOrderId</strong>: <code>{resolvedOrderId || '(empty)'}</code></div>
             <div><strong>Summary?</strong> {summary ? 'yes' : 'no'}</div>
             {summary && (
               <>
@@ -362,7 +403,11 @@ export default function UpgradeClient({ tenantId, orderId }: { tenantId: string;
                   </p>
                 </div>
               </>
-            ) : null}
+            ) : (
+              <div className="alert alert-warning">
+                We could not find an existing order for this workspace. Please contact support.
+              </div>
+            )}
 
             <div className="d-flex gap-2 mt-3">
               <Link href="/docs" className="btn btn-outline-secondary">Help</Link>
