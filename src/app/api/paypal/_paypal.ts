@@ -1,46 +1,38 @@
-export function getPayPalBase() {
-  const env = (process.env.PAYPAL_ENV || 'sandbox').toLowerCase();
-  return env === 'live' ? 'https://api-m.paypal.com' : 'https://api-m.sandbox.paypal.com';
+export const RUNTIME = 'nodejs';
+
+function getEnv(name: string): string {
+  const v = process.env[name];
+  if (!v) throw new Error(`Missing ${name}`);
+  return v;
 }
 
-function getServerCreds() {
-  const id = process.env.PAYPAL_CLIENT_ID?.trim();
-  const secret = process.env.PAYPAL_CLIENT_SECRET?.trim();
-  if (!id || !secret) {
-    // 👇 log visible SOLO en server (no imprime secretos)
-    console.error('[paypal] missing server creds', {
-      id_present: Boolean(id),
-      secret_present: Boolean(secret),
-      PAYPAL_ENV: process.env.PAYPAL_ENV || null,
-      VERCEL_ENV: process.env.VERCEL_ENV || null,
-      NODE_ENV: process.env.NODE_ENV || null,
-    });
-    throw new Error('Missing PAYPAL_CLIENT_ID or PAYPAL_CLIENT_SECRET');
-  }
-  return { id, secret };
+export function getPayPalBase(): string {
+  const env = (process.env.PAYPAL_ENV || 'sandbox').toLowerCase();
+  return env === 'live'
+    ? 'https://api-m.paypal.com'
+    : 'https://api-m.sandbox.paypal.com';
 }
 
 export async function getPayPalAccessToken(): Promise<string> {
-  const base = getPayPalBase();
-  const { id, secret } = getServerCreds();
+  const clientId = getEnv('PAYPAL_CLIENT_ID');
+  const secret   = getEnv('PAYPAL_CLIENT_SECRET');
+  const base     = getPayPalBase();
 
-  const auth = Buffer.from(`${id}:${secret}`).toString('base64');
+  const creds = Buffer.from(`${clientId}:${secret}`).toString('base64');
+
   const resp = await fetch(`${base}/v1/oauth2/token`, {
     method: 'POST',
     headers: {
-      Authorization: `Basic ${auth}`,
+      'Authorization': `Basic ${creds}`,
       'Content-Type': 'application/x-www-form-urlencoded',
     },
     body: 'grant_type=client_credentials',
   });
 
-  const json = await resp.json();
+  const json = await resp.json().catch(() => ({}));
   if (!resp.ok || !json?.access_token) {
-    console.error('[paypal] oauth2/token failed', {
-      status: resp.status,
-      bodyKeys: json ? Object.keys(json) : [],
-    });
-    throw new Error('Failed to obtain PayPal access token');
+    console.error('[paypal:_paypal] oauth fail', { status: resp.status, bodyKeys: Object.keys(json || {}) });
+    throw new Error('PayPal OAuth failed');
   }
   return json.access_token as string;
 }

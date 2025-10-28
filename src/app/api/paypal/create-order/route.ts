@@ -1,88 +1,92 @@
-// src/app/api/paypal/create-order/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { getPayPalAccessToken, getPayPalBase } from '../_paypal';
-import { adminDb } from '@/lib/firebase/admin'; // mismo patrón que usas en /api/tenant-order
 
 export const runtime = 'nodejs';
 
+type CreateBody = {
+  tenantId?: string;
+  orderId?: string;
+  amountCents?: number; // opcional si ya lo calculaste; si no, pásalo desde tu upgrade API
+  currency?: string;    // 'USD' por defecto
+  description?: string; // opcional
+};
+
+function j(d: any, s = 200) { return NextResponse.json(d, { status: s }); }
+
 export async function POST(req: NextRequest) {
   try {
-    const { tenantId, orderId } = await req.json() as { tenantId?: string; orderId?: string };
-    if (!tenantId || !orderId) {
-      return NextResponse.json({ error: 'Missing tenantId or orderId' }, { status: 400 });
-    }
+    const body = await req.json() as CreateBody;
+    const { tenantId, orderId } = body;
+    const amountCents = Number(body.amountCents ?? 0);
+    const currency = (body.currency || process.env.PAY_CURRENCY || 'USD').toUpperCase();
+    const description = body.description || `Order ${orderId} @ ${tenantId}`;
 
-    // 1) Cargar la orden interna
-    const docRef = adminDb.doc(`tenants/${tenantId}/tenantOrders/${orderId}`);
-    const snap = await docRef.get();
-    if (!snap.exists) {
-      return NextResponse.json({ error: 'Order not found' }, { status: 404 });
-    }
-    const data = snap.data()!;
-    const amountCents = data.amountCents ?? 0;
-    const currency = (data.currency || 'USD').toUpperCase();
-
-    if (amountCents <= 0) {
-      return NextResponse.json({ error: 'Invalid amount' }, { status: 400 });
-    }
-
+    // Logs defensivos (no secretos)
     console.log('[paypal:create-order] start', {
-    tenantId, orderId,
-    amountCents,
-    currency,
-    env: process.env.PAYPAL_ENV || 'sandbox',
-    server_id_present: Boolean(process.env.PAYPAL_CLIENT_ID),
-    server_secret_present: Boolean(process.env.PAYPAL_CLIENT_SECRET),
-  });
+      tenantId, orderId,
+      amountCents, currency,
+      env: process.env.PAYPAL_ENV || 'sandbox',
+      server_id_present: Boolean(process.env.PAYPAL_CLIENT_ID),
+      server_secret_present: Boolean(process.env.PAYPAL_CLIENT_SECRET),
+    });
 
+    if (!tenantId || !orderId) return j({ error: 'Missing tenantId or orderId' }, 400);
+    if (!amountCents || amountCents < 1) return j({ error: 'Invalid amountCents' }, 400);
 
-    // 2) Crear PayPal order
+    // PayPal total en decimales
+    const value = (amountCents / 100).toFixed(2);
+
     const accessToken = await getPayPalAccessToken();
     const base = getPayPalBase();
 
-    const body = {
-      intent: 'CAPTURE',
-      purchase_units: [
-        {
-          reference_id: `${tenantId}__${orderId}`,
-          amount: {
-            currency_code: currency,
-            value: (amountCents / 100).toFixed(2),
-          },
-        },
-      ],
-      application_context: {
-        shipping_preference: 'NO_SHIPPING',
-        user_action: 'PAY_NOW',
-      },
-    };
-
-    const resp = await fetch(`${base}/v2/checkout/orders`, {
+    const createResp = await fetch(`${base}/v2/checkout/orders`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${accessToken}`,
         'Content-Type': 'application/json',
+        'PayPal-Request-Id': `${tenantId}__${orderId}`, // idempotencia
       },
-      body: JSON.stringify(body),
+      body: JSON.stringify({
+        intent: 'CAPTURE',
+        purchase_units: [
+          {
+            amount: { currency_code: currency, value },
+            description,
+            custom_id: `${tenantId}__${orderId}`,
+          }
+        ],
+        application_context: {
+          brand_name: tenantId,
+          shipping_preference: 'NO_SHIPPING',
+          user_action: 'PAY_NOW',
+          return_url: 'https://www.datacraftcoders.cloud/checkout/success', // opcionales
+          cancel_url: 'https://www.datacraftcoders.cloud/checkout/cancel',
+        },
+      }),
     });
 
-    const json = await resp.json();
-    if (!resp.ok) {
-      return NextResponse.json({ error: 'PayPal create failed', details: json }, { status: 500 });
+    const createJson = await createResp.json().catch(() => ({}));
+    if (!createResp.ok) {
+      console.error('[paypal:create-order] create failed', {
+        status: createResp.status,
+        bodyKeys: Object.keys(createJson || {}),
+      });
+      return j({ error: 'PayPal create failed', details: createJson }, 500);
     }
 
-    // 3) Guardar referencia en la orden interna (opcional)
-    await docRef.set({
-      paypal: {
-        orderId: json.id,
-        status: json.status,
-        createdAt: new Date().toISOString(),
-      },
-      updatedAt: new Date(),
-    }, { merge: true });
+    const id = createJson?.id as string | undefined;
+    if (!id) {
+      console.error('[paypal:create-order] no id in response');
+      return j({ error: 'No PayPal order id' }, 500);
+    }
 
-    return NextResponse.json({ paypalOrderId: json.id }, { status: 200 });
+    console.log('[paypal:create-order] success', { id });
+    return j({ id });
   } catch (e: any) {
-    return NextResponse.json({ error: e?.message || 'Internal error' }, { status: 500 });
+    console.error('[paypal:create-order] exception', { message: e?.message });
+    const msg = e?.message?.includes('Missing PAYPAL_CLIENT_ID') || e?.message?.includes('PAYPAL_CLIENT_SECRET')
+      ? 'Missing PAYPAL_CLIENT_ID or PAYPAL_CLIENT_SECRET'
+      : (e?.message || 'Internal error');
+    return j({ error: msg }, 500);
   }
 }
