@@ -37,6 +37,7 @@ type Summary = {
 declare global {
   interface Window {
     paypal?: any;
+    __effectiveUpgradeOrderId?: string;
   }
 }
 
@@ -52,8 +53,6 @@ export default function UpgradeClient({ tenantId, orderId }: { tenantId: string;
   const [resolvedOrderId, setResolvedOrderId] = useState<string>(orderId || '');
   const [debugOpen, setDebugOpen] = useState(false);
 
-  
-  
   // Fallback: resolver orderId si no vino en props
   const resolveOrderIdIfNeeded = useCallback(async () => {
     if (!tenantId) {
@@ -63,17 +62,14 @@ export default function UpgradeClient({ tenantId, orderId }: { tenantId: string;
     if (resolvedOrderId) return; // ya lo tenemos
 
     const url = `/api/upgrade/resolve-order?tenantId=${encodeURIComponent(tenantId)}`;
-    // eslint-disable-next-line no-console
     try {
       const r = await fetch(url, { cache: 'no-store' });
       const j = await r.json().catch(() => ({}));
       if (!r.ok || !j?.orderId) {
-        // eslint-disable-next-line no-console
         throw new Error(j?.error || 'Could not resolve an existing order for this tenant.');
       }
       setResolvedOrderId(j.orderId);
-      // eslint-disable-next-line no-console
-      } catch (e: any) {
+    } catch (e: any) {
       setErr(e?.message || 'Failed to resolve order for upgrade.');
     }
   }, [tenantId, resolvedOrderId]);
@@ -96,17 +92,14 @@ export default function UpgradeClient({ tenantId, orderId }: { tenantId: string;
     }
 
     const url = `/api/tenant-order?tenantId=${encodeURIComponent(tenantId)}&orderId=${encodeURIComponent(oid)}`;
-    // eslint-disable-next-line no-console
     try {
       const resp = await fetch(url, { cache: 'no-store' });
       if (!resp.ok) {
         const txt = await resp.text().catch(() => '');
-        // eslint-disable-next-line no-console
         console.error('[UpgradeClient] GET summary failed', resp.status, txt);
         throw new Error(txt || `HTTP ${resp.status}`);
       }
       const data = (await resp.json()) as Summary;
-      // eslint-disable-next-line no-console
       setSummary(data);
       setSelectedPlan((data.planTier as PlanId) || 'starter');
       setErr('');
@@ -124,11 +117,9 @@ export default function UpgradeClient({ tenantId, orderId }: { tenantId: string;
           if (!cancelled) setErr('Missing tenantId.');
           return;
         }
-        // Paso 1: si no tenemos orderId, resuélvelo
         if (!resolvedOrderId && !orderId) {
           await resolveOrderIdIfNeeded();
         }
-        // Paso 2: cargar summary
         await reloadSummary();
       } catch (e: any) {
         if (!cancelled) setErr(e?.message || 'Failed to initialize upgrade.');
@@ -148,28 +139,27 @@ export default function UpgradeClient({ tenantId, orderId }: { tenantId: string;
     }
     const clientId = process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID;
     if (!clientId) {
-      // eslint-disable-next-line no-console
       console.error('Missing NEXT_PUBLIC_PAYPAL_CLIENT_ID');
       return;
     }
     const scriptSrc = `https://www.paypal.com/sdk/js?client-id=${encodeURIComponent(clientId)}&currency=${encodeURIComponent(currency)}&intent=capture`;
-    // eslint-disable-next-line no-console
-    //console.log('[UpgradeClient] Loading PayPal SDK:', scriptSrc);
     const script = document.createElement('script');
     script.src = scriptSrc;
     script.async = true;
-    script.onload = () => {
-      // eslint-disable-next-line no-console
-     //console.log('[UpgradeClient] PayPal SDK loaded');
-      setPaypalReady(true);
-    };
+    script.onload = () => setPaypalReady(true);
     script.onerror = () => {
       setErr('Failed to load PayPal SDK.');
-      // eslint-disable-next-line no-console
       console.error('[UpgradeClient] PayPal SDK failed to load');
     };
     document.body.appendChild(script);
   }, [summary, currency]);
+
+  // 🔁 Re-render de botones cuando cambia el plan seleccionado
+  useEffect(() => {
+    const container = document.getElementById('paypal-buttons-upgrade');
+    if (container) container.innerHTML = '';
+    setRenderedButtons(false);
+  }, [selectedPlan]);
 
   // Render PayPal Buttons
   useEffect(() => {
@@ -182,7 +172,6 @@ export default function UpgradeClient({ tenantId, orderId }: { tenantId: string;
 
     if (!window.paypal || !window.paypal.Buttons) {
       setErr('PayPal Buttons not available.');
-      // eslint-disable-next-line no-console
       console.error('[UpgradeClient] window.paypal.Buttons not available');
       return;
     }
@@ -194,12 +183,8 @@ export default function UpgradeClient({ tenantId, orderId }: { tenantId: string;
       createOrder: async () => {
         try {
           if (!summary) throw new Error('Missing order summary.');
-          // eslint-disable-next-line no-console
-          console.log('[UpgradeClient] updating internal order before PayPal createOrder', {
-            tenantId: summary.tenantId,
-            orderId: summary.orderId,
-            newPlan: selectedPlan,
-          });
+
+          // 1) Pide al backend preparar la orden para este upgrade
           const updateResp = await fetch('/api/upgrade/use-existing-order', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -211,40 +196,45 @@ export default function UpgradeClient({ tenantId, orderId }: { tenantId: string;
           });
           const updateJson = await updateResp.json().catch(() => ({}));
           if (!updateResp.ok) {
-            // eslint-disable-next-line no-console
             console.error('[UpgradeClient] use-existing-order failed:', updateResp.status, updateJson);
             throw new Error(updateJson?.error || 'Failed to update order for upgrade.');
           }
 
-          // 2) Crear PayPal order
-          // ⚠️ FIX: enviar amountCents (entero) y currency
+          // Si backend creó nueva orden efectiva, úsala; si no, usa la actual
+          const effectiveOrderId =
+            updateJson?.orderId && typeof updateJson.orderId === 'string'
+              ? updateJson.orderId
+              : summary.orderId;
+
+          // 💳 Fuerza el monto del plan seleccionado
           const amountCents = PLAN_PRICE_CENTS[selectedPlan] ?? 0;
+
+          // 2) Crear PayPal order con ese monto
           const resp = await fetch('/api/paypal/create-order', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               tenantId: summary.tenantId,
-              orderId: summary.orderId,
-              amountCents,
-              currency: (summary.currency || 'USD').toUpperCase(),
-              description: `Plan ${selectedPlan} @ ${summary.tenantId}`,
+              orderId: effectiveOrderId,
+              amountCents,                 // << monto actual del plan elegido
+              currency: summary.currency,  // usa la moneda del summary
+              description: `Upgrade to ${selectedPlan} @ ${summary.tenantId}`,
             }),
           });
-
           const json = await resp.json().catch(() => ({}));
-          // 🔧 aceptar múltiples formatos (backend puede devolver id/orderID/paypalOrderId/result.id)
+
           const paypalOrderId =
-            json?.paypalOrderId ??
-            json?.id ??
-            json?.orderID ??
-            json?.result?.id;
+            json?.paypalOrderId ?? json?.id ?? json?.orderID ?? json?.result?.id;
 
           if (!resp.ok || !paypalOrderId) {
             console.error('[UpgradeClient] PayPal create-order failed:', resp.status, json);
             throw new Error(json?.error || 'Could not create PayPal order.');
           }
-          return paypalOrderId;
 
+          // Guarda el orderId efectivo para el capture
+          window.__effectiveUpgradeOrderId = effectiveOrderId;
+
+          return paypalOrderId;
         } catch (e: any) {
           setErr(e?.message || 'Could not prepare PayPal order.');
           throw e;
@@ -255,40 +245,40 @@ export default function UpgradeClient({ tenantId, orderId }: { tenantId: string;
         try {
           const paypalOrderId = data?.orderID;
           if (!paypalOrderId) throw new Error('Missing PayPal order ID.');
-          // eslint-disable-next-line no-console
-          //console.log('[UpgradeClient] onApprove, capturing:', { paypalOrderId });
+
+          const effectiveOrderId = window.__effectiveUpgradeOrderId || summary.orderId;
 
           // 3) Capturar pago
           const resp = await fetch('/api/paypal/capture', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ tenantId: summary.tenantId, orderId: summary.orderId, paypalOrderId }),
+            body: JSON.stringify({
+              tenantId: summary.tenantId,
+              orderId: effectiveOrderId,
+              paypalOrderId,
+            }),
           });
           const json = await resp.json().catch(() => ({}));
           if (!resp.ok || !json?.ok) {
-            // eslint-disable-next-line no-console
             console.error('[UpgradeClient] capture failed:', resp.status, json);
             throw new Error(json?.error || 'Payment capture failed.');
           }
 
-          // 4) Aplicar upgrade (actualizar planTier, features, flags)
-          // eslint-disable-next-line no-console
-          //console.log('[UpgradeClient] applying upgrade:', { tenantId: summary.tenantId, orderId: summary.orderId });
+          // 4) Aplicar upgrade
           const applyResp = await fetch('/api/upgrade/apply', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ tenantId: summary.tenantId, orderId: summary.orderId }),
+            body: JSON.stringify({ tenantId: summary.tenantId, orderId: effectiveOrderId }),
           });
           const applyJson = await applyResp.json().catch(() => ({}));
           if (!applyResp.ok) {
-            // eslint-disable-next-line no-console
             console.error('[UpgradeClient] apply failed:', applyResp.status, applyJson);
             throw new Error(applyJson?.error || 'Failed to apply upgrade.');
           }
 
-          const url = applyJson?.successUrl || `/success?tenantId=${encodeURIComponent(summary.tenantId)}&orderId=${encodeURIComponent(summary.orderId)}`;
-          // eslint-disable-next-line no-console
-         // console.log('[UpgradeClient] redirecting to success:', url);
+          const url =
+            applyJson?.successUrl ||
+            `/success?tenantId=${encodeURIComponent(summary.tenantId)}&orderId=${encodeURIComponent(effectiveOrderId)}`;
           window.location.assign(url);
         } catch (e: any) {
           setErr(e?.message || 'Payment processing failed.');
@@ -296,13 +286,11 @@ export default function UpgradeClient({ tenantId, orderId }: { tenantId: string;
       },
 
       onCancel: () => {
-        // eslint-disable-next-line no-console
-       // console.log('[UpgradeClient] PayPal flow cancelled by user');
+        // opcional
       },
 
       onError: (err: any) => {
         setErr(err?.message || 'PayPal error.');
-        // eslint-disable-next-line no-console
         console.error('[UpgradeClient] PayPal onError:', err);
       },
     });
