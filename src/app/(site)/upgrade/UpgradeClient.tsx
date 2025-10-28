@@ -48,13 +48,15 @@ export default function UpgradeClient({ tenantId, orderId }: { tenantId: string;
 
   const [selectedPlan, setSelectedPlan] = useState<PlanId>('starter');
   const [paypalReady, setPaypalReady] = useState(false);
-  const [renderedButtons, setRenderedButtons] = useState(false);
 
   const [resolvedOrderId, setResolvedOrderId] = useState<string>(orderId || '');
   const [debugOpen, setDebugOpen] = useState(false);
 
   // ref para la order interna efectiva (nueva o la existente) — se usa en create, capture y apply
   const effectiveOrderIdRef = useRef<string | null>(null);
+
+  // ref para la instancia de PayPal Buttons (para cerrar/limpiar en cleanup)
+  const buttonsRef = useRef<any | null>(null);
 
   // Fallback: resolver orderId si no vino en props
   const resolveOrderIdIfNeeded = useCallback(async () => {
@@ -159,14 +161,16 @@ export default function UpgradeClient({ tenantId, orderId }: { tenantId: string;
     document.body.appendChild(script);
   }, [summary, currency]);
 
-  // Render PayPal Buttons
+  // Render PayPal Buttons (con cleanup para evitar duplicados)
   useEffect(() => {
     if (!paypalReady || !summary) return;
-    if (renderedButtons) return;
 
     const containerId = 'paypal-buttons-upgrade';
     const container = document.getElementById(containerId);
     if (!container) return;
+
+    // Limpia contenedor antes de crear nuevos botones
+    container.innerHTML = '';
 
     if (!window.paypal || !window.paypal.Buttons) {
       setErr('PayPal Buttons not available.');
@@ -174,7 +178,16 @@ export default function UpgradeClient({ tenantId, orderId }: { tenantId: string;
       return;
     }
 
-    const buttons = window.paypal.Buttons({
+    // Si existía una instancia anterior, ciérrala (evita duplicados)
+    try {
+      if (buttonsRef.current && typeof buttonsRef.current.close === 'function') {
+        buttonsRef.current.close();
+      }
+    } catch (e) {
+      // ignore
+    }
+
+    const buttonsInstance = window.paypal.Buttons({
       style: { layout: 'vertical', shape: 'pill', label: 'pay' },
 
       // 1) Antes de crear la orden de PayPal, actualizamos la MISMA orden interna
@@ -230,9 +243,7 @@ export default function UpgradeClient({ tenantId, orderId }: { tenantId: string;
             throw new Error(json?.error || 'Could not create PayPal order.');
           }
 
-          // (opcional) si backend devolvió amountCents, podrías actualizar summary local o mostrar al usuario
-          // if (json?.amountCents) { /* actualizar UI si quieres */ }
-
+          // opcional: podrías verificar json.amountCents y actualizar UI si quieres
           return paypalOrderId;
         } catch (e: any) {
           setErr(e?.message || 'Could not prepare PayPal order.');
@@ -289,19 +300,43 @@ export default function UpgradeClient({ tenantId, orderId }: { tenantId: string;
       },
     });
 
-    buttons.render(`#${containerId}`);
-    setRenderedButtons(true);
-    // no cleanup por ahora
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [paypalReady, summary, renderedButtons, selectedPlan]);
+    // Guardamos la instancia y renderizamos
+    buttonsRef.current = buttonsInstance;
+    try {
+      buttonsInstance.render(`#${containerId}`);
+    } catch (err) {
+      console.error('[UpgradeClient] buttons.render failed', err);
+      // fallback: limpiar container para evitar duplicados si render falla
+      container.innerHTML = '';
+    }
+
+    // cleanup: cerrar la instancia de botones si existe cuando el effect se desmonte o cambie deps
+    return () => {
+      try {
+        if (buttonsRef.current && typeof buttonsRef.current.close === 'function') {
+          buttonsRef.current.close();
+        } else {
+          // fallback: limpiar el container
+          const c = document.getElementById(containerId);
+          if (c) c.innerHTML = '';
+        }
+      } catch (err) {
+        console.warn('[UpgradeClient] cleanup error', err);
+      } finally {
+        buttonsRef.current = null;
+      }
+    };
+// eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [paypalReady, summary, selectedPlan]);
 
   // Cuando el usuario cambia de plan, marcar que necesitamos re-renderizar los botones
   const handlePlanChange = (v: PlanId) => {
     setSelectedPlan(v);
-    // fuerza re-render del SDK buttons para que cree orden con el nuevo monto
-    setRenderedButtons(false);
     // limpia error previo
     setErr('');
+    // limpia contenedor para que el effect vuelva a montar botones nuevos
+    const container = document.getElementById('paypal-buttons-upgrade');
+    if (container) container.innerHTML = '';
   };
 
   const samePlan = summary && selectedPlan === summary.planTier;
