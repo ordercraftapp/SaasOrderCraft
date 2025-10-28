@@ -57,10 +57,6 @@ async function getIdTokenSafe(forceRefresh = false): Promise<string | null> {
 
 /* ============================
    🔹 Tenant helpers (path o subdominio)
-   Soporta:
-   - /{tenantId}/app/...
-   - /_t/{tenantId}/app/...
-   - subdominio: {tenantId}.datacraftcoders.cloud con /app/...
    ============================ */
 function getTenantIdFromLocation(): string | null {
   try {
@@ -80,10 +76,8 @@ function getTenantIdFromLocation(): string | null {
 
     // 3) Subdominio: {tenantId}.example.com -> /app/...
     const host = window.location.hostname || '';
-    // Evita 'www'
     const labels = host.split('.').filter(Boolean);
     if (labels.length >= 3) {
-      // p.ej. javi.datacraftcoders.cloud => ['javi','datacraftcoders','cloud']
       const sub = labels[0];
       if (sub && sub !== 'www') return sub;
     }
@@ -99,27 +93,18 @@ function makeTenantUrl(path: string): string {
   const tenantId = getTenantIdFromLocation();
   const rel = path.startsWith('/') ? path : `/${path}`;
 
-  // Si ya viene con /{tenantId}/..., respétalo
   if (tenantId && (rel === `/${tenantId}` || rel.startsWith(`/${tenantId}/`))) {
     return new URL(rel, window.location.origin).toString();
   }
-
-  // API vive bajo "/{tenantId}/app/api/..."
   if (tenantId && rel.startsWith('/api/')) {
     return new URL(`/${tenantId}/app${rel}`, window.location.origin).toString();
   }
-
-  // Rutas bajo "/app/..." deben llevar "/{tenantId}" delante
   if (tenantId && rel.startsWith('/app/')) {
     return new URL(`/${tenantId}${rel}`, window.location.origin).toString();
   }
-
-  // Fallback: si hay tenant, préfixalo
   if (tenantId) {
     return new URL(`/${tenantId}${rel}`, window.location.origin).toString();
   }
-
-  // Sin tenant (entornos donde no aplique)
   return new URL(rel, window.location.origin).toString();
 }
 
@@ -164,21 +149,17 @@ function useNavCounts(pollMs = 15000) {
 
   const load = async () => {
     try {
-      // Si no hay idToken aún (usuario no hidratado), salimos sin error
       const maybeToken = await getIdTokenSafe(false);
       if (!maybeToken) {
         setLoading(false);
         return;
       }
-
       setErr(null);
       setLoading(true);
 
-      // ✅ usa prefijo /api; apiFetch lo vuelve /{tenantId}/app/api/...
       let res = await apiFetch('/api/admin/nav-counts');
 
       if (res.status === 403) {
-        // Fuerza refresh del ID token y reintenta una vez
         await getIdTokenSafe(true);
         res = await apiFetch('/api/admin/nav-counts');
       }
@@ -212,7 +193,7 @@ function useNavCounts(pollMs = 15000) {
   return { counts, err, loading, reload: load } as const;
 }
 
-/* ======= Mesas activas (tenant-aware si hay tenantId) ======= */
+/* ======= Mesas activas ======= */
 function useActiveTablesCount(pollMs = 15000) {
   const [count, setCount] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
@@ -231,12 +212,10 @@ function useActiveTablesCount(pollMs = 15000) {
         ? query(
             collection(db, 'tenants', tenantId, 'orders'),
             where('orderInfo.type', '==', 'dine-in'),
-            // Firestore limita 'in' a 10 elementos; aquí son 4 (ok)
             where('status', 'in', OPEN_STATUSES as unknown as string[]),
             limit(1000)
           )
         : query(
-            // Fallback no-tenant (solo si mantienes una colección global)
             collection(db, 'orders'),
             where('orderInfo.type', '==', 'dine-in'),
             where('status', 'in', OPEN_STATUSES as unknown as string[]),
@@ -273,42 +252,48 @@ function useActiveTablesCount(pollMs = 15000) {
   return { count, loading, reload: load } as const;
 }
 
-/* ========= Upgrade Button (Site link absoluto con tenantId en query) ========= */
-function UpgradeButton() {
-  const [href, setHref] = React.useState<string | null>(null);
+/* 🆕 Helper: construir URL de upgrade en el SITE con tenantId + orderId */
+function buildUpgradeHref(tenantId: string, orderId: string | null) {
+  const base = (process.env.NEXT_PUBLIC_BASE_DOMAIN || 'datacraftcoders.cloud').toLowerCase();
+  const url = new URL(`https://${base}/upgrade`);
+  url.searchParams.set('tenantId', tenantId);
+  if (orderId) url.searchParams.set('orderId', orderId);
+  return url.toString();
+}
 
-  React.useEffect(() => {
-    try {
-      const baseDomain = (process.env.NEXT_PUBLIC_BASE_DOMAIN || 'datacraftcoders.cloud').toLowerCase();
-      const tenantId = getTenantIdFromLocation();
-      const url = new URL(`https://${baseDomain}/upgrade`);
-      if (tenantId) url.searchParams.set('tenantId', tenantId);
-      // Si más adelante quieres pasar orderId: url.searchParams.set('orderId', '<id>');
-      setHref(url.toString());
-    } catch {
-      setHref(null);
-    }
-  }, []);
+/* 🆕 Hook: obtener el último orderId del tenant (tenantOrders) */
+function useLatestOrderId(tenantId: string | null) {
+  const [orderId, setOrderId] = useState<string | null>(null);
 
-  if (!href) return null;
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      if (!tenantId) return;
+      try {
+        await ensureFirebaseApp();
+        const { getFirestore, collection, query, orderBy, limit, getDocs } = await import('firebase/firestore');
+        const db = getFirestore();
+        // Última orden (created/provisioned si quieres filtrar por estado, aquí tomamos la más reciente)
+        const q = query(
+          collection(db, 'tenants', tenantId, 'tenantOrders'),
+          orderBy('createdAt', 'desc'),
+          limit(1)
+        );
+        const snap = await getDocs(q);
+        if (!alive) return;
+        if (!snap.empty) {
+          setOrderId(snap.docs[0].id);
+        } else {
+          setOrderId(null);
+        }
+      } catch {
+        if (alive) setOrderId(null);
+      }
+    })();
+    return () => { alive = false; };
+  }, [tenantId]);
 
-  return (
-    <a
-      href={href}
-      className="btn btn-warning btn-sm position-relative fw-semibold"
-      style={{ boxShadow: '0 0 0.75rem rgba(255,193,7,.5)' }}
-    >
-      <span role="img" aria-label="sparkles" className="me-1">✨</span>
-      Upgrade
-      <span
-        className="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger"
-        style={{ fontSize: '0.65rem' }}
-      >
-        NEW
-        <span className="visually-hidden">new feature</span>
-      </span>
-    </a>
-  );
+  return orderId;
 }
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
@@ -318,11 +303,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const tenantId = (() => {
     try {
       const parts = (pathname || '/').split('/').filter(Boolean);
-      // /{tenantId}/app/...
       if (parts.length >= 2 && parts[1] === 'app') return parts[0];
-      // /_t/{tenantId}/app/...
       if (parts.length >= 3 && parts[0] === '_t' && parts[2] === 'app') return parts[1];
-      // subdominio
       if (typeof window !== 'undefined') {
         const host = window.location.hostname || '';
         const labels = host.split('.').filter(Boolean);
@@ -331,6 +313,12 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       return null;
     } catch { return null; }
   })();
+
+  const latestOrderId = useLatestOrderId(tenantId);
+  const upgradeHref = useMemo(
+    () => (tenantId ? buildUpgradeHref(tenantId, latestOrderId) : null),
+    [tenantId, latestOrderId]
+  );
 
   const isActive = (href: string) => {
     const full = tenantHref(href);
@@ -447,8 +435,24 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               </ul>
 
               <div className="d-flex align-items-center gap-2">
-                {/* ⬇️ Botón Upgrade (site) */}
-                <UpgradeButton />
+                {/* 🆕 Botón Upgrade (sólo si ya tenemos tenantId y orderId resuelto) */}
+                {tenantId && upgradeHref ? (
+                  <a
+                    href={upgradeHref}
+                    className="btn btn-warning btn-sm fw-semibold position-relative"
+                    style={{ boxShadow: '0 0 0.65rem rgba(255,193,7,.45)' }}
+                  >
+                    <span className="me-1" aria-hidden>✨</span>
+                    Upgrade
+                    <span
+                      className="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger"
+                      style={{ fontSize: '0.65rem' }}
+                    >
+                      NEW
+                      <span className="visually-hidden">new</span>
+                    </span>
+                  </a>
+                ) : null}
 
                 {/* Si tu logout es tenant-scoped, usa tenantHref('/app/logout') */}
                 <Link className="btn btn-outline-primary btn-sm" href="/logout">
