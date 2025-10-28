@@ -37,7 +37,7 @@ type Summary = {
 declare global {
   interface Window {
     paypal?: any;
-    __effectiveUpgradeOrderId?: string;
+    __effectiveUpgradeOrderId?: string; // ← guardamos la orden “efectiva” para capture/apply
   }
 }
 
@@ -53,13 +53,13 @@ export default function UpgradeClient({ tenantId, orderId }: { tenantId: string;
   const [resolvedOrderId, setResolvedOrderId] = useState<string>(orderId || '');
   const [debugOpen, setDebugOpen] = useState(false);
 
-  // Fallback: resolver orderId si no vino en props
+  // ---------- Resolve orderId if needed ----------
   const resolveOrderIdIfNeeded = useCallback(async () => {
     if (!tenantId) {
       setErr('Missing tenantId.');
       return;
     }
-    if (resolvedOrderId) return; // ya lo tenemos
+    if (resolvedOrderId) return;
 
     const url = `/api/upgrade/resolve-order?tenantId=${encodeURIComponent(tenantId)}`;
     try {
@@ -108,7 +108,7 @@ export default function UpgradeClient({ tenantId, orderId }: { tenantId: string;
     }
   }, [tenantId, orderId, resolvedOrderId, resolveOrderIdIfNeeded]);
 
-  // Orquestación de carga
+  // ---------- Orchestrate load ----------
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -130,7 +130,7 @@ export default function UpgradeClient({ tenantId, orderId }: { tenantId: string;
     return () => { cancelled = true; };
   }, [tenantId, orderId, resolvedOrderId, resolveOrderIdIfNeeded, reloadSummary]);
 
-  // Load PayPal SDK
+  // ---------- Load PayPal SDK ----------
   useEffect(() => {
     if (!summary) return;
     if (window.paypal) {
@@ -154,14 +154,14 @@ export default function UpgradeClient({ tenantId, orderId }: { tenantId: string;
     document.body.appendChild(script);
   }, [summary, currency]);
 
-  // 🔁 Re-render de botones cuando cambia el plan seleccionado
+  // ---------- Re-render PayPal buttons when plan changes ----------
   useEffect(() => {
     const container = document.getElementById('paypal-buttons-upgrade');
     if (container) container.innerHTML = '';
     setRenderedButtons(false);
   }, [selectedPlan]);
 
-  // Render PayPal Buttons
+  // ---------- Render PayPal Buttons ----------
   useEffect(() => {
     if (!paypalReady || !summary) return;
     if (renderedButtons) return;
@@ -179,18 +179,17 @@ export default function UpgradeClient({ tenantId, orderId }: { tenantId: string;
     const buttons = window.paypal.Buttons({
       style: { layout: 'vertical', shape: 'pill', label: 'pay' },
 
-      // 1) Antes de crear la orden de PayPal, actualizamos la MISMA orden interna
       createOrder: async () => {
         try {
           if (!summary) throw new Error('Missing order summary.');
 
-          // 1) Pide al backend preparar la orden para este upgrade
+          // 1) Pide al backend preparar/crear orden efectiva para este upgrade.
           const updateResp = await fetch('/api/upgrade/use-existing-order', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               tenantId: summary.tenantId,
-              orderId: summary.orderId,
+              orderId: summary.orderId,   // puede estar pagada; backend decide si clonar/nueva
               newPlan: selectedPlan,
             }),
           });
@@ -200,23 +199,21 @@ export default function UpgradeClient({ tenantId, orderId }: { tenantId: string;
             throw new Error(updateJson?.error || 'Failed to update order for upgrade.');
           }
 
-          // Si backend creó nueva orden efectiva, úsala; si no, usa la actual
-          const effectiveOrderId =
-            updateJson?.orderId && typeof updateJson.orderId === 'string'
-              ? updateJson.orderId
-              : summary.orderId;
+          // Usa la orden efectiva que diga el backend; si no, la actual
+          const effectiveOrderId: string =
+            (typeof updateJson?.orderId === 'string' && updateJson.orderId) || summary.orderId;
 
-          // 💳 Fuerza el monto del plan seleccionado
+          // 2) Calcula y fuerza el monto del plan seleccionado
           const amountCents = PLAN_PRICE_CENTS[selectedPlan] ?? 0;
 
-          // 2) Crear PayPal order con ese monto
+          // 3) Crea la PayPal order con ese monto y la orden efectiva
           const resp = await fetch('/api/paypal/create-order', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               tenantId: summary.tenantId,
               orderId: effectiveOrderId,
-              amountCents,                 // << monto actual del plan elegido
+              amountCents,                 // ← monto actualizado
               currency: summary.currency,  // usa la moneda del summary
               description: `Upgrade to ${selectedPlan} @ ${summary.tenantId}`,
             }),
@@ -231,7 +228,7 @@ export default function UpgradeClient({ tenantId, orderId }: { tenantId: string;
             throw new Error(json?.error || 'Could not create PayPal order.');
           }
 
-          // Guarda el orderId efectivo para el capture
+          // Guarda la orden efectiva para capture/apply
           window.__effectiveUpgradeOrderId = effectiveOrderId;
 
           return paypalOrderId;
@@ -246,9 +243,10 @@ export default function UpgradeClient({ tenantId, orderId }: { tenantId: string;
           const paypalOrderId = data?.orderID;
           if (!paypalOrderId) throw new Error('Missing PayPal order ID.');
 
+          // Usa la orden efectiva (nueva o la misma)
           const effectiveOrderId = window.__effectiveUpgradeOrderId || summary.orderId;
 
-          // 3) Capturar pago
+          // 4) Capturar pago
           const resp = await fetch('/api/paypal/capture', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -264,7 +262,7 @@ export default function UpgradeClient({ tenantId, orderId }: { tenantId: string;
             throw new Error(json?.error || 'Payment capture failed.');
           }
 
-          // 4) Aplicar upgrade
+          // 5) Aplicar upgrade
           const applyResp = await fetch('/api/upgrade/apply', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -297,7 +295,6 @@ export default function UpgradeClient({ tenantId, orderId }: { tenantId: string;
 
     buttons.render(`#${containerId}`);
     setRenderedButtons(true);
-    // no cleanup
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [paypalReady, summary, renderedButtons, selectedPlan]);
 
@@ -313,7 +310,7 @@ export default function UpgradeClient({ tenantId, orderId }: { tenantId: string;
           </p>
         </header>
 
-        {/* 🔎 Panel de debug opcional */}
+        {/* Debug panel */}
         <div className="d-flex justify-content-end mb-2">
           <button className="btn btn-link btn-sm" onClick={() => setDebugOpen(v => !v)}>
             {debugOpen ? 'Hide debug' : 'Show debug'}
