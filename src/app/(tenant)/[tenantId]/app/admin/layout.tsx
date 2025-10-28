@@ -273,6 +273,44 @@ function useActiveTablesCount(pollMs = 15000) {
   return { count, loading, reload: load } as const;
 }
 
+/* ========= Upgrade Button (Site link absoluto con tenantId en query) ========= */
+function UpgradeButton() {
+  const [href, setHref] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    try {
+      const baseDomain = (process.env.NEXT_PUBLIC_BASE_DOMAIN || 'datacraftcoders.cloud').toLowerCase();
+      const tenantId = getTenantIdFromLocation();
+      const url = new URL(`https://${baseDomain}/upgrade`);
+      if (tenantId) url.searchParams.set('tenantId', tenantId);
+      // Si más adelante quieres pasar orderId: url.searchParams.set('orderId', '<id>');
+      setHref(url.toString());
+    } catch {
+      setHref(null);
+    }
+  }, []);
+
+  if (!href) return null;
+
+  return (
+    <a
+      href={href}
+      className="btn btn-warning btn-sm position-relative fw-semibold"
+      style={{ boxShadow: '0 0 0.75rem rgba(255,193,7,.5)' }}
+    >
+      <span role="img" aria-label="sparkles" className="me-1">✨</span>
+      Upgrade
+      <span
+        className="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger"
+        style={{ fontSize: '0.65rem' }}
+      >
+        NEW
+        <span className="visually-hidden">new feature</span>
+      </span>
+    </a>
+  );
+}
+
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
@@ -409,6 +447,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
               </ul>
 
               <div className="d-flex align-items-center gap-2">
+                {/* ⬇️ Botón Upgrade (site) */}
+                <UpgradeButton />
+
                 {/* Si tu logout es tenant-scoped, usa tenantHref('/app/logout') */}
                 <Link className="btn btn-outline-primary btn-sm" href="/logout">
                   {tt('admin.nav.logout', 'Logout')}
