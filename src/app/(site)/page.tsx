@@ -68,12 +68,12 @@ export default function PricingHomePage() {
     <main className="container py-5">
       {/* Hero */}
       <section className="text-center mb-5">
-        <span className="badge rounded-pill text-bg-primary-subtle border border-primary-subtle px-3 py-2">
+        <span className="badge rounded-pill text-dark text-bg-primary-subtle border border-primary-subtle px-3 py-2">
           7-day free trial — no credit card required
         </span>
         <h1 className="display-6 fw-semibold mt-3">Choose your plan</h1>
         <p className="lead text-muted mb-0">
-          Simple monthly pricing. Upgrade, downgrade, or cancel anytime.
+          Simple monthly pricing. Upgrade or cancel anytime.
         </p>
       </section>
 
@@ -142,10 +142,10 @@ export default function PricingHomePage() {
                     className={`btn btn-${p.ctaVariant} w-100`}
                     prefetch={false}
                   >
-                    Choose {p.name}
+                    Choose {p.name} 
                   </Link>
                   <div className="text-center small text-muted mt-2">
-                    Cancel anytime
+                    7-day free trial. Cancel anytime
                   </div>
                 </div>
               </div>
@@ -170,7 +170,7 @@ export default function PricingHomePage() {
                 <div className="col-12 col-md-6">
                   <h3 className="h6 fw-semibold">Can I switch plans?</h3>
                   <p className="small text-muted mb-0">
-                    Yes. You can upgrade or downgrade anytime; changes apply to the next cycle.
+                    Yes. You can upgrade at anytime; changes apply to the next cycle.
                   </p>
                 </div>
               </div>
@@ -179,7 +179,7 @@ export default function PricingHomePage() {
             {/* Legal */}
             <div className="text-center mt-4">
               <p className="text-muted small mb-1">
-                7-day free trial. Upgrade, downgrade, or cancel anytime.
+                7-day free trial. Upgrade or cancel anytime.
               </p>
               <p className="text-muted small mb-0">
                 By continuing, you agree to our{' '}
