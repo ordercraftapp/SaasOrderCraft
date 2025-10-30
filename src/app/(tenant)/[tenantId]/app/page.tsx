@@ -405,53 +405,70 @@ export default async function HomePage({ params }: { params: { tenantId: string 
   const contactNormalized = normalizeContact(cfg.contact);
 
   return (
-    <>
-      <script
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
-      />
+  <>
+    <script
+      type="application/ld+json"
+      dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+    />
 
-      {/* 1) HERO + FEATURED + PROMOTIONS (+ gallery si aplica) */}
-      <HomeClient
-        serverLang={serverLang}
-        heroData={heroData as any}
-        promos={activePromosEnriched as any}
-        featuredTitle={cfg.featuredMenu?.title}
-        featuredItems={featuredItems as any}
-        featuredCategories={featuredCategories as any}
-        galleryImages={(cfg.gallery?.images || []).map((g) => ({
-          url: String(g.url),
-          alt: g.alt ? String(g.alt) : undefined,
-        }))}
-        // ⛔️ No pasamos newsletter/contact para controlar el orden abajo
-        // newsletter={cfg.newsletter}
-        // contact={contactNormalized}
+    {/* 1) HERO + FEATURED + PROMOTIONS (+ gallery si aplica) */}
+    <HomeClient
+      serverLang={serverLang}
+      heroData={heroData as any}
+      promos={activePromosEnriched as any}
+      featuredTitle={cfg.featuredMenu?.title}
+      featuredItems={featuredItems as any}
+      featuredCategories={featuredCategories as any}
+      galleryImages={(cfg.gallery?.images || []).map((g) => ({
+        url: String(g.url),
+        alt: g.alt ? String(g.alt) : undefined,
+      }))}
+      // ⛔️ No pasamos newsletter/contact para controlar el orden abajo
+      // newsletter={cfg.newsletter}
+      // contact={contactNormalized}
 
-        // ✅ NUEVO: nombre de marca desde servidor (impide flicker)
-        brandName={brandName}
-      />
+      // ✅ NUEVO: nombre de marca desde servidor (impide flicker)
+      brandName={brandName}
+    />
 
-      {/* 4) ABOUT US */}
-      <AboutUs
-        title={cfg.aboutUs?.title}
-        text={cfg.aboutUs?.text}
-        imageUrl={cfg.aboutUs?.imageUrl}
-      />
+    {/* 4) ABOUT US */}
+    <AboutUs
+      title={cfg.aboutUs?.title}
+      text={cfg.aboutUs?.text}
+      imageUrl={cfg.aboutUs?.imageUrl}
+    />
 
-      {/* 5) NEWSLETTER */}
-      <section id="newsletter" className="py-5">
-        <div className="container">
-          <div className="mx-auto" style={{ maxWidth: 760 }}>
-            <Newsletter
-              cfg={cfg.newsletter}
-            />
-          </div>
+    {/* 5) NEWSLETTER */}
+    <section id="newsletter" className="py-5">
+      <div className="container">
+        <div className="mx-auto" style={{ maxWidth: 760 }}>
+          <Newsletter
+            cfg={cfg.newsletter}
+          />
         </div>
-      </section>
+      </div>
+    </section>
 
-      {/* 6) CONTACT */}
-      <ContactList cfg={contactNormalized} />
-    </>
-  );
+    {/* 6) CONTACT */}
+    <ContactList cfg={contactNormalized} />
+
+    {/* --- Bloque centrado agregado --- */}
+    <div className="text-center py-4">
+      <p className="text-sm">
+        Powered by OrderCraft, manage your restaurant{' '}
+        <a
+          href="https://ordercraft.cloud"
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label="Open OrderCraft website (opens in a new tab)"
+          className="underline"
+        >
+          click here
+        </a>
+      </p>
+    </div>
+  </>
+);
+
 }
 
