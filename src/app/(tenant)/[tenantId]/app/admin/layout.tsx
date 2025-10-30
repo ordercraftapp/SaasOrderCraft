@@ -332,21 +332,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const cashq = counts?.cashierQueue ?? 0;
   const deliv = counts?.deliveryPending ?? 0;
 
-  /* 🔤 idioma actual + helper (anti hydration mismatch) 
-  const { settings } = useTenantSettings();
-  const [lang, setLang] = useState<string | undefined>(() => (settings as any)?.language);
-  useEffect(() => {
-    try {
-      const ls = localStorage.getItem('tenant.language');
-      setLang(ls || (settings as any)?.language);
-    } catch {
-      setLang((settings as any)?.language);
-    }
-  }, [settings]);
-  const tt = (key: string, fallback: string, vars?: Record<string, unknown>) => {
-    const s = translate(lang, key, vars);
-    return s === key ? fallback : s;
-  };*/
+  /* 🔤 idioma actual + helper (anti hydration mismatch) ;*/
   const { settings } = useTenantSettings();
     const lang = useMemo(() => {
       try {

@@ -47,7 +47,7 @@ export const DEFAULT_FEATURES: Record<PlanTier, FeatureMap> = {
     kitchen: true, cashier: true, menu: true, roles: true, taxes: true,
     settings: true, homeConfigure: true, orders: true,
     waiter: false, editOrders: false, promotions: false,
-    delivery: false, deliveryOptions: false, ops: false, marketing: false, aiStudio: false,
+    delivery: false, deliveryOptions: false, ops: false, marketing: true, aiStudio: false,
 
     // Reports
     reports: true,
@@ -62,7 +62,7 @@ export const DEFAULT_FEATURES: Record<PlanTier, FeatureMap> = {
     kitchen: true, cashier: true, menu: true, roles: true, taxes: true,
     settings: true, homeConfigure: true, orders: true,
     waiter: true, editOrders: true, promotions: true,
-    delivery: false, deliveryOptions: false, ops: false, marketing: false, aiStudio: false,
+    delivery: false, deliveryOptions: false, ops: false, marketing: true, aiStudio: false,
 
     // Reports
     reports: true,
