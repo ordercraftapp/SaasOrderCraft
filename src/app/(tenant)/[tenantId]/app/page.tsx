@@ -32,17 +32,6 @@ type HeroVideo = {
   muted?: boolean;
   blurPx?: number;
 };
-
-// 💡 NUEVO: Tipos para la configuración del Hero Layout
-type HeroLayoutConfig = {
-  template: 'logo-right-text-left' | 'logo-left-text-right' | 'logo-centered';
-  logoUrl?: string;
-  logoAlt?: string;
-  textHeadline?: string;
-  textSub?: string;
-  cta?: { label?: string; href?: string };
-};
-
 type PromoEntry = {
   id: string;
   title: string;
@@ -99,8 +88,6 @@ type ContactCfg = {
 };
 
 type HomeConfig = {
-  // 💡 MODIFICACIÓN: Agregamos el nuevo campo heroLayout
-  heroLayout?: HeroLayoutConfig; // ✅ NUEVO: configuración para el diseño de texto
   hero: { variant: 'image' | 'carousel' | 'video'; slides?: HeroSlide[]; video?: HeroVideo };
   promos: PromoEntry[];
   featuredMenu: {
@@ -119,8 +106,6 @@ type HomeConfig = {
     text?: string;
     imageUrl?: string;
   };
-
-  
 
   /* 👇 NUEVO: Newsletter + Contact opcionales */
   newsletter?: NewsletterCfg;
@@ -308,8 +293,6 @@ export default async function HomePage({ params }: { params: { tenantId: string 
 
   const serverLang = await getUiLanguage(tenantId);
   const cfg = (await getHomeConfig(tenantId)) || {
-    // 💡 MODIFICACIÓN: Incluimos el nuevo campo en los defaults
-    heroLayout: undefined, // Default: no layout customizado
     hero: { variant: 'image', slides: [] },
     promos: [],
     featuredMenu: { title: 'Featured', categoryIds: [], subcategoryIds: [], itemIds: [], items: [] },
@@ -432,9 +415,6 @@ export default async function HomePage({ params }: { params: { tenantId: string 
     <HomeClient
       serverLang={serverLang}
       heroData={heroData as any}
-      // 💡 MODIFICACIÓN: Pasamos el nuevo layout al HomeClient
-      // @ts-ignore: Prop 'heroLayout' puede no existir en las props tipadas de HomeClient
-      heroLayout={cfg.heroLayout as any} // ✅ NUEVO CAMPO
       promos={activePromosEnriched as any}
       featuredTitle={cfg.featuredMenu?.title}
       featuredItems={featuredItems as any}
@@ -491,3 +471,4 @@ export default async function HomePage({ params }: { params: { tenantId: string 
 );
 
 }
+

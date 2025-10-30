@@ -44,15 +44,6 @@ type HeroSlide = {
   overlay?: 'dark' | 'light' | 'none';
 };
 
-type HeroLayoutConfig = {
-  template: 'logo-right-text-left' | 'logo-left-text-right' | 'logo-centered';
-  logoUrl?: string;
-  logoAlt?: string;
-  textHeadline?: string;
-  textSub?: string;
-  cta?: { label?: string; href?: string };
-};
-
 type HeroVideo = {
   url: string;
   posterUrl?: string;
@@ -95,7 +86,6 @@ type ContactBranch = {
 
 type HomeConfig = {
   updatedAt?: TimestampLike;
-  heroLayout?: HeroLayoutConfig; // ⬅️ NUEVO: Configuración de Layout
   hero: {
     variant: 'image' | 'carousel' | 'video';
     slides?: HeroSlide[];
@@ -268,7 +258,6 @@ export default function AdminHomeConfigurePage() {
   const [saving, setSaving] = useState(false);
 
   const [cfg, setCfg] = useState<HomeConfig>({
-    heroLayout: { template: 'logo-right-text-left' }, // ⬅️ NUEVO DEFAULT
     hero: { variant: 'image', slides: [] },
     promos: [],
     featuredMenu: { title: tt('admin.home.featured.titleDefault', 'Featured'), categoryIds: [], subcategoryIds: [], itemIds: [], items: [] },
@@ -295,7 +284,7 @@ export default function AdminHomeConfigurePage() {
   const [subcategories, setSubcategories] = useState<Subcategory[]>([]);
   const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
   const [coupons, setCoupons] = useState<Coupon[]>([]);
-  const [tab, setTab] = useState<'hero' | 'hero-layout' | 'promos' | 'featured' | 'gallery' | 'about' | 'newsletter' | 'contact' | 'seo' | 'publish'>('hero');
+  const [tab, setTab] = useState<'hero' | 'promos' | 'featured' | 'gallery' | 'about' | 'newsletter' | 'contact' | 'seo' | 'publish'>('hero');
 
   useEffect(() => {
   if (!tenantId) return;
@@ -319,15 +308,6 @@ export default function AdminHomeConfigurePage() {
 
       if (snap.exists()) {
         const data = snap.data() as HomeConfig;
-
-          data.heroLayout = {
-            template: data.heroLayout?.template ?? 'logo-right-text-left',
-            logoUrl: data.heroLayout?.logoUrl,
-            logoAlt: data.heroLayout?.logoAlt,
-            textHeadline: data.heroLayout?.textHeadline,
-            textSub: data.heroLayout?.textSub,
-            cta: data.heroLayout?.cta,
-          };
 
           data.featuredMenu = {
             title: data.featuredMenu?.title ?? tt('admin.home.featured.titleDefault', 'Featured'),
@@ -556,34 +536,6 @@ async function publishNow() {
   }
 
   /* ===========================
-     Hero Layout: Logo Upload
-     =========================== */
-  const heroLogoInputRef = useRef<HTMLInputElement | null>(null);
-
-  async function handleLogoUpload(file: File) {
-    if (!tenantId) return;
-    setSaving(true);
-    try {
-      const compressed = await compressImageFile(file, { maxW: 400, maxH: 200, quality: 0.9 });
-      const path = `tenants/${tenantId}/home/hero/logo/${Date.now()}-${compressed.name}`;
-      const url = await uploadToStorage(path, compressed);
-      setCfg(c => ({ 
-        ...c, 
-        heroLayout: { 
-            ...(c.heroLayout || { template: 'logo-right-text-left' }),
-            logoUrl: url,
-        }
-      }));
-      alert(tt('admin.home.heroLayout.logo.ok', 'Logo uploaded successfully.'));
-    } catch (e) {
-      console.error('[home-configure] logo upload error', e);
-      alert(tt('admin.home.heroLayout.logo.err', 'Error uploading logo.'));
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  /* ===========================
      Hero: variant
      =========================== */
 
@@ -704,7 +656,6 @@ async function publishNow() {
             <ul className="nav nav-tabs mb-3">
               {[
                 { k: 'hero', label: tt('admin.home.tab.hero', 'Hero') },
-                { k: 'hero-layout', label: tt('admin.home.tab.heroLayout', 'Hero Layout') },
                 { k: 'promos', label: tt('admin.home.tab.promos', 'Promotions') },
                 { k: 'featured', label: tt('admin.home.tab.featured', 'Featured Menu') },
                 { k: 'gallery', label: tt('admin.home.tab.gallery', 'Gallery') },
@@ -977,147 +928,6 @@ async function publishNow() {
                       </div>
                     </>
                   )}
-                </div>
-              </div>
-            )}
-
-            // Insertar después de la línea 697
-            {/* === HERO LAYOUT === */}
-            {tab === 'hero-layout' && (
-              <div className="card shadow-sm">
-                <div className="card-body">
-                  <h2 className="h5 card-title">{tt('admin.home.heroLayout.title', 'Hero Text & Logo Layout')}</h2>
-                  <p className="card-text text-muted mb-4">{tt('admin.home.heroLayout.info', 'Define el diseño del logo y texto que se superpone al fondo del Hero.')}</p>
-
-                  {/* 1. Selección de Template */}
-                  <div className="mb-4">
-                    <label className="form-label">{tt('admin.home.heroLayout.template', 'Layout Template')}</label>
-                    <select
-                      className="form-select"
-                      value={cfg.heroLayout?.template || 'logo-right-text-left'}
-                      onChange={(e) => setCfg(c => ({ 
-                          ...c, 
-                          heroLayout: { 
-                              ...(c.heroLayout || { template: 'logo-right-text-left' }),
-                              template: e.target.value as HeroLayoutConfig['template'] 
-                          }
-                      }))}
-                    >
-                      <option value="logo-right-text-left">{tt('admin.home.heroLayout.template.rightLogo', 'Logo Derecha / Texto Izquierda')}</option>
-                      <option value="logo-left-text-right">{tt('admin.home.heroLayout.template.leftLogo', 'Logo Izquierda / Texto Derecha')}</option>
-                      <option value="logo-centered">{tt('admin.home.heroLayout.template.centered', 'Solo Logo Centrado')}</option>
-                    </select>
-                  </div>
-
-                  {/* 2. Subida de Logo */}
-                  <div className="mb-4">
-                    <label className="form-label">{tt('admin.home.heroLayout.logo', 'Logo Image')}</label>
-                    <div className="d-flex gap-2 mb-2">
-                        <input 
-                            ref={heroLogoInputRef}
-                            type="file" 
-                            className="form-control" 
-                            accept="image/*"
-                            onChange={(e) => {
-                                if (e.target.files?.[0]) handleLogoUpload(e.target.files[0]);
-                                e.target.value = ''; // Reset input
-                            }}
-                            disabled={saving}
-                        />
-                        <button className="btn btn-outline-primary" onClick={() => heroLogoInputRef.current?.click()} disabled={saving}>
-                            {tt('admin.home.btn.upload', 'Upload')}
-                        </button>
-                    </div>
-                    {cfg.heroLayout?.logoUrl && (
-                      <div className="mt-2">
-                        {/* Se asume que tienes un componente o tag <img> con estilo para previsualizar */}
-                        <img src={cfg.heroLayout.logoUrl} alt={cfg.heroLayout.logoAlt || 'Logo Preview'} width={200} height={100} style={{ objectFit: 'contain' }} className="border p-1" />
-                      </div>
-                    )}
-                    <input
-                      type="text"
-                      className="form-control mt-2"
-                      placeholder={tt('admin.home.heroLayout.logoAlt', 'Logo Alt Text (SEO)')}
-                      value={cfg.heroLayout?.logoAlt || ''}
-                      onChange={(e) => setCfg(c => ({ 
-                          ...c, 
-                          heroLayout: { 
-                              ...(c.heroLayout || { template: 'logo-right-text-left' }),
-                              logoAlt: e.target.value 
-                          }
-                      }))}
-                    />
-                  </div>
-
-                  {/* 3. Texto Principal (Headline) */}
-                  <div className="mb-4">
-                    <label className="form-label">{tt('admin.home.heroLayout.headline', 'Headline Text')}</label>
-                    <input
-                      type="text"
-                      className="form-control"
-                      value={cfg.heroLayout?.textHeadline || ''}
-                      onChange={(e) => setCfg(c => ({ 
-                          ...c, 
-                          heroLayout: { 
-                              ...(c.heroLayout || { template: 'logo-right-text-left' }),
-                              textHeadline: e.target.value 
-                          }
-                      }))}
-                    />
-                  </div>
-                  
-                  {/* 4. Subtexto (Sub) */}
-                  <div className="mb-4">
-                    <label className="form-label">{tt('admin.home.heroLayout.sub', 'Sub Text')}</label>
-                    <input
-                      type="text"
-                      className="form-control"
-                      value={cfg.heroLayout?.textSub || ''}
-                      onChange={(e) => setCfg(c => ({ 
-                          ...c, 
-                          heroLayout: { 
-                              ...(c.heroLayout || { template: 'logo-right-text-left' }),
-                              textSub: e.target.value 
-                          }
-                      }))}
-                    />
-                  </div>
-                  
-                  {/* 5. CTA (Call-to-Action) */}
-                  <div className="mb-4 row">
-                    <label className="form-label">{tt('admin.home.heroLayout.cta', 'CTA Button')}</label>
-                    <div className="col-md-6 mb-2">
-                        <input
-                            type="text"
-                            className="form-control"
-                            placeholder={tt('admin.home.heroLayout.ctaLabel', 'Button Label')}
-                            value={cfg.heroLayout?.cta?.label || ''}
-                            onChange={(e) => setCfg(c => ({ 
-                                ...c, 
-                                heroLayout: { 
-                                    ...(c.heroLayout || { template: 'logo-right-text-left' }),
-                                    cta: { ...c.heroLayout?.cta, label: e.target.value }
-                                }
-                            }))}
-                        />
-                    </div>
-                    <div className="col-md-6">
-                        <input
-                            type="text"
-                            className="form-control"
-                            placeholder={tt('admin.home.heroLayout.ctaHref', 'Button Link (e.g., /menu, https://...)')}
-                            value={cfg.heroLayout?.cta?.href || ''}
-                            onChange={(e) => setCfg(c => ({ 
-                                ...c, 
-                                heroLayout: { 
-                                    ...(c.heroLayout || { template: 'logo-right-text-left' }),
-                                    cta: { ...c.heroLayout?.cta, href: e.target.value }
-                                }
-                            }))}
-                        />
-                    </div>
-                  </div>
-
                 </div>
               </div>
             )}

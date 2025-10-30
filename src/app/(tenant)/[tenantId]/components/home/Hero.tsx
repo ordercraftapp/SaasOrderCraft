@@ -1,4 +1,3 @@
-// src/app/(tenant)/[tenantId]/components/home/Hero.tsx
 "use client";
 
 import Image from 'next/image';
@@ -26,16 +25,6 @@ type HeroData = {
   variant: 'image' | 'carousel' | 'video';
   slides?: HeroSlide[];
   video?: HeroVideo;
-};
-
-// 💡 NUEVO: Tipos para la configuración del Hero Layout
-type HeroLayoutConfig = {
-  template: 'logo-right-text-left' | 'logo-left-text-right' | 'logo-centered';
-  logoUrl?: string;
-  logoAlt?: string;
-  textHeadline?: string;
-  textSub?: string;
-  cta?: { label?: string; href?: string };
 };
 
 function isYouTube(url: string) { return /youtube\.com|youtu\.be/.test(url); }
@@ -77,117 +66,7 @@ function withTenantPrefix(tenantId: string | null, path: string) {
   return tenantPath(tenantId, norm);
 }
 
-/** RENDERIZA EL CONTENIDO (TEXTO/LOGO) DEL HERO BASADO EN heroLayout O FALLBACK */
-function HeroContent({ tenantId, lang, heroLayout }: { tenantId: string | null; lang: string; heroLayout?: HeroLayoutConfig }) {
-    const cfg = heroLayout;
-    
-    // 1. Logo y Texto (usamos fallback si cfg no existe)
-    // Usamos el fallback del HeroSlide (s0) si heroLayout no existe
-    if (!cfg) {
-        // Renderizar el contenido estático original
-        return (
-            <>
-              <h1 className="display-5 fw-bold text-white text-center mb-3">{t(lang, 'home.hero.headline')}</h1>
-              <p className="lead text-white-50 text-center mb-4">{t(lang, 'home.hero.sub')}</p>
-              <div className="d-flex justify-content-center">
-                <a href={withTenantPrefix(tenantId, '/menu')} className="btn btn-primary btn-lg">{t(lang, 'home.hero.cta')}</a>
-              </div>
-            </>
-        );
-    }
-
-    const logoUrl = isAbsoluteUrl(cfg.logoUrl) ? cfg.logoUrl : withTenantPrefix(tenantId, cfg.logoUrl || '');
-    const headline = cfg.textHeadline;
-    const sub = cfg.textSub;
-    const ctaLabel = cfg.cta?.label;
-    const ctaHref = cfg.cta?.href
-        ? (isAbsoluteUrl(cfg.cta.href) ? cfg.cta.href : withTenantPrefix(tenantId, cfg.cta.href))
-        : withTenantPrefix(tenantId, '/menu');
-        
-    const logoComponent = logoUrl && (
-      <Image
-          src={logoUrl}
-          alt={cfg.logoAlt || 'Brand Logo'}
-          width={200} // Ajusta el tamaño del logo
-          height={100} 
-          style={{ objectFit: 'contain' }}
-          priority
-          className="mx-auto" // Centrar en móvil si es necesario
-      />
-    );
-
-    const textComponent = (
-      <div className="text-white text-center text-lg-start w-100">
-        {headline && <h1 className="display-5 fw-bold mb-3">{headline}</h1>}
-        {sub && <p className="lead text-white-50 mb-4">{sub}</p>}
-        {(ctaHref && ctaLabel) && (
-            <div className="d-flex justify-content-center justify-content-lg-start">
-                <a href={ctaHref} className="btn btn-primary btn-lg">{ctaLabel}</a>
-            </div>
-        )}
-      </div>
-    );
-    
-    const template = cfg.template || 'logo-centered'; 
-    
-    // 3. Renderizado de Templates
-    if (template === 'logo-centered') {
-      return (
-          <div className="d-flex flex-column align-items-center justify-content-center">
-              {logoComponent}
-              {/* Texto centrado en este template */}
-              <div className="text-white text-center mt-3">
-                  {headline && <h1 className="display-5 fw-bold mb-3">{headline}</h1>}
-                  {sub && <p className="lead text-white-50 mb-4">{sub}</p>}
-                  {(ctaHref && ctaLabel) && (
-                      <div className="d-flex justify-content-center">
-                          <a href={ctaHref} className="btn btn-primary btn-lg">{ctaLabel}</a>
-                      </div>
-                  )}
-              </div>
-          </div>
-      );
-    }
-    
-    // Layouts de dos columnas (logo-right-text-left o logo-left-text-right)
-    const [leftComponent, rightComponent] = 
-        template === 'logo-left-text-right' 
-            ? [logoComponent, textComponent] 
-            : [textComponent, logoComponent];
-
-    // Ajustamos la alineación del texto a la derecha si está en la columna derecha
-    const rightComponentAdjusted = (template === 'logo-right-text-left') && rightComponent === textComponent 
-        ? <div className="text-white text-center text-lg-end w-100">{rightComponent.props.children}</div> 
-        : rightComponent;
-
-    return (
-      <div className="row align-items-center justify-content-center w-100 g-4">
-        {/* Columna Izquierda */}
-        <div className="col-12 col-lg-6 d-flex justify-content-center justify-content-lg-start">
-          <div className="p-3">
-            {leftComponent}
-          </div>
-        </div>
-        {/* Columna Derecha */}
-        <div className="col-12 col-lg-6 d-flex justify-content-center justify-content-lg-end">
-          <div className="p-3">
-            {rightComponentAdjusted}
-          </div>
-        </div>
-      </div>
-    );
-}
-
-
-export default function Hero({ 
-  data, 
-  lang, 
-  heroLayout // ✅ NUEVA PROP
-}: { 
-  data: HeroData; 
-  lang: string; 
-  heroLayout?: HeroLayoutConfig; // ✅ NUEVA PROP
-}) {
+export default function Hero({ data, lang }: { data: HeroData; lang: string }) {
   const tenantId = useTenantId();
   const v = data?.variant || 'image';
   const slides = data?.slides || [];
@@ -250,9 +129,12 @@ export default function Hero({
           )}
         </div>
 
-        {/* 💡 MODIFICACIÓN: Usamos el componente de contenido */}
         <div className="hero-overlay">
-          <HeroContent tenantId={tenantId} lang={lang} heroLayout={heroLayout} /> 
+          <h1 className="display-5 fw-bold text-white text-center mb-3">{t(lang, 'home.hero.headline')}</h1>
+          <p className="lead text-white-50 text-center mb-4">{t(lang, 'home.hero.sub')}</p>
+          <div className="d-flex justify-content-center">
+            <a href={withTenantPrefix(tenantId, '/menu')} className="btn btn-primary btn-lg">{t(lang, 'home.hero.cta')}</a>
+          </div>
         </div>
 
         <style jsx>{`
@@ -268,9 +150,6 @@ export default function Hero({
             position: relative; z-index: 2; display: grid; place-items: center;
             padding: 3rem 1rem; min-height: inherit;
           }
-          /* 💡 NUEVO: Añadimos max-width para los layouts de 2 columnas */
-          .hero-overlay > div { max-width: 1200px; } 
-
           .hero-overlay::before {
             content: ''; position: absolute; inset: 0;
             background: linear-gradient(to bottom, rgba(0,0,0,0.45) 0%, rgba(0,0,0,0.25) 40%, rgba(0,0,0,0.55) 100%);
@@ -282,9 +161,6 @@ export default function Hero({
   }
 
   if (v === 'carousel' && slides.length > 1) {
-    // Si hay heroLayout, podemos anular el contenido del carrusel con un overlay fijo.
-    const useHeroLayoutOverlay = !!heroLayout;
-
     return (
       <header aria-label={t(lang, 'home.hero.carouselAria')}>
         <div className="position-relative">
@@ -312,35 +188,21 @@ export default function Hero({
                     />
                   </div>
                   <div className={`position-absolute top-0 start-0 w-100 h-100 ${overlayClass}`} />
-
-                  {/* Si NO usamos el heroLayout fijo, mostramos el contenido del slide */}
-                  {!useHeroLayoutOverlay && (
-                    <div className="position-absolute top-50 start-50 translate-middle text-center text-white px-3">
-                        <h1 className="display-5 fw-bold">{s.headline || t(lang, 'home.hero.fallbackHeadline')}</h1>
-                        {(s.sub || t(lang, 'home.hero.fallbackSub')) && <p className="lead">{s.sub || t(lang, 'home.hero.fallbackSub')}</p>}
-                        {ctaHref && (s.cta?.label || t(lang, 'home.hero.cta')) && (
-                          <a href={ctaHref} className="btn btn-primary btn-lg">{s.cta?.label || t(lang, 'home.hero.cta')}</a>
-                        )}
-                    </div>
-                  )}
+                  <div className="position-absolute top-50 start-50 translate-middle text-center text-white px-3">
+                    <h1 className="display-5 fw-bold">{s.headline || t(lang, 'home.hero.fallbackHeadline')}</h1>
+                    {(s.sub || t(lang, 'home.hero.fallbackSub')) && <p className="lead">{s.sub || t(lang, 'home.hero.fallbackSub')}</p>}
+                    {ctaHref && (s.cta?.label || t(lang, 'home.hero.cta')) && (
+                      <a href={ctaHref} className="btn btn-primary btn-lg">{s.cta?.label || t(lang, 'home.hero.cta')}</a>
+                    )}
+                  </div>
                 </div>
               );
             })}
           </div>
-
-          {/* 💡 Si se usa heroLayout, lo colocamos como un overlay fijo sobre todo el carrusel */}
-          {useHeroLayoutOverlay && (
-             <div className="position-absolute top-0 start-0 w-100 h-100 d-grid place-items-center" style={{ zIndex: 10 }}>
-                <HeroContent tenantId={tenantId} lang={lang} heroLayout={heroLayout} />
-             </div>
-          )}
-
         </div>
       </header>
     );
   }
-
-  // --- Modo Image (Fallback) ---
 
   const s0 = slides[0] || {
     imageUrl: '/hero-fallback.jpg',
@@ -370,19 +232,11 @@ export default function Hero({
         />
       </div>
       <div className={`position-absolute top-0 start-0 w-100 h-100 ${overlayClass}`} />
-      
-      {/* 💡 MODIFICACIÓN: Si heroLayout existe, lo usamos. Si no, usamos el fallback de slide */}
-      <div className="position-absolute top-50 start-50 translate-middle text-white px-3 w-100" style={{ maxWidth: '1200px' }}>
-        {heroLayout ? (
-            <HeroContent tenantId={tenantId} lang={lang} heroLayout={heroLayout} />
-        ) : (
-            <div className="text-center">
-                <h1 className="display-5 fw-bold">{s0.headline || t(lang, 'home.hero.fallbackHeadline')}</h1>
-                {(s0.sub || t(lang, 'home.hero.fallbackSub')) && <p className="lead">{s0.sub || t(lang, 'home.hero.fallbackSub')}</p>}
-                {s0cta && (
-                    <a href={s0cta} className="btn btn-primary btn-lg">{s0.cta?.label || t(lang, 'home.hero.cta')}</a>
-                )}
-            </div>
+      <div className="position-absolute top-50 start-50 translate-middle text-center text-white px-3">
+        <h1 className="display-5 fw-bold">{s0.headline || t(lang, 'home.hero.fallbackHeadline')}</h1>
+        {(s0.sub || t(lang, 'home.hero.fallbackSub')) && <p className="lead">{s0.sub || t(lang, 'home.hero.fallbackSub')}</p>}
+        {s0cta && (
+          <a href={s0cta} className="btn btn-primary btn-lg">{s0.cta?.label || t(lang, 'home.hero.cta')}</a>
         )}
       </div>
     </header>
