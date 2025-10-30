@@ -61,7 +61,7 @@ export default function Newsletter(props: { cfg?: NewsletterCfg }) {
 
     // Honeypot ⇒ éxito silencioso
     if (hp.trim() !== '') {
-      setMsg(cfg.successMsg ?? tt('newsletter.success', 'Thanks! Check your inbox.'));
+      setMsg(cfg.successMsg ?? tt('newsletter.success', 'Thank you for subscribing.'));
       setEmail('');
       return;
     }
@@ -79,7 +79,7 @@ export default function Newsletter(props: { cfg?: NewsletterCfg }) {
       });
 
       if (res.ok) {
-        setMsg(cfg.successMsg ?? tt('newsletter.success', 'Thanks! Check your inbox.'));
+        setMsg(cfg.successMsg ?? tt('newsletter.success', 'Thank you for subscribing.'));
         setEmail('');
       } else {
         let code: string | undefined;

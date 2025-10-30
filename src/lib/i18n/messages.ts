@@ -94,7 +94,7 @@ export const MESSAGES: Record<string, Record<string, string>> = {
     "home.gallery.imageAlt": "Imagen de galería",
 
     // ====== ADMIN (landing + tiles) ======
-    "admin.page.title": "Panel de administración",
+    "admin.page.title": "Panel de administración", 
     "admin.page.subtitle": "Accede rápidamente a las herramientas de gestión.",
     "admin.page.badgeOnlyAdmin": "Solo Admin",
     "admin.page.badgeQuickAccess": "Acceso rápido",

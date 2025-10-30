@@ -332,7 +332,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const cashq = counts?.cashierQueue ?? 0;
   const deliv = counts?.deliveryPending ?? 0;
 
-  /* 🔤 idioma actual + helper (anti hydration mismatch) */
+  /* 🔤 idioma actual + helper (anti hydration mismatch) 
   const { settings } = useTenantSettings();
   const [lang, setLang] = useState<string | undefined>(() => (settings as any)?.language);
   useEffect(() => {
@@ -346,7 +346,21 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const tt = (key: string, fallback: string, vars?: Record<string, unknown>) => {
     const s = translate(lang, key, vars);
     return s === key ? fallback : s;
-  };
+  };*/
+  const { settings } = useTenantSettings();
+    const lang = useMemo(() => {
+      try {
+        if (typeof window !== 'undefined') {
+          const ls = localStorage.getItem('tenant.language');
+          if (ls) return ls;
+        }
+      } catch {}
+      return (settings as any)?.language;
+    }, [settings]);
+    const tt = (key: string, fallback: string, vars?: Record<string, unknown>) => {
+      const s = translate(lang, key, vars);
+      return s === key ? fallback : s;
+    };
 
   /* ✅ Visibilidad de links según plan */
   const { allowed: kitchenAllowed }  = useFeature('kitchen');

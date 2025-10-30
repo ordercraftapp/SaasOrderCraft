@@ -201,7 +201,7 @@ export default function SignupForm({ defaultPlan }: { defaultPlan: PlanId }) {
             {/* Email & Phone */}
             <div className="row">
               <div className="col-12 col-md-6 mb-3">
-                <label className="form-label">Work email</label>
+                <label className="form-label">Admin email</label>
                 <input
                   type="email"
                   className="form-control"
