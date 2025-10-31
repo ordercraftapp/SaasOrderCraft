@@ -1,4 +1,6 @@
-// components/homepage/HeroSection.tsx
+// src/app/(site)/components/homepage/HeroSection.tsx
+"use client";
+
 import React, { useEffect, useState } from 'react';
 
 export default function HeroSection() {
@@ -17,7 +19,6 @@ export default function HeroSection() {
     transition: 'background 300ms ease-in-out',
   };
 
-  // Si la imagen cargó, la usamos; si falló, usamos un gradiente de fallback
   const backgroundStyle: React.CSSProperties =
     imageOk === true
       ? { backgroundImage: "url('/public/hero-image.png')" }
@@ -41,7 +42,7 @@ export default function HeroSection() {
     <section id="hero" className="d-flex align-items-center" style={heroStyle}>
       {/* Imagen oculta para detectar carga/errores */}
       <img
-        src="/public/hero-image.jpgpng"
+        src="/public/hero-image.png"
         alt=""
         style={{ display: 'none' }}
         onLoad={() => {
@@ -87,7 +88,6 @@ export default function HeroSection() {
           Empieza con <strong>OrderCraft</strong> hoy mismo. Sin tarjeta de crédito.
         </p>
 
-        {/* Mensaje de depuración visible (opcional) */}
         <div style={{ position: 'absolute', left: 10, bottom: 10, zIndex: 3 }}>
           {imageOk === null && <small className="text-light">Comprobando imagen...</small>}
           {imageOk === true && <small className="text-success">Imagen de fondo cargada correctamente</small>}
