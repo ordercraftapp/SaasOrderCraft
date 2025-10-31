@@ -4,6 +4,7 @@
 
 import { useEffect, useState, useMemo } from 'react';
 import Link from 'next/link';
+import Header from '@/app/(site)/components/homepage/Header';
 
 type Summary = {
   tenantId: string;
@@ -93,6 +94,8 @@ export default function SuccessClient({ tenantId, orderId }: { tenantId: string;
   }
 
   return (
+    <>
+        <Header />
     <main className="container py-5">
       <div className="row justify-content-center">
         <div className="col-12 col-lg-8">
@@ -201,5 +204,6 @@ export default function SuccessClient({ tenantId, orderId }: { tenantId: string;
         </div>
       </div>
     </main>
+    </>
   );
 }

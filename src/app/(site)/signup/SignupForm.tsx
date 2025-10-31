@@ -4,6 +4,7 @@
 import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import Header from '@/app/(site)/components/homepage/Header';
 
 type PlanId = 'starter' | 'pro' | 'full';
 const PLAN_LABEL: Record<PlanId, string> = {
@@ -153,6 +154,8 @@ export default function SignupForm({ defaultPlan }: { defaultPlan: PlanId }) {
   }
 
   return (
+    <>
+    <Header />
     <div className="row justify-content-center">
       <div className="col-12 col-lg-10">
         <form onSubmit={onSubmit} className="card shadow-sm border-0">
@@ -372,5 +375,6 @@ export default function SignupForm({ defaultPlan }: { defaultPlan: PlanId }) {
         </form>
       </div>
     </div>
+    </>
   );
 }

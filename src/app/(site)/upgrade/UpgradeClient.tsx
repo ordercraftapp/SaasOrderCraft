@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
+import Header from '@/app/(site)/components/homepage/Header';
+
 
 type PlanId = 'starter' | 'pro' | 'full';
 
@@ -342,6 +344,8 @@ export default function UpgradeClient({ tenantId, orderId }: { tenantId: string;
   const samePlan = summary && selectedPlan === summary.planTier;
 
   return (
+    <>
+                <Header />
     <div className="row justify-content-center">
       <div className="col-12 col-lg-8">
         <header className="mb-4 text-center">
@@ -445,5 +449,6 @@ export default function UpgradeClient({ tenantId, orderId }: { tenantId: string;
         </div>
       </div>
     </div>
+    </>
   );
 }

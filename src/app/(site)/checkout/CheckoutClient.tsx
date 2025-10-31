@@ -4,6 +4,7 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import Header from '@/app/(site)/components/homepage/Header';
 
 type Summary = {
   tenantId: string;
@@ -268,6 +269,8 @@ export default function CheckoutClient({ tenantId, orderId }: { tenantId: string
   );
 
   return (
+    <>
+            <Header />
     <div className="row justify-content-center">
       <div className="col-12 col-lg-8">
         <header className="mb-4 text-center">
@@ -422,5 +425,6 @@ export default function CheckoutClient({ tenantId, orderId }: { tenantId: string
         </div>
       </div>
     </div>
+    </>
   );
 }
