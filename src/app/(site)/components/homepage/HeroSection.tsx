@@ -81,39 +81,47 @@ export default function HeroSection() {
         </p>
 
         <div className="row justify-content-center mb-3">
-  <div className="col-lg-8 col-xl-6">
-    <div
-      className="input-group input-group-lg shadow rounded-pill overflow-hidden"
-      style={{
-        backgroundColor: "rgba(255,255,255,0.06)", // contenedor ligeramente translúcido
-        backdropFilter: "blur(6px)", // efecto cristal (opcional)
-        WebkitBackdropFilter: "blur(6px)",
-      }}
-    >
-      <input
-        type="email"
-        placeholder="Ingresa tu email para un demo gratuito..."
-        aria-label="Email para demo"
-        className="form-control border-0 py-3 px-4"
-        style={{
-          backgroundColor: "transparent", // input transparente para respetar el contenedor
-          color: "#ffffff",
-        }}
-      />
-      <button
-        className="btn btn-primary d-flex align-items-center px-4"
-        type="button"
-        style={{
-          // botón con transparencia ligera para integrarlo mejor
-          backgroundColor: "rgba(0,123,255,0.92)",
-          borderColor: "rgba(0,123,255,0.92)",
-        }}
-      >
-        Solicitar Demo
-      </button>
-    </div>
-  </div>
-</div>
+            <div className="col-lg-8 col-xl-6">
+                <div
+                className="input-group input-group-lg shadow rounded-pill overflow-hidden"
+                style={{
+                    backgroundColor: "rgba(255,255,255,0.06)", // contenedor ligeramente translúcido
+                    backdropFilter: "blur(6px)",
+                    WebkitBackdropFilter: "blur(6px)",
+                }}
+                >
+                <input
+                    type="email"
+                    placeholder="Ingresa tu email para un demo gratuito..."
+                    aria-label="Email para demo"
+                    className="form-control border-0 py-3 px-4"
+                    style={{
+                    backgroundColor: "transparent",
+                    color: "#ffffff", // texto blanco
+                    }}
+                />
+                <button
+                    className="btn btn-primary d-flex align-items-center px-4"
+                    type="button"
+                    style={{
+                    backgroundColor: "rgba(0,123,255,0.92)",
+                    borderColor: "rgba(0,123,255,0.92)",
+                    }}
+                >
+                    Solicitar Demo
+                </button>
+                </div>
+            </div>
+            </div>
+
+            {/* CSS inline para placeholder blanco */}
+            <style jsx>{`
+            .input-group .form-control::placeholder {
+                color: #ffffff;
+                opacity: 1; /* fuerza que se vea blanco puro */
+            }
+            `}</style>
+
 
 
         <p className="small text-light mt-3">
