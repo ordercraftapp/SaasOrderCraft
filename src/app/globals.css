@@ -40,36 +40,3 @@ a {
     color-scheme: dark;
   }
 }
-/* Añadir al final de tu archivo global de estilos */
-.hero-background-image {
-    /* 1. Referencia a la imagen guardada en /public */
-    background: url('/public/hero-image.png') no-repeat center center;
-    
-    /* 2. Asegura que la imagen cubra todo el espacio */
-    background-size: cover;
-    
-    /* 3. Fija la imagen para un efecto parallax (opcional, pero profesional) */
-    background-attachment: fixed; 
-    
-    /* 4. Alto mínimo para que la imagen se vea */
-    min-height: 80vh; 
-    
-    /* 5. Oscurecimiento: se aplicará al :before o con un div overlay */
-    position: relative; 
-    z-index: 1; /* El contenido debe estar sobre el overlay */
-}
-
-/* 6. Capa de Oscurecimiento (Overlay) */
-.hero-background-image::before {
-    content: "";
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    
-    /* Color de la capa, usa un color oscuro como negro o azul oscuro */
-    background-color: rgba(0, 0, 0, 0.5); /* 50% de opacidad */
-    
-    z-index: -1; /* Coloca la capa detrás del contenido */
-}
