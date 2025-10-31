@@ -43,12 +43,13 @@ export interface FAQItem {
 
 // --- Content Data ---
 
-export const NAV_LINKS: NavLink[] = [
-  { name: 'Features', href: '#features' },
-  { name: 'Pricing', href: '#pricing' },
-  { name: 'How It Works', href: '#process' },
-  { name: 'Testimonials', href: '#testimonials' },
-  { name: 'FAQ', href: '#faq' },
+// --- NAVEGACIÓN ACTUALIZADA ---
+export const NAV_LINKS = [
+  { name: 'Features', href: '/features' }, // APUNTA a /features/page.tsx
+  { name: 'Pricing', href: '/pricing' },   // APUNTA a /pricing/page.tsx
+  { name: 'How It Works', href: '/process' }, // APUNTA a /process/page.tsx
+  { name: 'Testimonials', href: '/testimonials' }, // APUNTA a /testimonials/page.tsx
+  { name: 'FAQ', href: '/faq' },           // APUNTA a /faq/page.tsx
 ];
 
 export const FEATURES: Feature[] = [

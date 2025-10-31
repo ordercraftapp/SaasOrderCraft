@@ -4,15 +4,14 @@
 
 import React from 'react';
 import Link from 'next/link';
-// Usaremos la clase de Bootstrap 'navbar-toggler-icon' en lugar de un icono de Lucide
-import { NAV_LINKS } from '@/data/content';
+import { NAV_LINKS } from '@/data/content'; // <-- ¡Usa esta importación!
 
 export default function Header() {
   return (
     <header>
       <nav className="navbar navbar-expand-lg navbar-light bg-white shadow-sm sticky-top">
         <div className="container">
-          {/* Logo */}
+          {/* Logo cambiado a OrderCraft */}
           <Link href="/" className="navbar-brand text-primary fw-bold fs-4">
             OrderCraft
           </Link>
@@ -35,6 +34,7 @@ export default function Header() {
             <ul className="navbar-nav me-auto mb-2 mb-lg-0">
               {NAV_LINKS.map((link) => (
                 <li key={link.name} className="nav-item">
+                  {/* Este Link usará el href actualizado de data/content.ts */}
                   <Link href={link.href} className="nav-link">
                     {link.name}
                   </Link>
@@ -44,7 +44,7 @@ export default function Header() {
 
             {/* CTA Button */}
             <Link
-              href="/pricing"
+              href="/signup"
               className="btn btn-primary rounded-pill px-4"
             >
               Get Started
