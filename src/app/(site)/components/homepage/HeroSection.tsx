@@ -2,11 +2,8 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { getStorage, ref as storageRef, getDownloadURL } from "firebase/storage";
-import { getApp, getApps } from "firebase/app";
-
-// Opcional: si exportas `storage` desde tu init client, importa en lugar de getStorage()
-// import { storage } from "@/lib/firebase/client";
+import { ref as storageRef, getDownloadURL } from "firebase/storage";
+import { storage, getStorageSafe } from "@/lib/firebase/client";
 
 export default function HeroSection() {
   const [imageUrl, setImageUrl] = useState<string | null>(null);
@@ -14,17 +11,17 @@ export default function HeroSection() {
   const [debugMsg, setDebugMsg] = useState<string | null>(null);
 
   useEffect(() => {
-    // Seguridad: si no hay app inicializada, no seguiremos intentando
-    if (!getApps().length) {
-      console.error("[HeroSection] Firebase app NO inicializada. Asegúrate de inicializar firebase en el cliente.");
-      setDebugMsg("Firebase app no inicializada en el cliente. Revisa tu init.");
+    // Si storage no está inicializado (ej. SSR o init falló), mostramos mensaje y salimos.
+    if (!storage) {
+      console.error("[HeroSection] Firebase Storage no inicializado en el cliente.");
+      setDebugMsg("Firebase Storage no inicializado en el cliente. Revisa src/lib/firebase/client.ts");
       setImageOk(false);
       return;
     }
 
-    const storage = getStorage(); // usa getStorage(app) si quieres pasar app explícita
     const attempts = [
-      // Intentos en preferencia: gs:// completo, luego ruta raíz, luego carpeta 'images/'
+      // Intentos en preferencia: carpeta pública recomendada, luego gs://, luego raíz y otras variantes
+      "home/hero/hero-image.png", // <-- recomendado según tus reglas
       "gs://ordercraftsaas.firebasestorage.app/hero-image.png",
       "hero-image.png",
       "images/hero-image.png",
@@ -39,6 +36,8 @@ export default function HeroSection() {
         tried++;
         try {
           console.log(`[HeroSection] Intento ${tried}: getDownloadURL("${path}")`);
+          // si path viene con gs:// algunos SDKs rechazan; storageRef soporta ambas formas pero
+          // usamos storage exportado para evitar re-inicializaciones
           const ref = storageRef(storage, path);
           const url = await getDownloadURL(ref);
           console.log("[HeroSection] getDownloadURL OK:", url);
@@ -48,12 +47,11 @@ export default function HeroSection() {
           return;
         } catch (err: any) {
           console.warn(`[HeroSection] Intento ${tried} falló para "${path}" — error:`, err);
-          // Guárdalo para mostrar en UI en caso de que todos fallen
-          setDebugMsg((prev) => (prev ? prev + `\nFail ${tried}: ${path} -> ${err?.code || err?.message || err}` : `Fail ${tried}: ${path} -> ${err?.code || err?.message || err}`));
-          // continuar con siguiente intento
+          setDebugMsg((prev) =>
+            prev ? prev + `\nFail ${tried}: ${path} -> ${err?.code || err?.message || err}` : `Fail ${tried}: ${path} -> ${err?.code || err?.message || err}`
+          );
         }
       }
-      // si llegamos aquí, todos los intentos fallaron
       setImageOk(false);
       console.error("[HeroSection] No se pudo obtener ninguna URL desde Storage. Ver detalles en debugMsg/state.");
     })();
