@@ -21,7 +21,7 @@ export default function HeroSection() {
 
   const backgroundStyle: React.CSSProperties =
     imageOk === true
-      ? { backgroundImage: "url('/public/hero-image.png')" }
+      ? { backgroundImage: "url('public/hero-image.png')" }
       : { backgroundImage: 'linear-gradient(135deg, #0f172a 0%, #0b1220 100%)' };
 
   const heroStyle = { ...heroStyleBase, ...backgroundStyle };
@@ -42,7 +42,7 @@ export default function HeroSection() {
     <section id="hero" className="d-flex align-items-center" style={heroStyle}>
       {/* Imagen oculta para detectar carga/errores */}
       <img
-        src="/public/hero-image.png"
+        src="public/hero-image.png"
         alt=""
         style={{ display: 'none' }}
         onLoad={() => {
