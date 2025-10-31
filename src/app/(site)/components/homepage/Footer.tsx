@@ -9,7 +9,7 @@ export default function Footer() {
 
   const footerLinks = [
     { title: 'Company', links: ['About Us', 'Careers', 'Blog', 'Contact'] },
-    { title: 'Resources', links: ['Knowledge Base', 'System Status', 'Migrate'] },
+    { title: 'Resources', links: ['Knowledge Base', 'System Status'] },
     { title: 'Legal', links: ['Terms of Service', 'Privacy Policy', 'SLA'] },
   ];
 
@@ -28,10 +28,10 @@ export default function Footer() {
           {/* Logo/Brand */}
           <div className="col-lg-3 col-md-6 mb-4">
             <Link href="/" className="text-white text-decoration-none fs-4 fw-bold mb-3 d-block">
-              RaptorHost
+              OrderCraft
             </Link>
             <p className="text-secondary small">
-              Premium web hosting, designed for speed and reliability.
+              All Your Restaurant. One Platform.
             </p>
           </div>
 
@@ -65,7 +65,7 @@ export default function Footer() {
 
         {/* Bottom Section: Copyright */}
         <div className="text-center text-secondary small pt-3">
-          &copy; {currentYear} RaptorHost. All rights reserved. Built with Next.js and Bootstrap.
+          &copy; {currentYear} DataCraft Coders. All rights reserved. 
         </div>
       </div>
     </footer>

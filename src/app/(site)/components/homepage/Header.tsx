@@ -14,7 +14,7 @@ export default function Header() {
         <div className="container">
           {/* Logo */}
           <Link href="/" className="navbar-brand text-primary fw-bold fs-4">
-            RaptorHost
+            OrderCraft
           </Link>
 
           {/* Botón de Menú Móvil */}
@@ -44,7 +44,7 @@ export default function Header() {
 
             {/* CTA Button */}
             <Link
-              href="/signup"
+              href="/pricing"
               className="btn btn-primary rounded-pill px-4"
             >
               Get Started
