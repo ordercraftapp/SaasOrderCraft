@@ -66,9 +66,9 @@ export default function PricingHomePage() {
   ] as const;
 
   return (
-    
-    <main className="container py-5">
-       <Header />
+    <>
+    <Header />
+    <main className="container py-5">       
       {/* Hero */}
       <section className="text-center mb-5">
         <span className="badge rounded-pill text-dark text-bg-primary-subtle border border-primary-subtle px-3 py-2">
@@ -194,5 +194,6 @@ export default function PricingHomePage() {
         </div>
       </section>
     </main>
+    </>
   );
 }
