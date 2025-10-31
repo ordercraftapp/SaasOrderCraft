@@ -1,5 +1,6 @@
 // src/app/(site)/prices/page.tsx
 import Link from 'next/link';
+import Header from '@/app/(site)/components/homepage/Header';
 
 export default function PricingHomePage() {
   const plans = [
@@ -65,7 +66,9 @@ export default function PricingHomePage() {
   ] as const;
 
   return (
+    
     <main className="container py-5">
+       <Header />
       {/* Hero */}
       <section className="text-center mb-5">
         <span className="badge rounded-pill text-dark text-bg-primary-subtle border border-primary-subtle px-3 py-2">

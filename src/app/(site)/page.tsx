@@ -1,7 +1,7 @@
 // app/page.tsx
 // Este archivo combina todos los componentes de la landing page.
 
-// Importación de todos los componentes de la carpeta 'components/homepage'
+// Importación de todos los componentes de la carpeta 'components/homepage' 
 import Header from '@/app/(site)/components/homepage/Header';
 import HeroSection from '@/app/(site)/components/homepage/HeroSection';
 import FeaturesGrid from '@/app/(site)/components/homepage/FeaturesGrid';

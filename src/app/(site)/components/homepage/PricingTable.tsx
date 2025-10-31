@@ -61,7 +61,7 @@ const PriceCard: React.FC<{ plan: PricingPlan; isAnnual: boolean }> = ({ plan, i
     </div>
   );
 };
-
+ 
 export default function PricingTable() {
   const [isAnnual, setIsAnnual] = useState(true);
 
