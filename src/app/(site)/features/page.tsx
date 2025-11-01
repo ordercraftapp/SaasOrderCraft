@@ -47,9 +47,9 @@ export default function FeaturesPage() {
         {/* Hero de la Página */}
         <section className="bg-light py-5">
           <div className="container text-center">
-            <h1 className="display-5 fw-bold text-dark">Potencia tu Restaurante con OrderCraft</h1>
+            <h1 className="display-5 fw-bold text-dark">Power Your Restaurant with OrderCraft</h1>
             <p className="lead text-muted mx-auto" style={{ maxWidth: '800px' }}>
-              Descubre las herramientas de gestión diseñadas para optimizar cada aspecto de tu operación, desde la cocina hasta el cliente.
+              Discover management tools designed to optimize every part of your operation, from the kitchen to your customers.
             </p>
           </div>
         </section>
@@ -57,7 +57,7 @@ export default function FeaturesPage() {
         {/* Sección de Características Principales (Reutiliza FEATURES) */}
         <section className="py-5">
           <div className="container">
-            <h2 className="text-center h3 fw-bold text-primary mb-4">Nuestras Soluciones Clave</h2>
+            <h2 className="text-center h3 fw-bold text-primary mb-4">Our Key Solutions</h2>
             <div className="row">
               {FEATURES.map((feature, index) => (
                 <DetailedFeatureCard key={index} feature={feature} />
@@ -70,13 +70,13 @@ export default function FeaturesPage() {
         <section className="bg-light py-5">
           <div className="container">
             <FeatureDetailSection
-              title="Flujo de Órdenes Sin Errores"
-              subtitle="Centraliza todos los pedidos (mesa, delivery, pick-up) en una única pantalla KDS, eliminando confusiones y acelerando la preparación."
+              title="Streamlined Kitchen Workflow"
+              subtitle="Centralize all orders — dine-in, delivery, or pickup — on a single KDS screen, reducing confusion and speeding up preparation."
               features={[
-                "Soporte para múltiples canales de venta.",
-                "Actualizaciones en tiempo real para el personal de cocina.",
+                "Manage dine-in, pickup, and delivery all in one place.",
+                "Real-time updates for kitchen staff",
                 "Tiempos de espera estimados basados en la carga actual.",
-                "Sistema de alertas para pedidos con retraso.",
+                "Order tracking from the Customer Portal",
               ]}
             />
           </div>
@@ -86,13 +86,13 @@ export default function FeaturesPage() {
         <section className="py-5">
           <div className="container">
             <FeatureDetailSection
-              title="Informes Inteligentes para Decisiones Clave"
-              subtitle="Obtén métricas claras sobre rendimiento de platos, ventas por hora y productividad del personal."
+              title="Smart Reports for Key Decisions"
+              subtitle="Get clear metrics on dish performance, hourly sales, and staff productivity."
               features={[
-                "Reportes diarios, semanales y mensuales.",
-                "Análisis de rendimiento de ítems (menú engineering).",
-                "Control de inventario integrado.",
-                "Acceso seguro a datos desde cualquier dispositivo.",
+                "Daily, weekly, and monthly reports.",
+                "Item performance analysis (menu engineering).",
+                "Full visibility on the source of every order.",
+                "Export reports easily to Excel for deeper analysis and record keeping.",
               ]}
             />
           </div>

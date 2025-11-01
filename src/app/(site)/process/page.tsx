@@ -15,9 +15,9 @@ export default function ProcessPage() {
         {/* Hero de la Página */}
         <section className="bg-light py-5">
           <div className="container text-center">
-            <h1 className="display-5 fw-bold text-dark">Cómo OrderCraft Transforma tu Servicio</h1>
+            <h1 className="display-5 fw-bold text-dark">Get Started with OrderCraft in 3 Easy Steps</h1>
             <p className="lead text-muted mx-auto" style={{ maxWidth: '800px' }}>
-              De la mesa al plato en tres sencillos e intuitivos pasos.
+              From setup to first order, OrderCraft makes it easy in three intuitive steps.
             </p>
           </div>
         </section>
@@ -55,15 +55,23 @@ export default function ProcessPage() {
             <h2 className="h3 fw-bold text-center text-dark mb-5">Detalle del Flujo de Trabajo</h2>
             <div className="row align-items-center mb-5">
               <div className="col-md-6">
-                <h4 className="h5 fw-bold text-primary">Paso 1: Recepción Centralizada</h4>
-                <p className="text-muted">Todos los pedidos (mesas, teléfono, apps de delivery) llegan instantáneamente a la misma interfaz. No más errores al transcribir.</p>
+                <h4 className="h5 fw-bold text-primary">Step 1: Set Up Your Restaurant</h4>
+                <p className="text-muted">Create your personalized subdomain and enter your administrator information to get started.
+                  This sets up your restaurant’s profile securely, giving you full control over your account from day one.</p>
               </div>
-              <div className="col-md-6 text-center">
-                {/* Placeholder para una imagen o diagrama del flujo de pedido */}
-                <div className="bg-white p-4 rounded shadow-sm text-muted"> [Diagrama de Flujo Digital] </div>
+              <div className="col-md-6">
+                <h4 className="h5 fw-bold text-primary">Step 2: Build & Configure</h4>
+                <p className="text-muted">Design and organize your menu, set up delivery options (Full Plan required), and configure your marketing profile.
+                  This step ensures your restaurant is fully prepared to handle orders, engage customers, and manage operations efficiently.</p>
               </div>
             </div>
-            {/* Repetir estructura para Paso 2 y 3 */}
+            <div className="row align-items-center mb-5">
+              <div className="col-md-6">
+                <h4 className="h5 fw-bold text-primary">Step 3: Start Taking Orders & Grow</h4>
+                <p className="text-muted">Begin processing orders immediately across dine-in, pickup, and delivery channels.
+                Use reports, marketing tools, and smart insights to optimize performance, increase sales, and scale your restaurant with confidence.</p>
+              </div>              
+            </div>            
           </div>
         </section>
 
