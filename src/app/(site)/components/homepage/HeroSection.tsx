@@ -95,8 +95,9 @@ export default function HeroSection() {
             }
             `}</style>
 
-
+        <h2 className="text-center">
         <span className="text-warning">Ahorra tiempo. Vende más. Simplifica tu operación.</span>
+        </h2>
         <p className="small text-light mt-3">
           Empieza gratis hoy — sin tarjeta de crédito.
         </p>
