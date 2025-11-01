@@ -1,4 +1,6 @@
 // src/app/(site)/components/homepage/HeroSection.tsx
+///DataCraft Coders 2025 www.datadraftcoders.com
+
 "use client";
 
 import React, { useEffect, useState } from "react";
@@ -16,9 +18,8 @@ export default function HeroSection() {
     }
 
     const attempts = [
-      // Probamos primero la ruta que ya funcionó en tu caso (gs://)
+      // Insertamos logo desde el storage
       "gs://ordercraftsaas.firebasestorage.app/hero-image.png",
-      // Segundo intento: raíz del bucket (compatibilidad)
       "hero-image.png",
     ];
 
@@ -31,7 +32,7 @@ export default function HeroSection() {
           setImageOk(true);
           return;
         } catch {
-          // ignoramos el error y probamos la siguiente ruta
+          
         }
       }
       setImageOk(false);
@@ -73,11 +74,11 @@ export default function HeroSection() {
       <div className="container text-center text-white" style={contentStyle}>
         <h1 className="display-4 fw-bolder mb-3">
           OrderCraft: Control Total, <br className="d-none d-md-inline" />
-          <span className="text-warning">Crecimiento Asegurado.</span>
+          <span className="text-warning">Crecimiento inmediato.</span>
         </h1>
 
         <p className="lead text-light mb-5" style={{ maxWidth: 700, margin: "0 auto" }}>
-          La solución SaaS más eficiente para el manejo de órdenes, cocina y servicio en tu restaurante.
+          Administra pedidos, cocina, caja y delivery desde una sola plataforma potente y fácil de usar.
         </p>
 
         <div className="row justify-content-center mb-3">
@@ -95,9 +96,9 @@ export default function HeroSection() {
             `}</style>
 
 
-
+        <span className="text-warning">Ahorra tiempo. Vende más. Simplifica tu operación.</span>
         <p className="small text-light mt-3">
-          Empieza con <strong>OrderCraft</strong> hoy mismo. Sin tarjeta de crédito.
+          Empieza gratis hoy — sin tarjeta de crédito.
         </p>
       </div>
     </section>
