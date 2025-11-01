@@ -69,33 +69,14 @@ export default function PricingTable() {
     <section className="py-5 py-md-5" id="pricing">
       <div className="container">
         <div className="text-center mb-5">
-          <h2 className="display-6 fw-bold text-dark mb-3">Simple, Transparent Pricing</h2>
+          <h2 className="display-6 fw-bold text-dark mb-3">Plans That Grow With You</h2>
           <p className="lead text-muted mx-auto" style={{ maxWidth: '700px' }}>
-            Choose the plan that fits your needs. No hidden fees, ever.
+        Start with what you need, upgrade as you grow — clear and flexible pricing.
           </p>
         </div>
-
-        {/* Toggle Mensual/Anual */}
-        <div className="d-flex justify-content-center mb-5">
-          <div className="btn-group bg-light rounded-pill p-1" role="group">
-            <button
-              onClick={() => setIsAnnual(false)}
-              className={`btn btn-sm rounded-pill px-4 ${!isAnnual ? 'btn-primary shadow' : 'btn-light text-muted'}`}
-            >
-              Monthly
-            </button>
-            <button
-              onClick={() => setIsAnnual(true)}
-              className={`btn btn-sm rounded-pill px-4 ${isAnnual ? 'btn-primary shadow' : 'btn-light text-muted'}`}
-            >
-              Annual (Save up to 20%)
-            </button>
-          </div>
-        </div>
-
         <div className="row justify-content-center align-items-end">
           {PRICING_PLANS.map((plan, index) => (
-            <PriceCard key={index} plan={plan} isAnnual={isAnnual} />
+        <PriceCard key={index} plan={plan} isAnnual={false} />
           ))}
         </div>
       </div>

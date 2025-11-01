@@ -1,6 +1,6 @@
 // data/content.ts
 
-import { LucideIcon, Rocket, Server, Shield, Clock, Search, Zap, DollarSign, Users, MessageSquare } from 'lucide-react';
+import { LucideIcon, ClipboardList, ChefHat, Motorbike, BookOpenText, Search, Zap, DollarSign, Users, MessageSquare } from 'lucide-react';
 
 // --- Type Definitions ---
 
@@ -54,56 +54,56 @@ export const NAV_LINKS = [
 
 export const FEATURES: Feature[] = [
   {
-    icon: Server,
-    title: 'High-Speed Servers',
-    description: 'Blazing fast load times with SSD storage and optimized caching for peak performance.',
+    icon: ChefHat,
+    title: 'Kitchen Orders',
+    description: 'Real-time order flow that keeps your kitchen fast, organized, and error-free every day.',
   },
   {
-    icon: Shield,
-    title: 'Advanced Security',
-    description: 'DDoS protection, free SSL, and daily malware scans keep your data safe and sound.',
+    icon: Motorbike,
+    title: 'Delivery Control',
+    description: 'Manage every delivery with full visibility, from the kitchen to the customer.',
   },
   {
-    icon: Clock,
-    title: '99.9% Uptime',
-    description: 'Guaranteed network stability ensures your website is always accessible to your visitors.',
+    icon: BookOpenText,
+    title: 'Menu Creation',
+    description: 'Create, edit, and optimize your menu instantly with smart AI suggestions that sell more.',
   },
   {
-    icon: Rocket,
-    title: 'One-Click Deploy',
-    description: 'Install popular apps like WordPress, Drupal, or Joomla with a single click.',
+    icon: ClipboardList,
+    title: 'Reports',
+    description: 'Get clear, actionable insights to boost sales, improve service, and grow your restaurant.',
   },
 ];
 
 export const PROCESS_STEPS: ProcessStep[] = [
-  { number: 1, title: 'Search & Select', description: 'Find the perfect domain name and hosting plan for your project.' },
-  { number: 2, title: 'Setup & Build', description: 'Use our simple dashboard to install apps and customize your site.' },
-  { number: 3, title: 'Launch & Grow', description: 'Go live and utilize our resources to expand your online presence.' },
+  { number: 1, title: 'Set Up Your Space', description: 'Create your restaurant profile, connect your team, and get your workspace ready to go.' },
+  { number: 2, title: 'Build & Customize', description: 'Add your menu items, configure orders, delivery, and kitchen tools — all from one dashboard.' },
+  { number: 3, title: 'Launch & Grow', description: 'Start taking orders instantly and use reports, marketing, and AI tools to scale your success.' },
 ];
 
 export const PRICING_PLANS: PricingPlan[] = [
   {
     name: 'Starter',
     description: 'Perfect for small personal websites or blogs getting started.',
-    monthlyPrice: 9,
-    yearlyPrice: 90,
-    features: ['1 Website', '10GB SSD Storage', '1-Click Installer', 'Free SSL'],
+    monthlyPrice: 19.99,
+    yearlyPrice: 19.99,
+    features: ['Kitchen Orders', 'Cashier', 'Menu Creation', 'Admin Roles', 'Taxes', 'Order Mangement', 'Reports: Sales', 'Reports: Taxes', 'Reports: Menu Items'],
     isPopular: false,
   },
   {
-    name: 'Pro Host',
-    description: 'Our most popular plan for growing businesses and high-traffic sites.',
-    monthlyPrice: 19,
-    yearlyPrice: 190,
-    features: ['Unlimited Websites', '100GB SSD Storage', 'Dedicated IP', 'Daily Backups', 'Priority Support'],
+    name: 'Pro',
+    description: 'Our most popular plan — designed for growing restaurants with higher order volume.',
+    monthlyPrice: 29.99,
+    yearlyPrice: 29.99,
+    features: ['Everything in Starter', 'Tables', 'Edit Orders', 'Create promotions', 'Reports: Clients', 'Reports: Promotions', 'Reports: Kitchen Times'],
     isPopular: true,
   },
   {
-    name: 'Enterprise',
+    name: 'Full',
     description: 'Powerful hosting solutions built for large agencies and corporations.',
-    monthlyPrice: 49,
-    yearlyPrice: 490,
-    features: ['Everything in Pro Host', 'Unlimited Storage', 'Managed Service', 'Advanced DDoS Protection'],
+    monthlyPrice: 34.99,
+    yearlyPrice: 34.99,
+    features: ['Everything in Pro', 'Delivery', 'Delivery Options', 'OPS', 'Tables', 'Marketing Campaigns', 'AI Studio', 'Reports: Delivery', 'Reports: Cashier'],
     isPopular: false,
   },
 ];

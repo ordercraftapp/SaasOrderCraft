@@ -26,9 +26,9 @@ export default function FeaturesGrid() {
     <section className="py-5 py-md-5" id="features">
       <div className="container">
         <div className="text-center mb-5">
-          <h2 className="display-6 fw-bold text-dark mb-3">Hosting Built for Performance</h2>
+          <h2 className="display-6 fw-bold text-dark mb-3">Power Built for Modern Restaurants</h2>
           <p className="lead text-muted mx-auto" style={{ maxWidth: '700px' }}>
-            Everything you need to succeed online, from rock-solid uptime to simple scalability.
+            Everything you need to run smarter — speed, control, and effortless growth in one platform.
           </p>
         </div>
         

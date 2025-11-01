@@ -30,9 +30,9 @@ export default function ProcessSteps() {
     <section className="py-5 py-md-5 bg-light" id="process">
       <div className="container">
         <div className="text-center mb-5">
-          <h2 className="display-6 fw-bold text-dark mb-3">Your Success in 3 Simple Steps</h2>
+          <h2 className="display-6 fw-bold text-dark mb-3">Your Restaurant in 3 Simple Steps</h2>
           <p className="lead text-muted mx-auto" style={{ maxWidth: '700px' }}>
-            We've made getting online easy and intuitive for everyone.
+            Simple setup. Powerful results. Built to grow your restaurant from day one.
           </p>
         </div>
         

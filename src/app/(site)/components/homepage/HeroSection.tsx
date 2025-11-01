@@ -73,12 +73,12 @@ export default function HeroSection() {
 
       <div className="container text-center text-white" style={contentStyle}>
         <h1 className="display-4 fw-bolder mb-3">
-          OrderCraft: Control Total, <br className="d-none d-md-inline" />
-          <span className="text-warning">Crecimiento inmediato.</span>
+          OrderCraft: Total Control, <br className="d-none d-md-inline" />
+          <span className="text-warning">Immediate Growth.</span>
         </h1>
 
         <p className="lead text-light mb-5" style={{ maxWidth: 700, margin: "0 auto" }}>
-          Administra pedidos, cocina, caja y delivery desde una sola plataforma potente y fácil de usar.
+          Manage orders, kitchen, cash register, and delivery from a single, powerful, and easy-to-use platform.
         </p>
 
         <div className="row justify-content-center mb-3">
@@ -96,10 +96,10 @@ export default function HeroSection() {
             `}</style>
 
         <h2 className="text-center">
-        <span className="text-warning">Ahorra tiempo. Vende más. Simplifica tu operación.</span>
+        <span className="text-warning">Save time. Sell more. Simplify your operations..</span>
         </h2>
         <p className="small text-light mt-3">
-          Empieza gratis hoy — sin tarjeta de crédito.
+          Get started for free today—no credit card required.
         </p>
       </div>
     </section>
