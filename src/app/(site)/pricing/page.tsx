@@ -70,7 +70,7 @@ export default function PricingHomePage() {
   return (
     <>
     <Header />
-    <main className="container py-5">       
+    <main className="container py-5 mt-5">       
       {/* Hero */}
       <section className="text-center mb-5">
         <span className="badge rounded-pill text-dark text-bg-primary-subtle border border-primary-subtle px-3 py-2">
@@ -195,7 +195,7 @@ export default function PricingHomePage() {
           </div>
         </div>
       </section>
-      <CtaBanner />
+      
            </main>
            <Footer />
     </>
