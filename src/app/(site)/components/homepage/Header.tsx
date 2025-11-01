@@ -1,19 +1,29 @@
 // components/homepage/Header.tsx
+// DataCraft Coders 2025 www.datadraftcoders.com
 
 'use client';
 
 import React from 'react';
 import Link from 'next/link';
-import { NAV_LINKS } from '@/data/content'; // <-- ¡Usa esta importación!
+import Image from 'next/image';
+import { NAV_LINKS } from '@/data/content';
 
 export default function Header() {
   return (
     <header>
       <nav className="navbar navbar-expand-lg navbar-light bg-white shadow-sm sticky-top">
         <div className="container">
-          {/* Logo cambiado a OrderCraft */}
-          <Link href="/" className="navbar-brand text-primary fw-bold fs-4">
-            OrderCraft
+          
+          <Link href="/" className="navbar-brand p-0" aria-label="OrderCraft home">
+            <Image
+              src="/images/main-logo.png"     
+              alt="OrderCraft"
+              width={140}                     
+              height={40}                     
+              priority                        
+              quality={90}                    
+              className="d-inline-block align-top"
+            />
           </Link>
 
           {/* Botón de Menú Móvil */}
@@ -34,7 +44,6 @@ export default function Header() {
             <ul className="navbar-nav me-auto mb-2 mb-lg-0">
               {NAV_LINKS.map((link) => (
                 <li key={link.name} className="nav-item">
-                  {/* Este Link usará el href actualizado de data/content.ts */}
                   <Link href={link.href} className="nav-link">
                     {link.name}
                   </Link>

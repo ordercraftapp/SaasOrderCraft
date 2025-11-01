@@ -1,3 +1,6 @@
+// src/app/(site)/layout.tsx
+///DataCraft Coders 2025
+
 import 'bootstrap/dist/css/bootstrap.min.css';
 import BootstrapClient from '@/app/(tenant)/[tenantId]/components/BootstrapClient';
 
