@@ -1,6 +1,8 @@
 // src/app/(site)/prices/page.tsx
 import Link from 'next/link';
 import Header from '@/app/(site)/components/homepage/Header';
+import CtaBanner from '@/app/(site)/components/homepage/CtaBanner';
+import Footer from '@/app/(site)/components/homepage/Footer';
 
 export default function PricingHomePage() {
   const plans = [
@@ -193,7 +195,9 @@ export default function PricingHomePage() {
           </div>
         </div>
       </section>
-    </main>
+      <CtaBanner />
+           </main>
+           <Footer />
     </>
   );
 }
