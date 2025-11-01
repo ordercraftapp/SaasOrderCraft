@@ -160,9 +160,9 @@ export default function SignupForm({ defaultPlan }: { defaultPlan: PlanId }) {
       <Header />
     </div>
 
-    {/* Contenedor principal: paddingTop evita que el contenido quede detrás del header.
-        Ajusta --site-header-height si tu Header tiene otra altura. */}
-    <div style={{ paddingTop: 'var(--site-header-height, 72px)' }}>
+    {/* Contenedor principal: paddingTop mayor para asegurar separación del Header.
+        Ajusta --site-header-height si tu Header tiene otra altura. Aquí por defecto es 112px */}
+    <div style={{ paddingTop: 'var(--site-header-height, 112px)' }}>
       <div className="row justify-content-center">
         <div className="col-12 col-lg-10">
           <form onSubmit={onSubmit} className="card shadow-sm border-0">

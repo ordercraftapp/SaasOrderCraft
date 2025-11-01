@@ -10,7 +10,7 @@ import { Check } from 'lucide-react';
 type PricingPlan = {
   id: string;
   name: string;
-  description: string;
+  description: string; // usamos 'tagline' del original como description
   monthlyPrice: number;
   yearlyPrice: number;
   features: string[];
@@ -19,13 +19,14 @@ type PricingPlan = {
   ctaVariant?: string;
 };
 
+// Tomamos los planes y los adaptamos al shape de PricingPlan (sin descuento anual)
 const PRICING_PLANS: PricingPlan[] = [
   {
     id: 'starter',
     name: 'Starter',
     description: 'Core tools to kick off',
     monthlyPrice: 19.99,
-    yearlyPrice: Math.round(19.99 * 12 * 100) / 100, // sin descuento anual
+    yearlyPrice: Math.round(19.99 * 12 * 100) / 100,
     features: [
       'Kitchen',
       'Cashier',
@@ -84,7 +85,7 @@ const PRICING_PLANS: PricingPlan[] = [
   },
 ];
 
-// Reutilizable PriceCard con contexto anual/mensual
+// Reutilizable PriceCard (estilo tomado del app/pricing/page.tsx)
 const PriceCard: React.FC<{ plan: PricingPlan; isAnnual: boolean }> = ({ plan, isAnnual }) => {
   const price = isAnnual ? plan.yearlyPrice : plan.monthlyPrice;
   const period = isAnnual ? 'yr' : 'mo';
@@ -100,41 +101,58 @@ const PriceCard: React.FC<{ plan: PricingPlan; isAnnual: boolean }> = ({ plan, i
   const textClasses = plan.isPopular ? 'text-white' : 'text-primary';
 
   return (
-    <div className="col-lg-4 col-md-6 mb-4">
-      <div className={cardClasses}>
+    <div className="col">
+      <div className={['card h-100', plan.highlight ? 'border-primary shadow-sm' : 'border-0 shadow-sm'].join(' ')}>
+        {plan.highlight ? (
+          <div className="card-header bg-primary text-white py-3 border-0">
+            <div className="d-flex justify-content-between align-items-center">
+              <h2 className="h5 mb-0">{plan.name}</h2>
+              {plan.isPopular && <span className="badge bg-light text-primary">Popular</span>}
+            </div>
+            <p className="small mb-0 opacity-75">{plan.description}</p>
+          </div>
+        ) : (
+          <div className="card-header bg-transparent border-0 pt-4 pb-0">
+            <h2 className="h5 text-center mb-0">{plan.name}</h2>
+            <p className="text-center text-muted small mb-0">{plan.description}</p>
+          </div>
+        )}
+
+        {/* Cuerpo con estilo de PriceCard */}
         <div className="card-body p-4 p-md-5 d-flex flex-column">
+          {/* Si queremos el badge 'Recomendado' en isPopular como en style original */}
           {plan.isPopular && (
             <span className="badge bg-warning text-dark position-absolute top-0 end-0 mt-n2 me-n2 p-2 fw-bold rounded-pill">
               Recomendado
             </span>
           )}
 
-          <h3 className={`card-title fs-4 fw-bold mb-1 ${textClasses}`}>{plan.name}</h3>
-          <p className={`card-text mb-4 ${plan.isPopular ? 'text-light' : 'text-muted'}`}>{plan.description}</p>
-
-          <div className="mb-4">
-            <span className="fw-bolder" style={{ fontSize: '3rem' }}>
-              <sup className="fs-3 align-top">$</sup>
-              {Number(price.toFixed(2))}
-            </span>
-            <span className={`fs-5 fw-normal ${plan.isPopular ? 'text-light' : 'text-muted'}`}>/{period}</span>
+          {/* Precio centrado siguiendo style */}
+          <div className="text-center mb-3">
+            <div className="d-inline-flex align-items-end gap-1">
+              <span className="display-6 fw-bold">${(plan.monthlyPrice).toFixed(2)}</span>
+              <span className="text-muted mb-2">/ month</span>
+            </div>
+            <div className="small text-success mt-1">7-day free trial included</div>
           </div>
 
+          {/* Lista de features con Check (como style) */}
           <ul className="list-unstyled flex-grow-1">
-            {plan.features.map((feature, index) => (
-              <li key={index} className="d-flex align-items-start mb-2">
-                <Check
-                  className={`h-5 w-5 flex-shrink-0 ${plan.isPopular ? 'text-warning' : 'text-success'} me-2`}
-                  size={20}
-                />
+            {plan.features.map((feature, idx) => (
+              <li key={idx} className="d-flex align-items-start mb-2">
+                <Check className={`h-5 w-5 flex-shrink-0 ${plan.isPopular ? 'text-warning' : 'text-success'} me-2`} size={18} />
                 <span className={plan.isPopular ? 'text-white' : 'text-dark'}>{feature}</span>
               </li>
             ))}
           </ul>
 
-          <Link href={`/signup?plan=${plan.id}`} prefetch={false} className={btnClasses} aria-label={`Seleccionar ${plan.name}`}>
-            {plan.isPopular ? 'Comenzar' : 'Seleccionar Plan'}
-          </Link>
+          {/* CTA en footer-like */}
+          <div className="mt-3">
+            <Link href={`/signup?plan=${plan.id}`} prefetch={false} className={btnClasses} aria-label={`Choose ${plan.name}`}>
+              {plan.isPopular ? `Choose ${plan.name}` : `Choose ${plan.name}`}
+            </Link>
+            <div className="text-center small text-muted mt-2">7-day free trial. Cancel anytime</div>
+          </div>
         </div>
       </div>
     </div>
@@ -142,92 +160,87 @@ const PriceCard: React.FC<{ plan: PricingPlan; isAnnual: boolean }> = ({ plan, i
 };
 
 export default function PricingPage() {
-  const [isAnnual, setIsAnnual] = useState<boolean>(true);
+  const [isAnnual, setIsAnnual] = useState<boolean>(false); // por defecto mensual para que refleje el precio visible en cards
 
   return (
     <>
       <Header />
-      <main>
-        {/* Hero de la Página */}
-        <section className="bg-light py-5">
-          <div className="container text-center">
-            <h1 className="display-5 fw-bold text-dark">Planes OrderCraft: Simples y Flexibles</h1>
-            <p className="lead text-muted mx-auto" style={{ maxWidth: '800px' }}>
-              Elige la mejor opción para el tamaño de tu restaurante. Sin contratos forzosos ni tarifas ocultas.
-            </p>
-            <div className="small text-success mt-2">7-day free trial — no credit card required</div>
-          </div>
+      <main className="container py-5">
+        {/* Hero (mantengo contenido del primer archivo) */}
+        <section className="text-center mb-5">
+          <span className="badge rounded-pill text-dark text-bg-primary-subtle border border-primary-subtle px-3 py-2">
+            7-day free trial — no credit card required
+          </span>
+          <h1 className="display-6 fw-semibold mt-3">Choose your plan</h1>
+          <p className="lead text-muted mb-0">Simple monthly pricing. Upgrade or cancel anytime.</p>
         </section>
 
-        {/* Toggle Mensual/Anual */}
-        <div className="d-flex justify-content-center pt-5">
+        {/* Toggle Mensual/Anual (estética del segundo) */}
+        <div className="d-flex justify-content-center pt-4 pb-3">
           <div className="btn-group bg-light rounded-pill p-1" role="group">
             <button
               onClick={() => setIsAnnual(false)}
               className={`btn btn-sm rounded-pill px-4 ${!isAnnual ? 'btn-primary shadow' : 'btn-light text-muted'}`}
+              type="button"
             >
               Mensual
             </button>
             <button
               onClick={() => setIsAnnual(true)}
               className={`btn btn-sm rounded-pill px-4 ${isAnnual ? 'btn-primary shadow' : 'btn-light text-muted'}`}
+              type="button"
             >
               Anual
             </button>
           </div>
         </div>
 
-        {/* Tabla de Precios */}
-        <section className="py-5">
-          <div className="container">
-            <div className="row justify-content-center align-items-end">
-              {PRICING_PLANS.map((plan) => (
-                <PriceCard key={plan.id} plan={plan} isAnnual={isAnnual} />
-              ))}
+        {/* Plans grid: usamos el layout original (row-cols) pero renderizamos PriceCard que contiene el estilo fusionado */}
+        <section>
+          <div className="row row-cols-1 row-cols-md-3 g-4">
+            {PRICING_PLANS.map((p) => (
+              <PriceCard key={p.id} plan={p} isAnnual={isAnnual} />
+            ))}
+          </div>
+        </section>
+
+        {/* FAQs / Notes (del primer archivo) */}
+        <section className="mt-5">
+          <div className="row justify-content-center">
+            <div className="col-12 col-lg-10">
+              <div className="p-3 p-md-4 rounded-3 border bg-light-subtle">
+                <div className="row">
+                  <div className="col-12 col-md-6 mb-3 mb-md-0">
+                    <h3 className="h6 fw-semibold">What happens after the trial?</h3>
+                    <p className="small text-muted mb-0">
+                      You can continue by paying monthly via PayPal. If you don’t pay after 7 days, access will be paused until you complete payment.
+                    </p>
+                  </div>
+                  <div className="col-12 col-md-6">
+                    <h3 className="h6 fw-semibold">Can I switch plans?</h3>
+                    <p className="small text-muted mb-0">Yes. You can upgrade at anytime; changes apply to the next cycle.</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Legal */}
+              <div className="text-center mt-4">
+                <p className="text-muted small mb-1">7-day free trial. Upgrade or cancel anytime.</p>
+                <p className="text-muted small mb-0">
+                  By continuing, you agree to our <Link href="/terms">Terms</Link> and <Link href="/privacy">Privacy Policy</Link>.
+                </p>
+              </div>
             </div>
           </div>
         </section>
 
-        {/* Sección Adicional: Detalles de la Garantía */}
-        <section className="bg-light py-5">
+        {/* Garantía / Sección extra con estilo del segundo file */}
+        <section className="bg-light py-5 mt-4">
           <div className="container text-center">
             <h3 className="h4 fw-bold text-dark mb-3">Nuestra Garantía</h3>
             <p className="text-muted mx-auto" style={{ maxWidth: '700px' }}>
-              Todos los planes incluyen una garantía de devolución de dinero de 30 días. Si OrderCraft no mejora la eficiencia
-              de tu restaurante, te devolvemos tu dinero.
+              Todos los planes incluyen una garantía de devolución de dinero de 30 días. Si OrderCraft no mejora la eficiencia de tu restaurante, te devolvemos tu dinero.
             </p>
-          </div>
-        </section>
-
-        {/* Notes / FAQs (inspirado en la versión previa) */}
-        <section className="mt-4">
-          <div className="container">
-            <div className="row justify-content-center">
-              <div className="col-12 col-lg-10">
-                <div className="p-3 p-md-4 rounded-3 border bg-light-subtle">
-                  <div className="row">
-                    <div className="col-12 col-md-6 mb-3 mb-md-0">
-                      <h3 className="h6 fw-semibold">¿Qué pasa después del trial?</h3>
-                      <p className="small text-muted mb-0">
-                        Puedes continuar pagando mensualmente. Si no completas el pago después de 7 días, el acceso quedará en pausa hasta que
-                        finalices el pago.
-                      </p>
-                    </div>
-                    <div className="col-12 col-md-6">
-                      <h3 className="h6 fw-semibold">¿Puedo cambiar de plan?</h3>
-                      <p className="small text-muted mb-0">Sí. Puedes actualizar en cualquier momento; los cambios aplican al siguiente ciclo.</p>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="text-center mt-4">
-                  <p className="text-muted small mb-1">7-day free trial. Upgrade or cancel anytime.</p>
-                  <p className="text-muted small mb-0">
-                    Al continuar, aceptas nuestros <Link href="/terms">Terms</Link> y <Link href="/privacy">Privacy Policy</Link>.
-                  </p>
-                </div>
-              </div>
-            </div>
           </div>
         </section>
 
