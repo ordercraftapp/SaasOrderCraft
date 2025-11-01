@@ -92,7 +92,7 @@ export const PRICING_PLANS: PricingPlan[] = [
   },
   {
     name: 'Pro',
-    description: 'Our most popular plan — designed for growing restaurants with higher order volume.',
+    description: 'Our most popular plan — designed for growing restaurants with higher order volume.Perfect for restaurants ready to expand their operations smoothly. Supports increasing orders and team management as your business grows. Provides the flexibility and reliability your restaurant needs to scale confidently.',
     monthlyPrice: 29.99,
     yearlyPrice: 29.99,
     features: ['Everything in Starter', 'Tables', 'Edit Orders', 'Create promotions', 'Reports: Clients', 'Reports: Promotions', 'Reports: Kitchen Times'],
