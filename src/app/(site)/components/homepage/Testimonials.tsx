@@ -24,9 +24,9 @@ export default function Testimonials() {
     <section className="py-5 py-md-5 bg-light" id="testimonials">
       <div className="container">
         <div className="text-center mb-5">
-          <h2 className="display-6 fw-bold text-dark mb-3">What Our Customers Say</h2>
+          <h2 className="display-6 fw-bold text-dark mb-3">What Restaurant Owners Are Saying</h2>
           <p className="lead text-muted mx-auto" style={{ maxWidth: '700px' }}>
-            Don't just take our word for it. Hear from those who trust us every day.
+            See how OrderCraft is helping restaurants streamline operations and grow every day.
           </p>
         </div>
         

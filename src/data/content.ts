@@ -84,7 +84,7 @@ export const PROCESS_STEPS: ProcessStep[] = [
 export const PRICING_PLANS: PricingPlan[] = [
   {
     name: 'Starter',
-    description: 'Perfect for small personal websites or blogs getting started.',
+    description: 'Ideal for small restaurants or cafes getting started with order and kitchen management.',
     monthlyPrice: 19.99,
     yearlyPrice: 19.99,
     features: ['Kitchen Orders', 'Cashier', 'Menu Creation', 'Admin Roles', 'Taxes', 'Order Mangement', 'Reports: Sales', 'Reports: Taxes', 'Reports: Menu Items'],
@@ -100,7 +100,7 @@ export const PRICING_PLANS: PricingPlan[] = [
   },
   {
     name: 'Full',
-    description: 'Powerful hosting solutions built for large agencies and corporations.',
+    description: 'Advanced solution for restaurants or high-volume operations ready to scale.',
     monthlyPrice: 34.99,
     yearlyPrice: 34.99,
     features: ['Everything in Pro', 'Delivery', 'Delivery Options', 'OPS', 'Tables', 'Marketing Campaigns', 'AI Studio', 'Reports: Delivery', 'Reports: Cashier'],
@@ -110,29 +110,40 @@ export const PRICING_PLANS: PricingPlan[] = [
 
 export const TESTIMONIALS: Testimonial[] = [
   {
-    quote: "The speed and reliability are unmatched. Our traffic quadrupled, and the site never once slowed down. Highly recommend!",
-    name: 'Sarah K.',
-    title: 'Startup Founder',
+    quote: "OrderCraft transformed how we run La Casa del Sabor. Orders flow smoothly, the team is more organized, and we’ve seen our revenue grow in just weeks. It’s like having an extra manager in the kitchen!",
+    name: 'Maria López',
+    title: 'Mexico',
   },
   {
-    quote: "The customer support is lightning fast and genuinely helpful. Migration was seamless, and the price is right.",
-    name: 'Mark T.',
-    title: 'Lead Developer',
+    quote: "Thanks to OrderCraft, The Green Fork runs more efficiently than ever. Managing orders, tables, and deliveries is effortless, and our staff actually enjoys using the system!",
+    name: 'James O’Connor.',
+    title: 'Ireland',
   },
   // Add more as needed for a carousel/list
 ];
 
 export const FAQ_ITEMS: FAQItem[] = [
   {
-    question: 'What is your refund policy?',
-    answer: 'We offer a risk-free 30-day money-back guarantee on all hosting plans, no questions asked.',
+    question: 'How do I build my menu?',
+    answer: 'You can create your menu by organizing items into Main Categories and Subcategories. Add option groups and add-ons, and set rules for how many selections a customer can make for each item.',
   },
   {
-    question: 'Do you offer domain registration?',
-    answer: 'Yes, you can register new domains or transfer existing ones directly through our platform.',
+    question: 'How are kitchen orders managed?',
+    answer: 'When a customer places an order, it appears instantly on the kitchen screen. You can update the order status from “Placed” to “Kitchen Ready,” and the system automatically continues the workflow for dine-in, pickup, or delivery.',
   },
   {
-    question: 'Which control panel do you use?',
-    answer: 'We use a highly customized, intuitive control panel designed for ease of use by both beginners and experts.',
+    question: 'How does delivery work?',
+    answer: 'Once an order reaches Kitchen Ready, it moves into the delivery workflow. The delivery person picks up the order, assigns themselves, and completes the delivery. In the client portal, the status updates from Assigned to Delivered, and the customer receives a confirmation email once the order is completed.',
+  },
+  {
+    question: 'What is included on the client side?',
+    answer: `All plans give customers access to a client portal where they can:
+- View the menu and place orders.
+- Track orders from “Received” to “Delivered.”
+- See a history of past orders.
+- Save a home or office address for faster ordering.
+
+With Pro or Full plans, customers can also:
+- View available promotions and discounts.`,
   },
 ];
